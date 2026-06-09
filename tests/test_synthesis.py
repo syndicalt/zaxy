@@ -28,6 +28,7 @@ from zaxy.synthesis import (
     render_duration_result,
     render_numeric_state_result,
     render_temporal_sequence_result,
+    source_group,
     synthesis_operation_for_plan,
 )
 
@@ -43,6 +44,11 @@ def test_build_synthesis_plan_classifies_currency_sum() -> None:
     assert plan.required_kinds == ("currency",)
     assert "money" in plan.subject_terms
     assert "total" in plan.reasons
+
+
+def test_source_group_reads_source_id_metadata() -> None:
+    """Source-backed synthesis contexts should retain compact source identifiers."""
+    assert source_group("source_id=answer-123 longmemeval_session_date=2024/01/01 user: hello") == "answer-123"
 
 
 def test_sum_operation_preserves_currency_renderer_contract() -> None:
@@ -182,6 +188,31 @@ def test_count_candidate_lists_kitchen_repair_and_replacement_items() -> None:
         "support_source_ids": ["answer-1", "answer-2", "answer-3", "answer-4", "answer-5"],
         "excluded_source_ids": [],
     }
+
+
+def test_count_candidate_extracts_multiple_kitchen_items_from_one_context() -> None:
+    """One cited source can contain multiple distinct durable item changes."""
+    query = "How many kitchen items did I replace or fix?"
+    ledger = build_count_ledger(
+        query,
+        [
+            (
+                "longmemeval_session_id=answer-1 "
+                "1. user: I donated my old coffee maker to Goodwill and I'm really enjoying the upgrade. "
+                "2. user: I've been decluttering my kitchen countertops and got rid of the old toaster, "
+                "replacing it with a toaster oven."
+            ),
+            "longmemeval_session_id=answer-2 I finally fixed the kitchen shelves last weekend.",
+        ],
+    )
+
+    result = render_count_result(ledger, query, rank=1)
+
+    assert "count_answer=3" in result.lines
+    assert (
+        "count_answer_text=I replaced or fixed three items: "
+        "the coffee maker, the toaster, and the kitchen shelves."
+    ) in result.lines
 
 
 def test_temporal_interval_operation_preserves_date_interval_contract() -> None:
@@ -1260,8 +1291,120 @@ def test_count_ledger_counts_property_search_outcomes_before_final_offer() -> No
     assert "count_answer=4" in result.lines
     assert any("Cedar Creek" in line for line in result.lines)
     assert "count_answer_text=I viewed four properties." in result.lines
+    assert (
+        "property_outcome_answer=I viewed four properties before making an offer on "
+        "the townhouse in Brookside. The reasons I didn't make an offer on them were: "
+        "the kitchen of the bungalow needed renovation, "
+        "the property in Cedar Creek was out of my budget, "
+        "highway noise was a deal-breaker for the 1-bedroom condo, and "
+        "my offer on the 2-bedroom condo was rejected due to a higher bid."
+    ) in result.lines
     assert result.support_source_groups == ("answer-1", "answer-2", "answer-3", "answer-4")
     assert result.excluded_source_groups == ("target-view", "final")
+
+
+def test_count_ledger_renders_clean_property_outcome_reasons() -> None:
+    """Property outcome answers should separate property labels from rejection reasons."""
+    query = "How many properties did I view before making an offer on the townhouse in the Brookside neighborhood?"
+    ledger = build_count_ledger(
+        query,
+        [
+            (
+                "session_id=bungalow I recently saw a beautiful 3-bedroom bungalow in the "
+                "Oakwood neighborhood on January 22nd that I really liked, but the kitchen "
+                "needed some serious renovation work."
+            ),
+            (
+                "session_id=budget I've been searching for a home for a while now, and I've "
+                "seen some properties that just didn't fit my budget, like that one in "
+                "Cedar Creek on February 1st - it was way out of my league."
+            ),
+            (
+                "session_id=noise I viewed a 1-bedroom condo on February 10th, but the noise "
+                "from the highway was a deal-breaker."
+            ),
+            (
+                "session_id=rejected I actually fell in love with a 2-bedroom condo on "
+                "February 15th, it had amazing modern appliances and a community pool, but "
+                "unfortunately, my offer got rejected on the 17th due to a higher bid."
+            ),
+            (
+                "session_id=target I put in an offer on a 3-bedroom townhouse in the "
+                "Brookside neighborhood on February 25th."
+            ),
+        ],
+    )
+
+    result = render_count_result(ledger, query, rank=1)
+
+    assert "count_answer=4" in result.lines
+    assert (
+        "property_outcome_answer=I viewed four properties before making an offer on "
+        "the townhouse in the Brookside neighborhood. The reasons I didn't make an offer on them were: "
+        "the kitchen of the bungalow needed serious renovation, "
+        "the property in Cedar Creek was out of my budget, "
+        "the noise from the highway was a deal-breaker for the 1-bedroom condo, and "
+        "my offer on the 2-bedroom condo was rejected due to a higher bid."
+    ) in result.lines
+
+
+def test_count_ledger_counts_past_competitive_sports() -> None:
+    """Past competitive-sport counts should bind only sports played competitively."""
+    ledger = build_count_ledger(
+        "How many sports have I played competitively in the past?",
+        [
+            (
+                "session_id=swim user: I used to swim competitively in college, and "
+                "I'm looking to get back into lap swimming."
+            ),
+            (
+                "session_id=tennis user: I've been playing soccer and tennis lately. "
+                "I used to play tennis competitively in high school."
+            ),
+            (
+                "session_id=soccer user: I've been playing soccer lately to stay active."
+            ),
+        ],
+    )
+
+    result = render_count_result(
+        ledger,
+        "How many sports have I played competitively in the past?",
+        rank=1,
+    )
+
+    assert "count_answer=2" in result.lines
+    assert "count_answer_text=I played two sports competitively in the past: swimming and tennis." in result.lines
+    assert result.support_source_groups == ("swim", "tennis")
+
+
+def test_count_ledger_counts_distinct_attended_dinner_parties() -> None:
+    """Dinner-party counts should extract distinct attended party locations from cited memories."""
+    ledger = build_count_ledger(
+        "How many dinner parties have I attended in the past month?",
+        [
+            (
+                "session_id=sarah user: I attended a lovely Italian feast at Sarah's "
+                "place last week, and it inspired me to try new dishes."
+            ),
+            (
+                "session_id=alex-mike user: I've had experience with dinner parties that "
+                "are more low-key, like the ones we had at Alex's place yesterday, where "
+                "we had a potluck, and also at Mike's place, where we had a BBQ and "
+                "watched a football game together."
+            ),
+        ],
+    )
+
+    result = render_count_result(
+        ledger,
+        "How many dinner parties have I attended in the past month?",
+        rank=1,
+    )
+
+    assert "count_answer=3" in result.lines
+    assert "count_answer_text=I attended three dinner parties: Sarah's place, Alex's place, and Mike's place." in result.lines
+    assert result.support_source_groups == ("sarah", "alex-mike")
 
 
 def test_date_ledger_extracts_dates_with_session_year_and_exclusions() -> None:
@@ -1504,6 +1647,37 @@ def test_date_ledger_uses_cited_session_dates_as_event_anchors() -> None:
     ]
     assert "date_interval_days=7" in result.lines
     assert "date_interval_source_ids=answer-1,answer-2" in result.lines
+
+
+def test_date_ledger_allows_rich_how_many_days_passed_between_queries() -> None:
+    """Long event names should not make interval queries look like count queries."""
+    ledger = build_date_ledger(
+        (
+            "How many days passed between my visit to the Museum of Modern Art (MoMA) "
+            "and the 'Ancient Civilizations' exhibit at the Metropolitan Museum of Art?"
+        ),
+        [
+            (
+                "content=longmemeval_session_id=answer-1 "
+                "longmemeval_session_date=2023/01/08 (Sun) "
+                "user: I just got back from a guided tour at the Museum of Modern Art "
+                "focused on 20th-century modern art movements."
+            ),
+            (
+                "content=longmemeval_session_id=answer-2 "
+                "longmemeval_session_date=2023/01/15 (Sun) "
+                "user: I attended the Ancient Civilizations exhibit at the Metropolitan Museum of Art today."
+            ),
+        ],
+    )
+
+    result = render_date_interval_result(ledger, rank=1)
+
+    assert [(row.source_group, row.value) for row in ledger.included(kind="date")] == [
+        ("answer-1", "2023-01-08"),
+        ("answer-2", "2023-01-15"),
+    ]
+    assert "date_interval_days=7" in result.lines
 
 
 def test_date_ledger_offsets_relative_session_date_anchors() -> None:

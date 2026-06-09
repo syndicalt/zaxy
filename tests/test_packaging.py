@@ -8,16 +8,33 @@ import sys
 import tomllib
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import zaxy.external_validation as external_validation
 from zaxy.event import EventLog
 from zaxy.external_validation import validate_external_validation_report
 from zaxy.release import (
+    ACTIVATION_FIXTURE_NOW,
+    _activation_checkout_freshness_errors,
+    _activation_token_efficiency_errors,
+    _check_activation_release_fixture,
+    _check_backend_report_inputs,
+    _check_benchmark_no_regression,
     _check_beta_roadmap,
     _check_capture_happy_path,
+    _check_changelog,
     _check_coordination_competitor_claim_posture,
     _check_docs_happy_path,
+    _check_external_validation_evidence,
     _check_first_run_timing,
+    _check_json_example,
+    _check_package_version,
+    _check_purpose_evidence_policy_fixture,
+    _check_release_gate_surface_coverage,
+    _check_release_smoke_gate,
+    _check_release_workflow,
+    _check_trusted_publishing,
+    _has_token_efficiency,
     _overall_status,
     package_version,
     pyproject_version,
@@ -89,6 +106,359 @@ def test_core_install_excludes_unused_graphiti_abstraction() -> None:
 
     dependencies = pyproject["project"]["dependencies"]
     assert not any(dependency.startswith("graphiti-core") for dependency in dependencies)
+
+
+def test_release_metadata_checks_report_actionable_file_errors(tmp_path: Path) -> None:
+    """Release checks should fail with concrete remediation when required files are absent or invalid."""
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "zaxy-memory"\nversion = ""\n',
+        encoding="utf-8",
+    )
+    (tmp_path / ".github" / "workflows").mkdir(parents=True)
+    (tmp_path / ".github" / "workflows" / "publish.yml").write_text(
+        "on:\n  push:\npermissions: {}\nsteps:\n  - run: echo missing release gate\n",
+        encoding="utf-8",
+    )
+
+    version = _check_package_version(tmp_path)
+    trusted = _check_trusted_publishing(tmp_path)
+    workflow = _check_release_workflow(tmp_path)
+
+    assert version["status"] == "error"
+    assert "project.version" in version["message"]
+    assert trusted["status"] == "error"
+    assert "Trusted Publishing" in trusted["message"]
+    assert workflow["status"] == "error"
+    assert "release trigger" in workflow["message"]
+
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "zaxy-memory"\nversion = "2.0.0rc1"\n',
+        encoding="utf-8",
+    )
+    changelog = _check_changelog(tmp_path)
+    assert changelog["status"] == "error"
+    assert "CHANGELOG.md is missing" in changelog["message"]
+
+
+def test_release_json_example_check_reports_missing_failure_bad_json_and_bad_payload(
+    tmp_path: Path,
+) -> None:
+    """Example smoke checks should distinguish missing, failed, non-JSON, and malformed payloads."""
+    (tmp_path / "examples").mkdir()
+
+    missing = _check_json_example(
+        tmp_path,
+        name="demo",
+        relative_path="examples/missing.py",
+        expected_session_id="demo-session",
+        expected_kind={"memory_checkout"},
+        success_message="ok",
+    )
+    assert missing["status"] == "error"
+    assert "missing" in missing["message"]
+
+    failed_path = tmp_path / "examples" / "failed.py"
+    failed_path.write_text("import sys\nprint('boom', file=sys.stderr)\nsys.exit(3)\n", encoding="utf-8")
+    failed = _check_json_example(
+        tmp_path,
+        name="demo",
+        relative_path="examples/failed.py",
+        expected_session_id="demo-session",
+        expected_kind={"memory_checkout"},
+        success_message="ok",
+    )
+    assert failed["status"] == "error"
+    assert "failed with exit 3" in failed["message"]
+
+    bad_json_path = tmp_path / "examples" / "bad_json.py"
+    bad_json_path.write_text("print('not-json')\n", encoding="utf-8")
+    bad_json = _check_json_example(
+        tmp_path,
+        name="demo",
+        relative_path="examples/bad_json.py",
+        expected_session_id="demo-session",
+        expected_kind={"memory_checkout"},
+        success_message="ok",
+    )
+    assert bad_json["status"] == "error"
+    assert "did not print JSON" in bad_json["message"]
+
+    bad_payload_path = tmp_path / "examples" / "bad_payload.py"
+    bad_payload_path.write_text(
+        "import json\nprint(json.dumps({'session_id':'other','has_zaxy_context':False,'kind':'raw'}))\n",
+        encoding="utf-8",
+    )
+    bad_payload = _check_json_example(
+        tmp_path,
+        name="demo",
+        relative_path="examples/bad_payload.py",
+        expected_session_id="demo-session",
+        expected_kind={"memory_checkout"},
+        success_message="ok",
+    )
+    assert bad_payload["status"] == "error"
+    assert "unexpected smoke payload" in bad_payload["message"]
+
+
+def test_release_smoke_gate_lists_failing_child_checks(tmp_path: Path) -> None:
+    """Beta readiness should surface the specific release-smoke checks blocking publication."""
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "zaxy-memory"\nversion = "2.0.0rc1"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "CHANGELOG.md").write_text("# Changelog\n", encoding="utf-8")
+
+    result = _check_release_smoke_gate(tmp_path)
+
+    assert result["status"] == "error"
+    assert "changelog" in result["message"]
+    assert "trusted_publishing" in result["message"]
+    assert "release_workflow" in result["message"]
+    assert "langgraph_example" in result["message"]
+
+
+def test_backend_report_inputs_reports_unreadable_and_malformed_artifacts(
+    tmp_path: Path,
+) -> None:
+    """Backend benchmark release gates should diagnose unreproducible archived inputs."""
+    report_dir = tmp_path / "reports" / "backend-shootout"
+    report_dir.mkdir(parents=True)
+    for name in (
+        "backend-shootout.json",
+        "longmemeval-40-backend-shootout.json",
+        "longmemeval-100-backend-shootout.json",
+    ):
+        (report_dir / name).write_text("{not-json", encoding="utf-8")
+
+    unreadable = _check_backend_report_inputs(tmp_path)
+
+    assert unreadable["status"] == "error"
+    assert "backend-shootout.json is unreadable" in unreadable["message"]
+
+    (report_dir / "backend-shootout.json").write_text(
+        json.dumps(
+            {
+                "query_results": {"neo4j": "not-a-list", "pggraph": []},
+                "eventloom_path": "",
+                "queries_file": "missing-queries.json",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    malformed = _check_backend_report_inputs(tmp_path)
+
+    assert malformed["status"] == "error"
+    assert "query_results neo4j must be a diagnostics list" in malformed["message"]
+    assert "query_results pggraph has no diagnostics" in malformed["message"]
+    assert "eventloom_path is missing" in malformed["message"]
+    assert "queries_file missing-queries.json is missing" in malformed["message"]
+
+
+def test_benchmark_no_regression_requires_release_script_guardrails(
+    tmp_path: Path,
+) -> None:
+    """Release scripts must keep benchmark floors for quality, citations, tokens, and latency."""
+    missing = _check_benchmark_no_regression(tmp_path)
+    assert missing["status"] == "error"
+    assert "release-check.sh is missing" in missing["message"]
+
+    script_path = tmp_path / "scripts" / "release-check.sh"
+    script_path.parent.mkdir()
+    script_path.write_text(
+        "BACKEND_SHOOTOUT_CMD='python -m zaxy backend-shootout'\n"
+        "BACKEND_PERFORMANCE_CMD='python -m zaxy backend-performance --min-citation-coverage 1.0'\n"
+        "BACKEND_SCALE_CMD='python -m zaxy backend-scale --min-recall-at-5'\n",
+        encoding="utf-8",
+    )
+
+    incomplete = _check_benchmark_no_regression(tmp_path)
+
+    assert incomplete["status"] == "error"
+    assert "BACKEND_SHOOTOUT_CMD must include --min-answer-at-5" in incomplete["message"]
+    assert "BACKEND_PERFORMANCE_CMD must include --max-checkout-p99-ms" in incomplete["message"]
+    assert "BACKEND_SCALE_CMD must include --min-quality-per-1k-returned-tokens" in incomplete["message"]
+
+
+def test_purpose_evidence_policy_fixture_reports_non_actionable_policy_results(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Release gating should fail if purpose evidence policies stop blocking unsupported claims."""
+
+    def non_actionable_policy(**_kwargs):
+        return SimpleNamespace(
+            satisfied=True,
+            missing_requirements=[],
+            mode="noop",
+            suggested_queries=[],
+        )
+
+    monkeypatch.setattr(
+        "zaxy.evidence.evaluate_evidence_policy",
+        non_actionable_policy,
+    )
+
+    result = _check_purpose_evidence_policy_fixture(tmp_path)
+
+    assert result["status"] == "error"
+    assert "security unsupported fixture unexpectedly satisfied policy" in result["message"]
+    assert "security missing requirements [] did not include ['mitigation_or_risk_owner']" in result["message"]
+    assert "security policy mode 'noop' is not actionable" in result["message"]
+    assert "security policy did not emit suggested refresh queries" in result["message"]
+
+
+def test_release_gate_surface_coverage_requires_all_public_gate_commands(
+    tmp_path: Path,
+) -> None:
+    """Release scripts should run each public gate surface or skip it with an explicit reason."""
+    missing = _check_release_gate_surface_coverage(tmp_path)
+    assert missing["status"] == "error"
+    assert "release-check.sh is missing" in missing["message"]
+
+    script_path = tmp_path / "scripts" / "release-check.sh"
+    script_path.parent.mkdir()
+    script_path.write_text(
+        "run_gate() { :; }\n"
+        "EXAMPLES_SMOKE_CMD='SKIP:'\n"
+        "MCP_SMOKE_CMD='pytest tests/test_mcp.py'\n"
+        "LANGGRAPH_SMOKE_CMD='pytest test_langgraph_example_runs_without_langgraph_dependency'\n"
+        "COORDINATE_SMOKE_CMD='pytest test_coordinate_three_worker_example_runs'\n"
+        "BACKEND_SHOOTOUT_CMD='python scripts/check-backend-shootout.py'\n"
+        "DOCS_CMD='python scripts/build-site-docs.py --check'\n"
+        "BETA_UAT_CMD='scripts/beta-uat.sh'\n"
+        "EXTERNAL_VALIDATION_CMD='SKIP: outside validation collected after release'\n",
+        encoding="utf-8",
+    )
+
+    incomplete = _check_release_gate_surface_coverage(tmp_path)
+
+    assert incomplete["status"] == "error"
+    assert "EXAMPLES_SMOKE_CMD SKIP must include a reason" in incomplete["message"]
+    assert "MCP_SMOKE_CMD must include scripts/mcp_smoke_test.py" in incomplete["message"]
+
+
+def test_external_validation_evidence_distinguishes_optional_required_and_invalid_reports(
+    tmp_path: Path,
+) -> None:
+    """External validation gates should avoid overclaiming absent or malformed outside evidence."""
+    optional = _check_external_validation_evidence(tmp_path)
+    assert optional["status"] == "ok"
+    assert "optional" in optional["message"]
+
+    required = _check_external_validation_evidence(tmp_path, required=True)
+    assert required["status"] == "error"
+    assert "external validation is required" in required["message"]
+
+    requested = _check_external_validation_evidence(
+        tmp_path,
+        external_validation_report="reports/external-validation/custom.json",
+    )
+    assert requested["status"] == "error"
+    assert "external validation report was requested" in requested["message"]
+
+    report_path = tmp_path / "reports" / "external-validation" / "custom.json"
+    report_path.parent.mkdir(parents=True)
+    report_path.write_text("not-json", encoding="utf-8")
+    bad_json = _check_external_validation_evidence(
+        tmp_path,
+        external_validation_report=report_path,
+    )
+    assert bad_json["status"] == "error"
+    assert "unreadable or invalid JSON" in bad_json["message"]
+
+    report_path.write_text(json.dumps({"report": "missing required fields"}), encoding="utf-8")
+    invalid = _check_external_validation_evidence(
+        tmp_path,
+        external_validation_report=report_path,
+    )
+    assert invalid["status"] == "error"
+    assert "external validation report is invalid" in invalid["message"]
+
+
+def test_activation_release_fixture_requires_checkout_then_high_context_event(tmp_path: Path) -> None:
+    """Release activation fixtures should prove memory checkout before high-context work."""
+    missing = _check_activation_release_fixture(tmp_path)
+    assert missing["status"] == "error"
+    assert "no checked Eventloom JSONL" in missing["message"]
+
+    fixture = tmp_path / "reports" / "activation-release"
+    fixture.mkdir(parents=True)
+    log = EventLog(fixture / "agent.jsonl")
+    log.append(
+        "memory.checkout.completed",
+        actor="zaxy",
+        thread="agent",
+        payload={
+            "token_efficiency": {
+                "prompt_tokens": 1200,
+                "facts_per_1k_prompt_tokens": 0.5,
+            }
+        },
+        timestamp=ACTIVATION_FIXTURE_NOW.isoformat(),
+    )
+
+    no_work = _check_activation_release_fixture(tmp_path)
+    assert no_work["status"] == "error"
+    assert "no high-context event after checkout" in no_work["message"]
+
+    log.append(
+        "command.completed",
+        actor="codex",
+        thread="agent",
+        payload={"cmd": "pytest tests/test_packaging.py"},
+        timestamp=ACTIVATION_FIXTURE_NOW.isoformat(),
+    )
+
+    ok = _check_activation_release_fixture(tmp_path)
+    assert ok["status"] == "ok"
+    assert "fresh checkout" in ok["message"]
+
+
+def test_activation_release_fixture_reports_token_efficiency_and_freshness_errors(
+    tmp_path: Path,
+) -> None:
+    """Activation fixtures should enforce token budget, density, and freshness guardrails."""
+    assert _has_token_efficiency({"token_efficiency": {"prompt_tokens": 1, "facts_per_1k_prompt_tokens": 0.2}})
+    assert not _has_token_efficiency({"token_efficiency": {"prompt_tokens": True, "facts_per_1k_prompt_tokens": 0.2}})
+    assert _activation_token_efficiency_errors(
+        {"token_efficiency": {"prompt_tokens": 6000, "facts_per_1k_prompt_tokens": 0.01}}
+    ) == [
+        "prompt_tokens=6000 exceeds 5000",
+        "facts_per_1k_prompt_tokens=0.01 is below 0.1",
+    ]
+    assert _activation_checkout_freshness_errors("2026-05-20T11:30:00+00:00") == []
+    stale_errors = _activation_checkout_freshness_errors("2026-05-20T08:00:00+00:00")
+    assert stale_errors == ["checkout age 240.0 minutes exceeds 120 minutes"]
+
+    fixture = tmp_path / "reports" / "activation-release"
+    fixture.mkdir(parents=True)
+    log = EventLog(fixture / "agent.jsonl")
+    log.append(
+        "memory.checkout.completed",
+        actor="zaxy",
+        thread="agent",
+        payload={
+            "token_efficiency": {
+                "prompt_tokens": 6000,
+                "facts_per_1k_prompt_tokens": 0.01,
+            }
+        },
+        timestamp="2026-05-20T08:00:00+00:00",
+    )
+    log.append(
+        "file.edit.applied",
+        actor="codex",
+        thread="agent",
+        payload={"path": "src/zaxy/release.py"},
+        timestamp=ACTIVATION_FIXTURE_NOW.isoformat(),
+    )
+
+    result = _check_activation_release_fixture(tmp_path)
+
+    assert result["status"] == "error"
+    assert "prompt_tokens=6000 exceeds 5000" in result["message"]
+    assert "facts_per_1k_prompt_tokens=0.01 is below 0.1" in result["message"]
 
 
 def test_gitignore_keeps_backend_diagnostics_scratch_out_of_release_inputs() -> None:
@@ -1678,7 +2048,7 @@ def test_v1_schema_freeze_manifest_tracks_candidate_contracts() -> None:
 
 def test_v09_gate_audit_records_current_gate_evidence() -> None:
     """The v0.9 gate audit should separate proven gates from optional external feedback."""
-    audit = Path("docs/v09-gate-audit.md").read_text(encoding="utf-8")
+    audit = Path("docs/archive/v09-gate-audit.md").read_text(encoding="utf-8")
 
     for required in (
         "## Proven Gates",
@@ -1701,7 +2071,7 @@ def test_v09_gate_audit_records_current_gate_evidence() -> None:
 def test_v10_announcement_and_release_checklist_cover_launch_requirements() -> None:
     """v1.0 release artifacts should cover positioning, evidence, limitations, and gates."""
     announcement = Path("docs/announcements/zaxy-v1.0.md").read_text(encoding="utf-8")
-    checklist = Path("docs/release-validation-checklist.md").read_text(encoding="utf-8")
+    checklist = Path("docs/archive/release-validation-checklist.md").read_text(encoding="utf-8")
 
     for required in (
         "Coordinator Memory for Agent Teams",
@@ -1736,7 +2106,7 @@ def test_v10_announcement_and_release_checklist_cover_launch_requirements() -> N
 
 def test_v10_gate_audit_records_release_gate_evidence() -> None:
     """The v1.0 gate audit should map release gates to proof and optional evidence."""
-    audit = Path("docs/v10-gate-audit.md").read_text(encoding="utf-8")
+    audit = Path("docs/archive/v10-gate-audit.md").read_text(encoding="utf-8")
 
     for required in (
         "## Proven Local Gates",
@@ -1785,8 +2155,8 @@ def test_v10_external_validation_packet_captures_optional_evidence() -> None:
         "zaxy doctor --beta-readiness",
         "python examples/coordinate_three_worker_project.py",
         "scripts/beta-uat.sh",
-        "docs/v10-gate-audit.md",
-        "docs/release-validation-checklist.md",
+        "archive/v10-gate-audit.md",
+        "archive/release-validation-checklist.md",
         "Status: optional for the v1.0 release",
     ):
         assert required in packet
@@ -4385,8 +4755,8 @@ def test_external_validation_rejects_vague_version_reference_phrases() -> None:
 def test_external_validation_docs_reference_machine_checkable_report() -> None:
     """The v1.0 release docs should point validators at the machine-checkable report contract."""
     packet = Path("docs/external-validation.md").read_text(encoding="utf-8")
-    checklist = Path("docs/release-validation-checklist.md").read_text(encoding="utf-8")
-    audit = Path("docs/v10-gate-audit.md").read_text(encoding="utf-8")
+    checklist = Path("docs/archive/release-validation-checklist.md").read_text(encoding="utf-8")
+    audit = Path("docs/archive/v10-gate-audit.md").read_text(encoding="utf-8")
     issue = Path(".github/ISSUE_TEMPLATE/external_validation.md").read_text(encoding="utf-8")
     example = Path("docs/examples/external-validation-report.example.json").read_text(encoding="utf-8")
 
@@ -4521,7 +4891,7 @@ def test_v10_stability_commitment_covers_public_surfaces_and_data_model() -> Non
 def test_contributor_docs_and_issue_templates_cover_v09_release_inputs() -> None:
     """Contributor docs should cover code, issue, and benchmark contribution paths."""
     guide = Path("CONTRIBUTING.md").read_text(encoding="utf-8")
-    benchmark = Path("docs/benchmark-contributions.md").read_text(encoding="utf-8")
+    benchmark = Path("docs/archive/benchmark-contributions.md").read_text(encoding="utf-8")
     bug = Path(".github/ISSUE_TEMPLATE/bug_report.md").read_text(encoding="utf-8")
     feature = Path(".github/ISSUE_TEMPLATE/feature_request.md").read_text(encoding="utf-8")
     benchmark_issue = Path(".github/ISSUE_TEMPLATE/benchmark_contribution.md").read_text(encoding="utf-8")
@@ -4552,7 +4922,7 @@ def test_contributor_docs_and_issue_templates_cover_v09_release_inputs() -> None
 
 def test_v09_roadmap_records_failure_injection_evidence() -> None:
     """The v0.9 roadmap should cite the failure-injection coverage that gates hardening."""
-    roadmap = Path("docs/v1-roadmap.md").read_text(encoding="utf-8")
+    roadmap = Path("docs/archive/v1-roadmap.md").read_text(encoding="utf-8")
 
     assert "failure-injection" in roadmap
     assert "projection rebuild" in roadmap

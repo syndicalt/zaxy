@@ -173,6 +173,30 @@ def test_synthesis_packet_prefers_total_answer_for_combined_duration_query() -> 
     assert packet.answer_candidates[0]["answer"] == "5.5 weeks"
 
 
+def test_synthesis_packet_prefers_specialized_total_answer_over_generic_duration() -> None:
+    """Specialized deterministic totals should not be shadowed by generic duration fields."""
+    packet = synthesis_packet_from_items(
+        [
+            {
+                "content": "\n".join(
+                    [
+                        "zaxy_synthesis_bundle=true",
+                        "query=How many days did I take social media breaks in total?",
+                        "candidate_rank=1 candidate_type=social_media_break candidate_confidence=0.84",
+                        "candidate_support=break-1,break-2",
+                        "social_media_break_total=17 days",
+                        "social_media_break_total_answer=17 days",
+                        "duration_total_answer=19 days",
+                    ]
+                )
+            }
+        ]
+    )
+
+    assert packet.answer_candidates[0]["answer_key"] == "social_media_break_total_answer"
+    assert packet.answer_candidates[0]["answer"] == "17 days"
+
+
 def test_synthesis_packet_ignores_malformed_ledger_rows() -> None:
     """Bad rendered rows should not poison valid candidates."""
     packet = synthesis_packet_from_items([
@@ -329,6 +353,86 @@ def test_synthesis_packet_keeps_additive_rendered_answer_candidate() -> None:
             "support_source_ids": ["answer-1"],
             "excluded_source_ids": [],
         },
+    ]
+
+
+def test_synthesis_packet_does_not_promote_same_block_diagnostics_over_typed_candidate() -> None:
+    """Rendered diagnostic answers should not compete with a typed candidate block."""
+    packet = synthesis_packet_from_items(
+        [
+            {
+                "content": "\n".join(
+                    [
+                        "zaxy_synthesis_bundle=true",
+                        "query=How many months ago did I reserve the cabin?",
+                        "candidate_rank=1 candidate_type=duration candidate_confidence=0.75",
+                        "candidate_support=booking,retreat",
+                        "duration_total_answer=Five months ago",
+                        "month_interval_answer=One months",
+                    ]
+                ),
+                "synthesis_packet": {
+                    "schema_version": "synthesis_packet_v1",
+                    "answer_candidates": [
+                        {
+                            "rank": 1,
+                            "type": "duration",
+                            "confidence": 0.75,
+                            "answer_key": "duration_total_answer",
+                            "answer": "Five months ago",
+                            "support_source_ids": ["booking", "retreat"],
+                            "excluded_source_ids": [],
+                        }
+                    ],
+                    "ledger_rows": [],
+                },
+            }
+        ]
+    )
+
+    assert packet.answer_candidates == [
+        {
+            "rank": 1,
+            "type": "duration",
+            "confidence": 0.75,
+            "answer_key": "duration_total_answer",
+            "answer": "Five months ago",
+            "support_source_ids": ["booking", "retreat"],
+            "excluded_source_ids": [],
+        }
+    ]
+
+
+def test_synthesis_packet_prefers_elapsed_month_total_over_interval_diagnostic() -> None:
+    """How-many-ago fallback parsing should use aggregate elapsed totals."""
+    packet = synthesis_packet_from_items(
+        [
+            {
+                "content": "\n".join(
+                    [
+                        "zaxy_synthesis_bundle=true",
+                        "query=How many months ago did I book the Airbnb in San Francisco?",
+                        "month_values=3,2",
+                        "month_total=5 months ago",
+                        "month_total_words=Five months ago",
+                        "month_interval=1 months",
+                        "month_interval_answer=One months",
+                    ]
+                )
+            }
+        ]
+    )
+
+    assert packet.answer_candidates == [
+        {
+            "rank": 1,
+            "type": "duration",
+            "confidence": 0.0,
+            "answer_key": "month_total_words",
+            "answer": "Five months ago",
+            "support_source_ids": [],
+            "excluded_source_ids": [],
+        }
     ]
 
 

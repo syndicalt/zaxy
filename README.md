@@ -51,8 +51,45 @@ zaxy doctor --eventloom-path .eventloom
 The PyPI distribution is `zaxy-memory`; the import package and console command
 are still `zaxy`. Bare `zaxy init` sets up the local embedded graph posture,
 repo-local profile, deterministic capture config, genesis event, heartbeat, and
-MCP guidance. It does not start a background watcher unless you pass
-`--capture start`.
+MCP guidance. For Codex, the printed activation launcher starts the managed
+capture watcher when the local capture config is present; pass `--capture start`
+only when you want init itself to start the watcher before opening Codex. The
+default human output is compact and action-first; add `--verbose` when you need
+the full setup diagnostics, optional checks, fallback commands, resume guidance,
+and notes.
+For automation, `zaxy init --json` keeps the raw onboarding fields and adds
+`setup.status`, `setup.issues`, `setup.pending`, `readiness.status`,
+`readiness.reasons`, `readiness.actions`, and structured
+`readiness.action_items` for both commands and non-command review tasks. Each
+structured action carries `label`, `command`, original `source`, and `hints`
+for compact-output tips such as activation `<task>` replacement and path-stable
+command guidance. Installers can render those tips without parsing prose. It also
+includes `setup.summary`, `readiness.summary`,
+`readiness.required_action_count`, and `readiness.reason_count`, so client UIs
+can render compact status without parsing human output. It also
+separates `readiness.blocking_diagnostics` from
+`readiness.non_blocking_diagnostics` so scripts can distinguish setup
+completion, required actions, and advisory doctor warnings before relying on
+live memory.
+
+For Codex, `zaxy init --codex-mcp-install auto` is the default. It writes or
+reuses the user-level Codex MCP config when that can be done without replacing
+an existing `zaxy` server entry. If no safe config target exists, it prints the
+copyable `codex mcp add` command. If an existing `zaxy` entry differs, it asks
+you to review that config before replacing it because Codex can silently replace
+servers with the same name. Use an explicit mode when you need to force one side
+of that decision after review:
+
+```bash
+zaxy init --codex-mcp-install user
+# or: zaxy init --codex-mcp-install command
+```
+
+Both Codex paths keep the server workspace-neutral. After init, start or
+restart Codex through the printed `zaxy activate codex ... --launch` command so
+the MCP server list and Zaxy activation packet are loaded together. The printed
+command includes explicit `--eventloom-path` and `--workspace-root` values, so
+it still targets the initialized repo when copied from another shell.
 
 Run the single-agent memory example:
 

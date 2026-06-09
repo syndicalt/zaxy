@@ -190,6 +190,7 @@ def inspect_hook_status(
     eventloom_path: str | Path = ".eventloom",
     workspace_root: str | Path | None = None,
     max_checkout_stale_minutes: int = 120,
+    session_id: str | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Inspect installed hook configs and recent Eventloom lifecycle activity."""
@@ -204,6 +205,7 @@ def inspect_hook_status(
     activation = _memory_activation(
         eventloom,
         stale_after_minutes=max_checkout_stale_minutes,
+        preferred_session_id=session_id,
         now=now,
     )
     installed_any = any(client["installed"] for client in installations.values())
@@ -236,12 +238,14 @@ def inspect_memory_activation(
     *,
     eventloom_path: str | Path = ".eventloom",
     max_checkout_stale_minutes: int = 120,
+    session_id: str | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Inspect whether memory checkout is actively being used."""
     return _memory_activation(
         Path(eventloom_path),
         stale_after_minutes=max_checkout_stale_minutes,
+        preferred_session_id=session_id,
         now=now,
     )
 
@@ -628,6 +632,7 @@ def _memory_activation(
     eventloom_path: Path,
     *,
     stale_after_minutes: int,
+    preferred_session_id: str | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     latest_checkout: dict[str, Any] | None = None
@@ -663,7 +668,7 @@ def _memory_activation(
             _checkout_remediation(
                 code="missing_checkout",
                 eventloom_path=eventloom_path,
-                session_id=_activation_session_id(latest_capture, latest_reminder),
+                session_id=preferred_session_id or _activation_session_id(latest_capture, latest_reminder),
             )
         ]
         return {

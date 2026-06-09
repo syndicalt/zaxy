@@ -136,6 +136,8 @@ def classify_retrieval_intent(query: str, *, limit: int) -> RetrievalIntent:
         "airlines",
         "earliest",
         "events",
+        "graduated",
+        "graduation",
         "latest",
         "order",
         "ordered",
@@ -199,7 +201,11 @@ def classify_retrieval_intent(query: str, *, limit: int) -> RetrievalIntent:
         needs_source = True
         slots = max(slots, max(2, min(4, limit // 2)))
         reasons.append("temporal_order")
-    if tokens & {"order", "ordered", "sequence", "timeline"} and tokens & temporal_sequence_terms:
+    if (
+        tokens & {"order", "ordered", "sequence", "timeline"} and tokens & temporal_sequence_terms
+    ) or (
+        {"first", "second", "third"} <= tokens and tokens & temporal_sequence_terms
+    ):
         needs_source = True
         slots = max(slots, max(4, min(limit, 8)))
         reasons.append("temporal_sequence")

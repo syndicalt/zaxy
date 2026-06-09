@@ -1,0 +1,1954 @@
+{
+  "cases": [
+    {
+      "case_id": "state-auth-hidden-cause",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "details": "The symptom started after the morning signing-key rotation.",
+            "summary": "Mobile login outage reports cluster under incident-alpha; users see 401 responses from the auth edge."
+          },
+          "type": "observation.created"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "details": "JWKS refresher skipped rotation and served a stale signing key to auth edge.",
+            "summary": "Current accepted root cause for incident-alpha is expired-jwks-cache."
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "stale": true,
+            "summary": "Stale earlier hypothesis blamed mobile cookie parsing.",
+            "superseded_by": "state-auth-hidden-cause:2"
+          },
+          "type": "observation.created"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "distractor": true,
+            "summary": "Distractor: mobile image upload latency increased after CDN cache warming."
+          },
+          "type": "observation.created"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-auth-hidden-cause:4"
+        ],
+        "expected_terms": [
+          "expired-jwks-cache",
+          "jwks",
+          "stale"
+        ],
+        "latent_state": "expired-jwks-cache",
+        "minimal_evidence_event_ids": [
+          "state-auth-hidden-cause:2"
+        ],
+        "should_abstain": false,
+        "stale_event_ids": [
+          "state-auth-hidden-cause:3"
+        ]
+      },
+      "query": "What hidden cause explains the mobile login outage?"
+    },
+    {
+      "case_id": "state-release-constraint",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "details": "Parent rejects the packet as insufficiently grounded for public release claims.",
+            "summary": "Release handoff remains blocked after all workers submitted summaries."
+          },
+          "type": "handoff.created"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "details": "Uncited benchmark claims must not enter release handoffs or announcements.",
+            "summary": "External disclosure policy requires cited-event provenance for public claims."
+          },
+          "type": "policy.recorded"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "distractor": true,
+            "summary": "Worker beta reported a benchmark improvement without attached Eventloom refs."
+          },
+          "type": "observation.created"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "summary": "Accepted release handoff only after cited-event provenance was attached to claims."
+          },
+          "type": "decision.accepted"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-release-constraint:3"
+        ],
+        "expected_terms": [
+          "cited-event",
+          "provenance",
+          "claims"
+        ],
+        "latent_state": "cited-event-provenance-required",
+        "minimal_evidence_event_ids": [
+          "state-release-constraint:2",
+          "state-release-constraint:4"
+        ],
+        "should_abstain": false,
+        "stale_event_ids": []
+      },
+      "query": "Why is the parent still rejecting the worker packet?"
+    },
+    {
+      "case_id": "state-backend-current",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "stale": true,
+            "summary": "Old backend note: pgGraph should be evaluated for Postgres-native deployments.",
+            "superseded_by": "state-backend-current:3"
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "stale": true,
+            "summary": "Stale LatticeDB experiment has native vector search but failed representative quality gates.",
+            "superseded_by": "state-backend-current:3"
+          },
+          "type": "observation.created"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "details": "Neo4j remains quality-control backend; embedded Kuzu removes sidecar friction.",
+            "summary": "Current clean local checkout should prefer embedded Kuzu projection as default runtime path."
+          },
+          "type": "policy.recorded"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "distractor": true,
+            "summary": "Distractor: dashboard graph load time improved after route caching."
+          },
+          "type": "observation.created"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-backend-current:4"
+        ],
+        "expected_terms": [
+          "embedded",
+          "kuzu",
+          "default"
+        ],
+        "latent_state": "embedded-kuzu-default",
+        "minimal_evidence_event_ids": [
+          "state-backend-current:3"
+        ],
+        "should_abstain": false,
+        "stale_event_ids": [
+          "state-backend-current:1",
+          "state-backend-current:2"
+        ]
+      },
+      "query": "Which runtime path should a clean local checkout prefer now?"
+    },
+    {
+      "case_id": "state-version-fixture-drift",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "details": "CLI version tests still expected the old release string.",
+            "summary": "Release PR failed after pyproject version changed from 1.0.2 to 1.0.3."
+          },
+          "type": "ci.failed"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "summary": "Recurring failure pattern: hardcoded version fixtures drift during patch releases."
+          },
+          "type": "observation.created"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "summary": "Accepted fix: version tests should read package_version and pyproject_version helpers."
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "distractor": true,
+            "summary": "Distractor: GitGuardian check skipped on one unrelated run."
+          },
+          "type": "observation.created"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-version-fixture-drift:4"
+        ],
+        "expected_terms": [
+          "hardcoded",
+          "version",
+          "fixture"
+        ],
+        "latent_state": "hardcoded-version-fixture-drift",
+        "minimal_evidence_event_ids": [
+          "state-version-fixture-drift:2",
+          "state-version-fixture-drift:3"
+        ],
+        "should_abstain": false,
+        "stale_event_ids": []
+      },
+      "query": "What recurring release failure pattern explains the broken version tests?"
+    },
+    {
+      "case_id": "state-user-quality-bar",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "summary": "User said not to implement narrow fixes simply to hit a target."
+          },
+          "type": "instruction.created"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "details": "A change is acceptable only if it improves the issue class and preserves real behavior.",
+            "summary": "Current quality bar: address class-level production issues, not benchmark target hacks."
+          },
+          "type": "policy.recorded"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "distractor": true,
+            "summary": "Distractor: one latency spike was probably airplane network jitter."
+          },
+          "type": "observation.created"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "summary": "Documentation and benchmark claims should stay reproducible and evidence-backed."
+          },
+          "type": "decision.accepted"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-user-quality-bar:3"
+        ],
+        "expected_terms": [
+          "class-level",
+          "production",
+          "hacks"
+        ],
+        "latent_state": "class-level-production-fixes-only",
+        "minimal_evidence_event_ids": [
+          "state-user-quality-bar:2"
+        ],
+        "should_abstain": false,
+        "stale_event_ids": []
+      },
+      "query": "What unstated implementation constraint should guide benchmark work?"
+    },
+    {
+      "case_id": "state-coordination-metric-gap",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "summary": "LongMemEval rewards answer recall but does not score parent-child worker coordination."
+          },
+          "type": "observation.created"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "summary": "CoordinationBench was created to measure accepted-state synthesis and worker conflict handling."
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "summary": "The missing capability was an accepted-state coordination gap, not plain memory recall."
+          },
+          "type": "policy.recorded"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "distractor": true,
+            "summary": "Distractor: R@5 reached 1.000 on the LongMemEval-compatible lane."
+          },
+          "type": "observation.created"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-coordination-metric-gap:4"
+        ],
+        "expected_terms": [
+          "accepted-state",
+          "coordination",
+          "gap"
+        ],
+        "latent_state": "accepted-state-coordination-gap",
+        "minimal_evidence_event_ids": [
+          "state-coordination-metric-gap:2",
+          "state-coordination-metric-gap:3"
+        ],
+        "should_abstain": false,
+        "stale_event_ids": []
+      },
+      "query": "Why did coordinated memory need a separate benchmark instead of only LongMemEval?"
+    },
+    {
+      "case_id": "state-auth-false-accepted",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "worker",
+            "details": "Later review rejected this accepted-looking decision as unsupported by cited logs.",
+            "distractor": true,
+            "promoted": false,
+            "status": "rejected",
+            "summary": "Accepted diagnosis from worker alpha: OAuth audience mismatch caused auth failures."
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "policy",
+            "stale": true,
+            "status": "superseded",
+            "summary": "Old incident policy allowed single-worker accepted diagnoses during outage triage.",
+            "superseded_by": "state-auth-false-accepted:4"
+          },
+          "type": "policy.recorded"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "observation",
+            "details": "The failing requests use stale signing keys, not a wrong OAuth audience.",
+            "status": "current",
+            "summary": "Auth edge logs show JWKS cache refresh regression after key rotation."
+          },
+          "type": "observation.created"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "parent",
+            "details": "Responder should trust diagnoses only after cited log and rotation evidence agree.",
+            "promoted": true,
+            "status": "current",
+            "summary": "Current accepted diagnosis: jwks-cache-refresh-regression caused the auth incident."
+          },
+          "type": "decision.accepted"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-auth-false-accepted:1"
+        ],
+        "expected_terms": [
+          "jwks",
+          "cache",
+          "regression"
+        ],
+        "latent_state": "jwks-cache-refresh-regression",
+        "minimal_evidence_event_ids": [
+          "state-auth-false-accepted:3",
+          "state-auth-false-accepted:4"
+        ],
+        "should_abstain": false,
+        "stale_event_ids": [
+          "state-auth-false-accepted:2"
+        ]
+      },
+      "query": "Which accepted auth diagnosis should the incident responder trust?"
+    },
+    {
+      "case_id": "state-release-policy-supersession",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "policy",
+            "stale": true,
+            "status": "superseded",
+            "summary": "Deprecated policy: external claims can cite maintainer summaries without archived artifacts.",
+            "superseded_by": "state-release-policy-supersession:3"
+          },
+          "type": "policy.recorded"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "policy",
+            "details": "This decision was rejected during release review because it lacked artifact proof.",
+            "distractor": true,
+            "promoted": false,
+            "status": "rejected",
+            "summary": "Accepted marketing shortcut: headline claims may omit reproduction commands."
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "policy",
+            "details": "Benchmark claims must include report fingerprints, commands, and guardrails.",
+            "status": "current",
+            "summary": "Current release policy: external claims need reproducible artifacts and archived reports."
+          },
+          "type": "policy.recorded"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "parent",
+            "promoted": true,
+            "status": "current",
+            "summary": "Accepted docs fix: publish only external claims backed by reproducible benchmark artifacts."
+          },
+          "type": "decision.accepted"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-release-policy-supersession:2"
+        ],
+        "expected_terms": [
+          "external",
+          "claims",
+          "reproducible"
+        ],
+        "latent_state": "external-claims-need-reproducible-artifacts",
+        "minimal_evidence_event_ids": [
+          "state-release-policy-supersession:3",
+          "state-release-policy-supersession:4"
+        ],
+        "should_abstain": false,
+        "stale_event_ids": [
+          "state-release-policy-supersession:1"
+        ]
+      },
+      "query": "What release evidence policy is current after the docs dispute?"
+    },
+    {
+      "case_id": "state-coordinate-authority-distractor",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "summary": "Two workers submitted conflicting auth root-cause findings for the same mission."
+          },
+          "type": "observation.created"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "policy",
+            "status": "current",
+            "summary": "Parent promotion requires conflict resolved state before accepted worker findings become mission memory."
+          },
+          "type": "policy.recorded"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "worker",
+            "details": "This accepted-looking row is worker-local and conflicts with parent evidence.",
+            "distractor": true,
+            "promoted": false,
+            "status": "accepted",
+            "summary": "Accepted worker-local finding: database pool exhaustion caused the auth outage."
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "parent",
+            "details": "The parent should promote only the conflict-resolved accepted state.",
+            "promoted": true,
+            "status": "current",
+            "summary": "Parent-accepted conflict resolved state: expired JWKS cache caused the auth outage."
+          },
+          "type": "decision.accepted"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-coordinate-authority-distractor:3"
+        ],
+        "expected_terms": [
+          "parent-accepted",
+          "conflict",
+          "resolved"
+        ],
+        "latent_state": "parent-accepted-conflict-resolved-state",
+        "minimal_evidence_event_ids": [
+          "state-coordinate-authority-distractor:2",
+          "state-coordinate-authority-distractor:4"
+        ],
+        "should_abstain": false,
+        "stale_event_ids": []
+      },
+      "query": "Which coordination state should the parent promote?"
+    },
+    {
+      "case_id": "state-generated-authority-billing",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "worker",
+            "details": "Later parent review rejected this accepted-looking row as unsupported.",
+            "distractor": true,
+            "promoted": false,
+            "status": "accepted",
+            "summary": "Accepted worker-local diagnosis: payment-tokenization-timeout caused checkout failures."
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "policy",
+            "stale": true,
+            "status": "superseded",
+            "summary": "Deprecated billing policy allowed worker-local accepted diagnoses without parent promotion.",
+            "superseded_by": "state-generated-authority-billing:4"
+          },
+          "type": "policy.recorded"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "observation",
+            "status": "current",
+            "summary": "Billing logs show duplicate invoice webhooks after queue replay."
+          },
+          "type": "observation.created"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "parent",
+            "promoted": true,
+            "status": "current",
+            "summary": "Parent-accepted diagnosis: invoice-webhook-replay-lag caused checkout failures."
+          },
+          "type": "decision.accepted"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-generated-authority-billing:1"
+        ],
+        "expected_terms": [
+          "invoice",
+          "webhook",
+          "replay"
+        ],
+        "latent_state": "invoice-webhook-replay-lag",
+        "minimal_evidence_event_ids": [
+          "state-generated-authority-billing:3",
+          "state-generated-authority-billing:4"
+        ],
+        "should_abstain": false,
+        "stale_event_ids": [
+          "state-generated-authority-billing:2"
+        ]
+      },
+      "query": "Which accepted billing diagnosis should the parent trust?"
+    },
+    {
+      "case_id": "state-generated-incomplete-billing",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "stale": true,
+            "summary": "Old accepted diagnosis: payment-tokenization-timeout explained checkout failures.",
+            "superseded_by": "state-generated-incomplete-billing:4"
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "summary": "Billing logs show duplicate invoice webhooks after queue replay."
+          },
+          "type": "observation.created"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "worker",
+            "distractor": true,
+            "promoted": false,
+            "status": "accepted",
+            "summary": "Accepted-looking distractor: payment-tokenization-timeout remains plausible for checkout failures."
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "policy",
+            "status": "current",
+            "summary": "Current billing incident policy requires webhook replay evidence before promotion."
+          },
+          "type": "policy.recorded"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-generated-incomplete-billing:3"
+        ],
+        "expected_terms": [
+          "invoice",
+          "webhook",
+          "replay"
+        ],
+        "latent_state": "invoice-webhook-replay-lag",
+        "minimal_evidence_event_ids": [
+          "state-generated-incomplete-billing:2",
+          "state-generated-incomplete-billing:4"
+        ],
+        "should_abstain": false,
+        "stale_event_ids": [
+          "state-generated-incomplete-billing:1"
+        ]
+      },
+      "query": "What current billing state explains checkout failures?"
+    },
+    {
+      "case_id": "state-generated-bridge-billing",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "observation",
+            "status": "current",
+            "summary": "Billing logs show duplicate invoice webhooks after queue replay."
+          },
+          "type": "observation.created"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "worker",
+            "distractor": true,
+            "promoted": false,
+            "status": "accepted",
+            "summary": "Accepted but unrelated maintenance note: payment-tokenization-timeout was mitigated last week."
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "policy",
+            "status": "current",
+            "summary": "Current billing incident policy requires webhook replay evidence before promotion."
+          },
+          "type": "policy.recorded"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "distractor": true,
+            "summary": "Distractor symptom: checkout failures also appeared during synthetic load tests."
+          },
+          "type": "observation.created"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-generated-bridge-billing:2"
+        ],
+        "expected_terms": [
+          "invoice",
+          "webhook",
+          "replay"
+        ],
+        "latent_state": "invoice-webhook-replay-lag",
+        "minimal_evidence_event_ids": [
+          "state-generated-bridge-billing:1",
+          "state-generated-bridge-billing:3"
+        ],
+        "should_abstain": false,
+        "stale_event_ids": []
+      },
+      "query": "What latent billing state connects the symptom and the accepted policy?"
+    },
+    {
+      "case_id": "state-generated-abstain-billing",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "policy",
+            "stale": true,
+            "status": "superseded",
+            "summary": "Deprecated billing policy claimed payment-tokenization-timeout could be accepted without evidence."
+          },
+          "type": "policy.recorded"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "worker",
+            "distractor": true,
+            "promoted": false,
+            "status": "rejected",
+            "summary": "Rejected accepted-looking diagnosis: payment-tokenization-timeout caused checkout failures."
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "distractor": true,
+            "status": "unsupported",
+            "summary": "Ambiguous symptom only: checkout failures lacks cited current evidence."
+          },
+          "type": "observation.created"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-generated-abstain-billing:2",
+          "state-generated-abstain-billing:3"
+        ],
+        "expected_terms": [],
+        "latent_state": "unknown",
+        "minimal_evidence_event_ids": [],
+        "should_abstain": true,
+        "stale_event_ids": [
+          "state-generated-abstain-billing:1"
+        ]
+      },
+      "query": "What should we conclude about the current billing root cause?"
+    },
+    {
+      "case_id": "state-generated-authority-search",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "worker",
+            "details": "Later parent review rejected this accepted-looking row as unsupported.",
+            "distractor": true,
+            "promoted": false,
+            "status": "accepted",
+            "summary": "Accepted worker-local diagnosis: frontend-filter-bug caused empty search results."
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "policy",
+            "stale": true,
+            "status": "superseded",
+            "summary": "Deprecated search policy allowed worker-local accepted diagnoses without parent promotion.",
+            "superseded_by": "state-generated-authority-search:4"
+          },
+          "type": "policy.recorded"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "observation",
+            "status": "current",
+            "summary": "Search telemetry shows index alias rollover gap after nightly reindex."
+          },
+          "type": "observation.created"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "parent",
+            "promoted": true,
+            "status": "current",
+            "summary": "Parent-accepted diagnosis: index-alias-rollover-gap caused empty search results."
+          },
+          "type": "decision.accepted"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-generated-authority-search:1"
+        ],
+        "expected_terms": [
+          "index",
+          "alias",
+          "rollover"
+        ],
+        "latent_state": "index-alias-rollover-gap",
+        "minimal_evidence_event_ids": [
+          "state-generated-authority-search:3",
+          "state-generated-authority-search:4"
+        ],
+        "should_abstain": false,
+        "stale_event_ids": [
+          "state-generated-authority-search:2"
+        ]
+      },
+      "query": "Which accepted search diagnosis should the parent trust?"
+    },
+    {
+      "case_id": "state-generated-incomplete-search",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "stale": true,
+            "summary": "Old accepted diagnosis: frontend-filter-bug explained empty search results.",
+            "superseded_by": "state-generated-incomplete-search:4"
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "summary": "Search telemetry shows index alias rollover gap after nightly reindex."
+          },
+          "type": "observation.created"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "worker",
+            "distractor": true,
+            "promoted": false,
+            "status": "accepted",
+            "summary": "Accepted-looking distractor: frontend-filter-bug remains plausible for empty search results."
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "policy",
+            "status": "current",
+            "summary": "Current search policy promotes only alias rollover evidence with reindex timestamps."
+          },
+          "type": "policy.recorded"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-generated-incomplete-search:3"
+        ],
+        "expected_terms": [
+          "index",
+          "alias",
+          "rollover"
+        ],
+        "latent_state": "index-alias-rollover-gap",
+        "minimal_evidence_event_ids": [
+          "state-generated-incomplete-search:2",
+          "state-generated-incomplete-search:4"
+        ],
+        "should_abstain": false,
+        "stale_event_ids": [
+          "state-generated-incomplete-search:1"
+        ]
+      },
+      "query": "What current search state explains empty search results?"
+    },
+    {
+      "case_id": "state-generated-bridge-search",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "observation",
+            "status": "current",
+            "summary": "Search telemetry shows index alias rollover gap after nightly reindex."
+          },
+          "type": "observation.created"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "worker",
+            "distractor": true,
+            "promoted": false,
+            "status": "accepted",
+            "summary": "Accepted but unrelated maintenance note: frontend-filter-bug was mitigated last week."
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "policy",
+            "status": "current",
+            "summary": "Current search policy promotes only alias rollover evidence with reindex timestamps."
+          },
+          "type": "policy.recorded"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "distractor": true,
+            "summary": "Distractor symptom: empty search results also appeared during synthetic load tests."
+          },
+          "type": "observation.created"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-generated-bridge-search:2"
+        ],
+        "expected_terms": [
+          "index",
+          "alias",
+          "rollover"
+        ],
+        "latent_state": "index-alias-rollover-gap",
+        "minimal_evidence_event_ids": [
+          "state-generated-bridge-search:1",
+          "state-generated-bridge-search:3"
+        ],
+        "should_abstain": false,
+        "stale_event_ids": []
+      },
+      "query": "What latent search state connects the symptom and the accepted policy?"
+    },
+    {
+      "case_id": "state-generated-abstain-search",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "policy",
+            "stale": true,
+            "status": "superseded",
+            "summary": "Deprecated search policy claimed frontend-filter-bug could be accepted without evidence."
+          },
+          "type": "policy.recorded"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "worker",
+            "distractor": true,
+            "promoted": false,
+            "status": "rejected",
+            "summary": "Rejected accepted-looking diagnosis: frontend-filter-bug caused empty search results."
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "distractor": true,
+            "status": "unsupported",
+            "summary": "Ambiguous symptom only: empty search results lacks cited current evidence."
+          },
+          "type": "observation.created"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-generated-abstain-search:2",
+          "state-generated-abstain-search:3"
+        ],
+        "expected_terms": [],
+        "latent_state": "unknown",
+        "minimal_evidence_event_ids": [],
+        "should_abstain": true,
+        "stale_event_ids": [
+          "state-generated-abstain-search:1"
+        ]
+      },
+      "query": "What should we conclude about the current search root cause?"
+    },
+    {
+      "case_id": "state-generated-authority-deploy",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "worker",
+            "details": "Later parent review rejected this accepted-looking row as unsupported.",
+            "distractor": true,
+            "promoted": false,
+            "status": "accepted",
+            "summary": "Accepted worker-local diagnosis: container-healthcheck-timeout caused canary rollback."
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "policy",
+            "stale": true,
+            "status": "superseded",
+            "summary": "Deprecated deploy policy allowed worker-local accepted diagnoses without parent promotion.",
+            "superseded_by": "state-generated-authority-deploy:4"
+          },
+          "type": "policy.recorded"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "observation",
+            "status": "current",
+            "summary": "Deploy trace shows feature flag scope leak across canary and control cohorts."
+          },
+          "type": "observation.created"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "parent",
+            "promoted": true,
+            "status": "current",
+            "summary": "Parent-accepted diagnosis: feature-flag-scope-leak caused canary rollback."
+          },
+          "type": "decision.accepted"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-generated-authority-deploy:1"
+        ],
+        "expected_terms": [
+          "feature",
+          "flag",
+          "scope"
+        ],
+        "latent_state": "feature-flag-scope-leak",
+        "minimal_evidence_event_ids": [
+          "state-generated-authority-deploy:3",
+          "state-generated-authority-deploy:4"
+        ],
+        "should_abstain": false,
+        "stale_event_ids": [
+          "state-generated-authority-deploy:2"
+        ]
+      },
+      "query": "Which accepted deploy diagnosis should the parent trust?"
+    },
+    {
+      "case_id": "state-generated-incomplete-deploy",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "stale": true,
+            "summary": "Old accepted diagnosis: container-healthcheck-timeout explained canary rollback.",
+            "superseded_by": "state-generated-incomplete-deploy:4"
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "summary": "Deploy trace shows feature flag scope leak across canary and control cohorts."
+          },
+          "type": "observation.created"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "worker",
+            "distractor": true,
+            "promoted": false,
+            "status": "accepted",
+            "summary": "Accepted-looking distractor: container-healthcheck-timeout remains plausible for canary rollback."
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "policy",
+            "status": "current",
+            "summary": "Current deploy policy requires flag-scope evidence before accepting canary diagnoses."
+          },
+          "type": "policy.recorded"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-generated-incomplete-deploy:3"
+        ],
+        "expected_terms": [
+          "feature",
+          "flag",
+          "scope"
+        ],
+        "latent_state": "feature-flag-scope-leak",
+        "minimal_evidence_event_ids": [
+          "state-generated-incomplete-deploy:2",
+          "state-generated-incomplete-deploy:4"
+        ],
+        "should_abstain": false,
+        "stale_event_ids": [
+          "state-generated-incomplete-deploy:1"
+        ]
+      },
+      "query": "What current deploy state explains canary rollback?"
+    },
+    {
+      "case_id": "state-generated-bridge-deploy",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "observation",
+            "status": "current",
+            "summary": "Deploy trace shows feature flag scope leak across canary and control cohorts."
+          },
+          "type": "observation.created"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "worker",
+            "distractor": true,
+            "promoted": false,
+            "status": "accepted",
+            "summary": "Accepted but unrelated maintenance note: container-healthcheck-timeout was mitigated last week."
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "policy",
+            "status": "current",
+            "summary": "Current deploy policy requires flag-scope evidence before accepting canary diagnoses."
+          },
+          "type": "policy.recorded"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "distractor": true,
+            "summary": "Distractor symptom: canary rollback also appeared during synthetic load tests."
+          },
+          "type": "observation.created"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-generated-bridge-deploy:2"
+        ],
+        "expected_terms": [
+          "feature",
+          "flag",
+          "scope"
+        ],
+        "latent_state": "feature-flag-scope-leak",
+        "minimal_evidence_event_ids": [
+          "state-generated-bridge-deploy:1",
+          "state-generated-bridge-deploy:3"
+        ],
+        "should_abstain": false,
+        "stale_event_ids": []
+      },
+      "query": "What latent deploy state connects the symptom and the accepted policy?"
+    },
+    {
+      "case_id": "state-generated-abstain-deploy",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "policy",
+            "stale": true,
+            "status": "superseded",
+            "summary": "Deprecated deploy policy claimed container-healthcheck-timeout could be accepted without evidence."
+          },
+          "type": "policy.recorded"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "worker",
+            "distractor": true,
+            "promoted": false,
+            "status": "rejected",
+            "summary": "Rejected accepted-looking diagnosis: container-healthcheck-timeout caused canary rollback."
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "distractor": true,
+            "status": "unsupported",
+            "summary": "Ambiguous symptom only: canary rollback lacks cited current evidence."
+          },
+          "type": "observation.created"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-generated-abstain-deploy:2",
+          "state-generated-abstain-deploy:3"
+        ],
+        "expected_terms": [],
+        "latent_state": "unknown",
+        "minimal_evidence_event_ids": [],
+        "should_abstain": true,
+        "stale_event_ids": [
+          "state-generated-abstain-deploy:1"
+        ]
+      },
+      "query": "What should we conclude about the current deploy root cause?"
+    },
+    {
+      "case_id": "state-generated-authority-docs",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "worker",
+            "details": "Later parent review rejected this accepted-looking row as unsupported.",
+            "distractor": true,
+            "promoted": false,
+            "status": "accepted",
+            "summary": "Accepted worker-local diagnosis: markdown-render-cache caused release note dispute."
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "policy",
+            "stale": true,
+            "status": "superseded",
+            "summary": "Deprecated docs policy allowed worker-local accepted diagnoses without parent promotion.",
+            "superseded_by": "state-generated-authority-docs:4"
+          },
+          "type": "policy.recorded"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "observation",
+            "status": "current",
+            "summary": "Docs audit found artifact fingerprint mismatch between report JSON and release note."
+          },
+          "type": "observation.created"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "parent",
+            "promoted": true,
+            "status": "current",
+            "summary": "Parent-accepted diagnosis: artifact-fingerprint-mismatch caused release note dispute."
+          },
+          "type": "decision.accepted"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-generated-authority-docs:1"
+        ],
+        "expected_terms": [
+          "artifact",
+          "fingerprint",
+          "mismatch"
+        ],
+        "latent_state": "artifact-fingerprint-mismatch",
+        "minimal_evidence_event_ids": [
+          "state-generated-authority-docs:3",
+          "state-generated-authority-docs:4"
+        ],
+        "should_abstain": false,
+        "stale_event_ids": [
+          "state-generated-authority-docs:2"
+        ]
+      },
+      "query": "Which accepted docs diagnosis should the parent trust?"
+    },
+    {
+      "case_id": "state-generated-incomplete-docs",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "stale": true,
+            "summary": "Old accepted diagnosis: markdown-render-cache explained release note dispute.",
+            "superseded_by": "state-generated-incomplete-docs:4"
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "summary": "Docs audit found artifact fingerprint mismatch between report JSON and release note."
+          },
+          "type": "observation.created"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "worker",
+            "distractor": true,
+            "promoted": false,
+            "status": "accepted",
+            "summary": "Accepted-looking distractor: markdown-render-cache remains plausible for release note dispute."
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "policy",
+            "status": "current",
+            "summary": "Current docs policy requires matching artifact fingerprints before public claims."
+          },
+          "type": "policy.recorded"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-generated-incomplete-docs:3"
+        ],
+        "expected_terms": [
+          "artifact",
+          "fingerprint",
+          "mismatch"
+        ],
+        "latent_state": "artifact-fingerprint-mismatch",
+        "minimal_evidence_event_ids": [
+          "state-generated-incomplete-docs:2",
+          "state-generated-incomplete-docs:4"
+        ],
+        "should_abstain": false,
+        "stale_event_ids": [
+          "state-generated-incomplete-docs:1"
+        ]
+      },
+      "query": "What current docs state explains release note dispute?"
+    },
+    {
+      "case_id": "state-generated-bridge-docs",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "observation",
+            "status": "current",
+            "summary": "Docs audit found artifact fingerprint mismatch between report JSON and release note."
+          },
+          "type": "observation.created"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "worker",
+            "distractor": true,
+            "promoted": false,
+            "status": "accepted",
+            "summary": "Accepted but unrelated maintenance note: markdown-render-cache was mitigated last week."
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "policy",
+            "status": "current",
+            "summary": "Current docs policy requires matching artifact fingerprints before public claims."
+          },
+          "type": "policy.recorded"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "distractor": true,
+            "summary": "Distractor symptom: release note dispute also appeared during synthetic load tests."
+          },
+          "type": "observation.created"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-generated-bridge-docs:2"
+        ],
+        "expected_terms": [
+          "artifact",
+          "fingerprint",
+          "mismatch"
+        ],
+        "latent_state": "artifact-fingerprint-mismatch",
+        "minimal_evidence_event_ids": [
+          "state-generated-bridge-docs:1",
+          "state-generated-bridge-docs:3"
+        ],
+        "should_abstain": false,
+        "stale_event_ids": []
+      },
+      "query": "What latent docs state connects the symptom and the accepted policy?"
+    },
+    {
+      "case_id": "state-generated-abstain-docs",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "policy",
+            "stale": true,
+            "status": "superseded",
+            "summary": "Deprecated docs policy claimed markdown-render-cache could be accepted without evidence."
+          },
+          "type": "policy.recorded"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "worker",
+            "distractor": true,
+            "promoted": false,
+            "status": "rejected",
+            "summary": "Rejected accepted-looking diagnosis: markdown-render-cache caused release note dispute."
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "distractor": true,
+            "status": "unsupported",
+            "summary": "Ambiguous symptom only: release note dispute lacks cited current evidence."
+          },
+          "type": "observation.created"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-generated-abstain-docs:2",
+          "state-generated-abstain-docs:3"
+        ],
+        "expected_terms": [],
+        "latent_state": "unknown",
+        "minimal_evidence_event_ids": [],
+        "should_abstain": true,
+        "stale_event_ids": [
+          "state-generated-abstain-docs:1"
+        ]
+      },
+      "query": "What should we conclude about the current docs root cause?"
+    },
+    {
+      "case_id": "state-generated-authority-routing",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "worker",
+            "details": "Later parent review rejected this accepted-looking row as unsupported.",
+            "distractor": true,
+            "promoted": false,
+            "status": "accepted",
+            "summary": "Accepted worker-local diagnosis: dns-cache-expiry caused regional API errors."
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "policy",
+            "stale": true,
+            "status": "superseded",
+            "summary": "Deprecated routing policy allowed worker-local accepted diagnoses without parent promotion.",
+            "superseded_by": "state-generated-authority-routing:4"
+          },
+          "type": "policy.recorded"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "observation",
+            "status": "current",
+            "summary": "Routing spans show tenant shard route drift after config fanout."
+          },
+          "type": "observation.created"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "parent",
+            "promoted": true,
+            "status": "current",
+            "summary": "Parent-accepted diagnosis: tenant-shard-route-drift caused regional API errors."
+          },
+          "type": "decision.accepted"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-generated-authority-routing:1"
+        ],
+        "expected_terms": [
+          "tenant",
+          "shard",
+          "route"
+        ],
+        "latent_state": "tenant-shard-route-drift",
+        "minimal_evidence_event_ids": [
+          "state-generated-authority-routing:3",
+          "state-generated-authority-routing:4"
+        ],
+        "should_abstain": false,
+        "stale_event_ids": [
+          "state-generated-authority-routing:2"
+        ]
+      },
+      "query": "Which accepted routing diagnosis should the parent trust?"
+    },
+    {
+      "case_id": "state-generated-incomplete-routing",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "stale": true,
+            "summary": "Old accepted diagnosis: dns-cache-expiry explained regional API errors.",
+            "superseded_by": "state-generated-incomplete-routing:4"
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "summary": "Routing spans show tenant shard route drift after config fanout."
+          },
+          "type": "observation.created"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "worker",
+            "distractor": true,
+            "promoted": false,
+            "status": "accepted",
+            "summary": "Accepted-looking distractor: dns-cache-expiry remains plausible for regional API errors."
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "policy",
+            "status": "current",
+            "summary": "Current routing policy promotes only shard-route evidence with tenant scope."
+          },
+          "type": "policy.recorded"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-generated-incomplete-routing:3"
+        ],
+        "expected_terms": [
+          "tenant",
+          "shard",
+          "route"
+        ],
+        "latent_state": "tenant-shard-route-drift",
+        "minimal_evidence_event_ids": [
+          "state-generated-incomplete-routing:2",
+          "state-generated-incomplete-routing:4"
+        ],
+        "should_abstain": false,
+        "stale_event_ids": [
+          "state-generated-incomplete-routing:1"
+        ]
+      },
+      "query": "What current routing state explains regional API errors?"
+    },
+    {
+      "case_id": "state-generated-bridge-routing",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "observation",
+            "status": "current",
+            "summary": "Routing spans show tenant shard route drift after config fanout."
+          },
+          "type": "observation.created"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "worker",
+            "distractor": true,
+            "promoted": false,
+            "status": "accepted",
+            "summary": "Accepted but unrelated maintenance note: dns-cache-expiry was mitigated last week."
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "policy",
+            "status": "current",
+            "summary": "Current routing policy promotes only shard-route evidence with tenant scope."
+          },
+          "type": "policy.recorded"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "distractor": true,
+            "summary": "Distractor symptom: regional API errors also appeared during synthetic load tests."
+          },
+          "type": "observation.created"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-generated-bridge-routing:2"
+        ],
+        "expected_terms": [
+          "tenant",
+          "shard",
+          "route"
+        ],
+        "latent_state": "tenant-shard-route-drift",
+        "minimal_evidence_event_ids": [
+          "state-generated-bridge-routing:1",
+          "state-generated-bridge-routing:3"
+        ],
+        "should_abstain": false,
+        "stale_event_ids": []
+      },
+      "query": "What latent routing state connects the symptom and the accepted policy?"
+    },
+    {
+      "case_id": "state-generated-abstain-routing",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "policy",
+            "stale": true,
+            "status": "superseded",
+            "summary": "Deprecated routing policy claimed dns-cache-expiry could be accepted without evidence."
+          },
+          "type": "policy.recorded"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "worker",
+            "distractor": true,
+            "promoted": false,
+            "status": "rejected",
+            "summary": "Rejected accepted-looking diagnosis: dns-cache-expiry caused regional API errors."
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "distractor": true,
+            "status": "unsupported",
+            "summary": "Ambiguous symptom only: regional API errors lacks cited current evidence."
+          },
+          "type": "observation.created"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-generated-abstain-routing:2",
+          "state-generated-abstain-routing:3"
+        ],
+        "expected_terms": [],
+        "latent_state": "unknown",
+        "minimal_evidence_event_ids": [],
+        "should_abstain": true,
+        "stale_event_ids": [
+          "state-generated-abstain-routing:1"
+        ]
+      },
+      "query": "What should we conclude about the current routing root cause?"
+    },
+    {
+      "case_id": "state-generated-authority-memory",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "worker",
+            "details": "Later parent review rejected this accepted-looking row as unsupported.",
+            "distractor": true,
+            "promoted": false,
+            "status": "accepted",
+            "summary": "Accepted worker-local diagnosis: embedding-cache-miss caused stale checkout answer."
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "policy",
+            "stale": true,
+            "status": "superseded",
+            "summary": "Deprecated memory policy allowed worker-local accepted diagnoses without parent promotion.",
+            "superseded_by": "state-generated-authority-memory:4"
+          },
+          "type": "policy.recorded"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "observation",
+            "status": "current",
+            "summary": "Memory status shows superseded projection row remained eligible after refresh."
+          },
+          "type": "observation.created"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "parent",
+            "promoted": true,
+            "status": "current",
+            "summary": "Parent-accepted diagnosis: superseded-projection-row caused stale checkout answer."
+          },
+          "type": "decision.accepted"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-generated-authority-memory:1"
+        ],
+        "expected_terms": [
+          "superseded",
+          "projection",
+          "row"
+        ],
+        "latent_state": "superseded-projection-row",
+        "minimal_evidence_event_ids": [
+          "state-generated-authority-memory:3",
+          "state-generated-authority-memory:4"
+        ],
+        "should_abstain": false,
+        "stale_event_ids": [
+          "state-generated-authority-memory:2"
+        ]
+      },
+      "query": "Which accepted memory diagnosis should the parent trust?"
+    },
+    {
+      "case_id": "state-generated-incomplete-memory",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "stale": true,
+            "summary": "Old accepted diagnosis: embedding-cache-miss explained stale checkout answer.",
+            "superseded_by": "state-generated-incomplete-memory:4"
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "summary": "Memory status shows superseded projection row remained eligible after refresh."
+          },
+          "type": "observation.created"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "worker",
+            "distractor": true,
+            "promoted": false,
+            "status": "accepted",
+            "summary": "Accepted-looking distractor: embedding-cache-miss remains plausible for stale checkout answer."
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "policy",
+            "status": "current",
+            "summary": "Current memory policy requires stale projection retirement before checkout reuse."
+          },
+          "type": "policy.recorded"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-generated-incomplete-memory:3"
+        ],
+        "expected_terms": [
+          "superseded",
+          "projection",
+          "row"
+        ],
+        "latent_state": "superseded-projection-row",
+        "minimal_evidence_event_ids": [
+          "state-generated-incomplete-memory:2",
+          "state-generated-incomplete-memory:4"
+        ],
+        "should_abstain": false,
+        "stale_event_ids": [
+          "state-generated-incomplete-memory:1"
+        ]
+      },
+      "query": "What current memory state explains stale checkout answer?"
+    },
+    {
+      "case_id": "state-generated-bridge-memory",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "observation",
+            "status": "current",
+            "summary": "Memory status shows superseded projection row remained eligible after refresh."
+          },
+          "type": "observation.created"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "worker",
+            "distractor": true,
+            "promoted": false,
+            "status": "accepted",
+            "summary": "Accepted but unrelated maintenance note: embedding-cache-miss was mitigated last week."
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "policy",
+            "status": "current",
+            "summary": "Current memory policy requires stale projection retirement before checkout reuse."
+          },
+          "type": "policy.recorded"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "distractor": true,
+            "summary": "Distractor symptom: stale checkout answer also appeared during synthetic load tests."
+          },
+          "type": "observation.created"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-generated-bridge-memory:2"
+        ],
+        "expected_terms": [
+          "superseded",
+          "projection",
+          "row"
+        ],
+        "latent_state": "superseded-projection-row",
+        "minimal_evidence_event_ids": [
+          "state-generated-bridge-memory:1",
+          "state-generated-bridge-memory:3"
+        ],
+        "should_abstain": false,
+        "stale_event_ids": []
+      },
+      "query": "What latent memory state connects the symptom and the accepted policy?"
+    },
+    {
+      "case_id": "state-generated-abstain-memory",
+      "events": [
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "policy",
+            "stale": true,
+            "status": "superseded",
+            "summary": "Deprecated memory policy claimed embedding-cache-miss could be accepted without evidence."
+          },
+          "type": "policy.recorded"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "authority_scope": "worker",
+            "distractor": true,
+            "promoted": false,
+            "status": "rejected",
+            "summary": "Rejected accepted-looking diagnosis: embedding-cache-miss caused stale checkout answer."
+          },
+          "type": "decision.accepted"
+        },
+        {
+          "actor": "benchmark",
+          "payload": {
+            "distractor": true,
+            "status": "unsupported",
+            "summary": "Ambiguous symptom only: stale checkout answer lacks cited current evidence."
+          },
+          "type": "observation.created"
+        }
+      ],
+      "gold": {
+        "distractor_event_ids": [
+          "state-generated-abstain-memory:2",
+          "state-generated-abstain-memory:3"
+        ],
+        "expected_terms": [],
+        "latent_state": "unknown",
+        "minimal_evidence_event_ids": [],
+        "should_abstain": true,
+        "stale_event_ids": [
+          "state-generated-abstain-memory:1"
+        ]
+      },
+      "query": "What should we conclude about the current memory root cause?"
+    }
+  ],
+  "fingerprint": "916201f70da9d058aee80a31f8cf59d92dad59f5fd645f3dfbd3a1b23e7dddad",
+  "version": "state-recovery-v0"
+}

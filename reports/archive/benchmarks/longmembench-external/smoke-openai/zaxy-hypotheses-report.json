@@ -1,0 +1,27 @@
+{
+  "answer_mode": "openai-compatible",
+  "dataset_path": ".cache/zaxy/benchmarks/LongMemEval/data/longmemeval_oracle.json",
+  "dataset_sha256": "821a2034d219ab45846873dd14c14f12cfe7776e73527a483f9dac095d38620c",
+  "embedding_provider": "hash:1536",
+  "generated_at": "2026-06-07T03:39:31.518817Z",
+  "hypotheses": [
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 25,
+      "hypothesis": "The first issue you had with your new car after its first service was with the GPS system not functioning correctly.",
+      "question_id": "gpt4_2655b836"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_2487a7cb"
+    }
+  ],
+  "limit": 10,
+  "model": "gpt-4o-mini",
+  "output_path": "reports/benchmarks/longmembench-external/smoke-openai/zaxy-hypotheses.jsonl",
+  "projection_backend": "embedded",
+  "question_count": 2,
+  "schema_version": "zaxy.longmembench-hypotheses.v1"
+}

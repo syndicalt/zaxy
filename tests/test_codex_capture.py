@@ -6,6 +6,8 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from zaxy.codex_capture import (
     _git_status_operation,
     _parse_git_status_line,
@@ -213,6 +215,48 @@ def test_write_codex_capture_config_records_local_observer_settings(tmp_path: Pa
         "source": "codex-local",
         "workspace": str(tmp_path),
     }
+
+
+def test_write_codex_capture_config_is_idempotent_for_same_generated_config(tmp_path: Path) -> None:
+    """Repeated init should tolerate the same generated local Codex capture config."""
+    first = write_codex_capture_config(
+        workspace=tmp_path,
+        eventloom_path=tmp_path / ".eventloom",
+        session_id="repo-default",
+        codex_home=tmp_path / "codex-home",
+        force=False,
+    )
+
+    second = write_codex_capture_config(
+        workspace=tmp_path,
+        eventloom_path=tmp_path / ".eventloom",
+        session_id="repo-default",
+        codex_home=tmp_path / "codex-home",
+        force=False,
+    )
+
+    assert second == first
+
+
+def test_write_codex_capture_config_refuses_different_existing_config(tmp_path: Path) -> None:
+    """Idempotency should not silently replace a user-modified capture config."""
+    path = write_codex_capture_config(
+        workspace=tmp_path,
+        eventloom_path=tmp_path / ".eventloom",
+        session_id="repo-default",
+        codex_home=tmp_path / "codex-home",
+        force=False,
+    )
+    path.write_text('{"client": "codex", "capture": "custom"}\n', encoding="utf-8")
+
+    with pytest.raises(FileExistsError):
+        write_codex_capture_config(
+            workspace=tmp_path,
+            eventloom_path=tmp_path / ".eventloom",
+            session_id="repo-default",
+            codex_home=tmp_path / "codex-home",
+            force=False,
+        )
 
 
 def test_capture_codex_sessions_records_git_file_edits(tmp_path: Path) -> None:

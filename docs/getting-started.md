@@ -60,7 +60,29 @@ Expected local artifacts:
 - `.eventloom/`: append-only Eventloom JSONL logs, one file per session.
 - `.env.local`: local embedding, reranker, and embedded graph defaults.
 - `.codex/zaxy-capture.json`: deterministic local Codex capture config.
-- A printed `codex mcp add` command: MCP install guidance for Codex.
+- Either a user-level Codex MCP config merge, a printed `codex mcp add`
+  command when no safe config target exists, or an explicit review prompt when
+  an existing `zaxy` Codex entry would be replaced.
+
+For Codex, `zaxy init --codex-mcp-install auto` is the default. It writes or
+reuses `~/.codex/config.toml` when the merge is non-destructive, including when
+an existing `mcp_servers.zaxy` entry already matches the workspace-neutral
+server Zaxy would install. If the existing entry is different, auto mode falls
+back to a review prompt instead of handing you a command that can silently
+replace it. If no safe config target exists, auto mode prints the copyable
+`codex mcp add` command. Use an explicit mode when you want to force the
+decision after review:
+
+```bash
+zaxy init --codex-mcp-install user
+# or: zaxy init --codex-mcp-install command
+```
+
+Both paths use the same workspace-neutral server definition. After init, start
+or restart Codex through the printed `zaxy activate codex ... --launch` command
+so the MCP server list and Zaxy activation packet load together. The printed
+command includes explicit `--eventloom-path` and `--workspace-root` values, so
+it still targets the initialized repo when copied from another shell.
 
 The first smoke-test command should show recent genesis or heartbeat events.
 The bootstrap command should print the model-facing Memory Bootstrap packet for
@@ -70,6 +92,35 @@ MCP config, hook, capture, or graph posture explicit before you start relying on
 the memory layer. The same local data can be inspected later with
 `zaxy memory status --eventloom-path .eventloom` and
 `zaxy memory diff --eventloom-path .eventloom --session-id my-project-default --from-seq 1 --to-seq 10`.
+
+`zaxy init` prints compact human output by default so the required actions are
+easy to scan. The compact header includes a `Readiness:` line, so a successful
+setup that still needs MCP install, config review, or activation work does not
+look ready by accident. Use `zaxy init --verbose` when you need full setup
+diagnostics, optional checks, fallback commands, resume guidance, and notes for
+support or troubleshooting.
+For installer scripts and client UIs, `zaxy init --json` preserves the raw
+onboarding payload and adds `setup.status`, `setup.issues`, `readiness.status`,
+`setup.pending`, `readiness.reasons`, `readiness.actions`, and structured
+`readiness.action_items`. It also includes `setup.summary`,
+`readiness.summary`, `readiness.required_action_count`, and
+`readiness.reason_count` so installers can render compact status without
+parsing the human output. Treat `readiness.status = "ready"` as the point where
+the initialized memory path has no remaining required actions; `setup.status`
+can still describe whether file/config writes completed.
+`readiness.action_items` carries split `label`, `command`, source text, and
+`hints` so installer UIs can render copy buttons, non-command review tasks, and
+compact-output tips without parsing human prose. Activation actions use those
+hints to explain `<task>` replacement and why explicit Eventloom/workspace paths
+make the launcher safe to run from any shell.
+`readiness.blocking_diagnostics` and `readiness.non_blocking_diagnostics` split
+doctor warnings that block first-run readiness from advisory checks that remain
+visible for follow-up.
+Configured-but-idle Codex capture is advisory when the activation launcher will
+start it; inspect `readiness.capture` or `readiness.non_blocking_diagnostics`
+for that state instead of treating it as a required readiness action.
+Rendered-but-not-yet-applied config, such as a copyable MCP install command,
+appears in `setup.pending` rather than `setup.issues`.
 
 For Claude Code, swap the init command:
 
@@ -137,7 +188,11 @@ use `zaxy status` when you want a live graph connectivity test.
 Before meaningful Codex work, emit the session-start activation packet:
 
 ```bash
-zaxy activate codex --session-id my-project-default --current-task "ship the next change"
+zaxy activate codex \
+  --eventloom-path .eventloom \
+  --session-id my-project-default \
+  --current-task "ship the next change" \
+  --workspace-root .
 ```
 
 `activate codex` prints a prompt-ready Memory Bootstrap packet, records that
@@ -166,7 +221,12 @@ loads the cited working state before real work begins.
 To start Codex with that activation packet as the initial prompt:
 
 ```bash
-zaxy activate codex --session-id my-project-default --current-task "ship the next change" --launch
+zaxy activate codex \
+  --eventloom-path .eventloom \
+  --session-id my-project-default \
+  --current-task "ship the next change" \
+  --workspace-root . \
+  --launch
 ```
 
 Use `--dry-run` to inspect the exact `codex --cd ... <prompt>` command without
@@ -182,10 +242,13 @@ For a single first-run flow, use `zaxy init`. The happy path is deterministic
 capture: local profile writing, MCP config rendering, observer hook config,
 workspace genesis, hook heartbeat, doctor, and hook status. It does not proxy
 model traffic and does not require a provider API key.
-For Codex onboarding, the printed next steps include the MCP install command,
-the `zaxy activate codex --launch` session-start path, the `hook-event resume`
-boundary command, the CLI checkout fallback for missing MCP tools, and the
-managed capture start command.
+For Codex onboarding, the printed next steps include either the MCP install
+command or the installed Codex config path, the path-stable
+`zaxy activate codex ... --launch` session-start path, the `hook-event resume`
+boundary command, the CLI checkout fallback for missing MCP tools, and optional
+diagnostics. The activation launcher starts managed deterministic capture when
+`.codex/zaxy-capture.json` is configured, so the normal first run has one
+startup command instead of a separate capture command.
 By default, `zaxy init` also installs a bounded `Zaxy Memory Activation` block in
 `AGENTS.md`. The block is marker-managed, so rerunning init replaces only the
 Zaxy section while preserving unrelated repo instructions. Pass
@@ -218,10 +281,21 @@ zaxy init
 ```
 
 The bare local path expands to the no-sidecar embedded Codex onboarding preset:
-it writes `.eventloom/`, `.env.local`, `.codex/zaxy-capture.json`, renders the
-Codex MCP install command, checks the repo-local embedded projection posture,
-and records the first workspace heartbeat. It installs deterministic capture
-configuration safely; start the watcher when you want live local capture:
+it writes `.eventloom/`, `.env.local`, `.codex/zaxy-capture.json`, resolves
+Codex MCP setup through `zaxy init --codex-mcp-install auto`, checks the
+repo-local embedded projection posture, and records the first workspace
+heartbeat. It installs deterministic capture configuration safely; start the
+watcher when you want live local capture.
+
+Use an explicit install mode only when you want to override the auto decision:
+
+```bash
+zaxy init --codex-mcp-install user
+# or: zaxy init --codex-mcp-install command
+```
+
+`user` writes or verifies the user-level Codex MCP config. `command` always
+prints the `codex mcp add` command and leaves Codex config untouched.
 
 ```bash
 zaxy capture start --workspace .
@@ -242,15 +316,19 @@ embedded projection is created lazily under `.eventloom/projections/`, so this
 path needs no external graph service. `--preset local-embedded-codex` remains
 available as an explicit spelling of the same local path.
 
-`local-codex` renders Codex MCP install guidance, writes the local profile, and
-writes `.codex/zaxy-capture.json` for deterministic local capture. It does not
-generate `.codex/hooks.json`: Codex parses that file as JSON, and Zaxy does not
-assume a native Codex hook schema unless your Codex version documents one.
-Start `zaxy capture start --workspace .` from the printed next steps to run the
-managed watcher that imports local Codex session JSONL into Eventloom. To start
-that watcher during onboarding, pass `--capture start`. It does not enable
-packet capture. After startup, `zaxy doctor` should show `capture_health: ok`
-once command, file-edit, tool-call, and transcript observations have appeared.
+`local-codex` resolves Codex MCP setup through the same non-destructive auto
+install policy used by bare `zaxy init`, writes the local profile, and writes
+`.codex/zaxy-capture.json` for deterministic local capture. It does not generate
+`.codex/hooks.json`: Codex parses that file as JSON, and Zaxy does not assume a
+native Codex hook schema unless your Codex version documents one.
+Start Codex through the printed `zaxy activate codex ... --launch` command to
+load the bootstrap packet and ensure the managed watcher is running. The
+explicit
+`zaxy capture start --workspace .` command remains available for supervisors or
+for starting capture during onboarding with `zaxy init --capture start`. It does
+not enable packet capture. After startup, `zaxy doctor` should show
+`capture_health: ok` once command, file-edit, tool-call, and transcript
+observations have appeared.
 It also reports `memory_activation`; if checkout is missing or stale, the
 doctor action is a runnable `zaxy memory checkout ...` command for the affected
 session.

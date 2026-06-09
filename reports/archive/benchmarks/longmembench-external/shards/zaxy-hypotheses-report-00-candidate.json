@@ -1,0 +1,165 @@
+{
+  "answer_mode": "openai-compatible",
+  "dataset_path": "reports/benchmarks/longmembench-external/shards/longmemeval_oracle-00.json",
+  "dataset_sha256": "c94b0cf0f69e1fdeed8b35562d6dcfc4cb05e6ce00bca62168e742d72e15e29a",
+  "embedding_provider": "hash:1536",
+  "generated_at": "2026-06-07T03:59:58.171832Z",
+  "hypotheses": [
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 25,
+      "hypothesis": "GPS system not functioning correctly",
+      "question_id": "gpt4_2655b836"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "Data Analysis using Python",
+      "question_id": "gpt4_2487a7cb"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 25,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_76048e76"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "I got the Dell XPS 13 first.",
+      "question_id": "gpt4_2312f94c"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "7 days. 8 days (including the last day) is also acceptable.",
+      "question_id": "0bb5a684"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "30 days. 31 days (including the last day) is also acceptable.",
+      "question_id": "08f4fc43"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "0.02 days",
+      "question_id": "2c63a862"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 24,
+      "hypothesis": "The tomatoes were started first.",
+      "question_id": "gpt4_385a5000"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 33,
+      "hypothesis": "7 days. 8 days (including the last day) is also acceptable.",
+      "question_id": "2a1811e2"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "Turbocharged Tuesdays",
+      "question_id": "bbf86515"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 34,
+      "hypothesis": "white Adidas sneakers",
+      "question_id": "gpt4_5dcc0aab"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 33,
+      "hypothesis": "One weeks",
+      "question_id": "gpt4_0b2f1d21"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "7 days. 8 days (including the last day) is also acceptable.",
+      "question_id": "f0853d11"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 33,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_6ed717ea"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "One weeks",
+      "question_id": "gpt4_70e84552"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 37,
+      "hypothesis": "There are five charity events.",
+      "question_id": "a3838d2b"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "4 years and 9 months",
+      "question_id": "gpt4_93159ced"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "One weeks",
+      "question_id": "gpt4_2d58bcd6"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 33,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_65aabe59"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 33,
+      "hypothesis": "1 month ago",
+      "question_id": "982b5123"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 33,
+      "hypothesis": "5.5 weeks",
+      "question_id": "b9cfe692"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "June 3rd.",
+      "question_id": "gpt4_4edbafa2"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 31,
+      "hypothesis": "7 days",
+      "question_id": "c8090214"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 33,
+      "hypothesis": "Five months",
+      "question_id": "gpt4_483dd43c"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "Two weeks",
+      "question_id": "e4e14d04"
+    }
+  ],
+  "limit": 10,
+  "model": "gpt-4o",
+  "output_path": "reports/benchmarks/longmembench-external/shards/zaxy-hypotheses-00-candidate.jsonl",
+  "projection_backend": "embedded",
+  "question_count": 25,
+  "schema_version": "zaxy.longmembench-hypotheses.v1"
+}

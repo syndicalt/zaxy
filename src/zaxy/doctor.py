@@ -34,7 +34,11 @@ def run_doctor(
     """Run local setup checks without starting external services."""
     active = settings or get_settings()
     root = Path(workspace_root or Path.cwd())
-    hook_status = inspect_hook_status(eventloom_path=active.eventloom_path, workspace_root=root)
+    hook_status = inspect_hook_status(
+        eventloom_path=active.eventloom_path,
+        workspace_root=root,
+        session_id=active.eventloom_thread,
+    )
     checks = [
         _check_eventloom(active),
         _check_local_profile(),
@@ -203,15 +207,19 @@ def _check_codex_mcp_scope(workspace_root: Path) -> dict[str, Any]:
     env_keys = set(env) if isinstance(env, dict) else set()
     repo_scoped = "--eventloom-path" in args or bool({"EVENTLOOM_PATH", "EVENTLOOM_THREAD", "ZAXY_DOMAIN"} & env_keys)
     if repo_scoped:
+        workspace = workspace_root.resolve()
         return {
             "name": "codex_mcp_scope",
             "status": "warning",
             "message": "Codex user-level zaxy MCP config contains repo-specific Eventloom/session state",
             "details": {
                 "config": str(config_path),
-                "workspace": str(workspace_root.resolve()),
+                "workspace": str(workspace),
             },
-            "action": "Replace it with: codex mcp add zaxy -- zaxy serve",
+            "action": (
+                f"Review {config_path}; if you intentionally want Zaxy to replace the global "
+                f"server, run zaxy init {workspace} --codex-mcp-install user --force."
+            ),
         }
     return {
         "name": "codex_mcp_scope",

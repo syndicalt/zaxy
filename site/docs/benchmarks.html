@@ -181,6 +181,61 @@
         </tbody>
       </table>
       <p>Interpretation: Harvey LAB is external downstream work-product evidence. The metric is criterion pass rate, not binary task pass/fail.</p>
+      <h2 id="zaxy-20-rc1-benchmark-freeze">Zaxy 2.0 RC.1 Benchmark Freeze</h2>
+      <p>The <code>2.0.0-rc.1</code> freeze gate validates the current release evidence without changing retrieval, synthesis, or benchmark scoring behavior:</p>
+      <pre><code class="language-bash">zaxy benchmark-freeze --json</code></pre>
+      <p>The tracked freeze manifest is <a href="https://github.com/syndicalt/zaxy/blob/master/reports/benchmarks/2.0.0-rc.1/manifest.json">reports/benchmarks/2.0.0-rc.1/manifest.json</a>.</p>
+      <p>The gate is a claim-boundary and artifact-integrity check. It requires the headline 500-question LongMemEval-compatible checkout report, the frozen headline run config, Harvey LAB external-anchor artifacts, and the project-defined RC lanes for StateRecoveryBench, CoordinationBench, PurposeBench, causal, consolidation, procedural, and metacognitive behavior.</p>
+      <p>RC.1 evidence is interpreted in three separate buckets:</p>
+      <ul>
+        <li><code>longmemeval_compatible_checkout</code>: the same-harness 500-question checkout diagnostic listed above. It is the headline public benchmark artifact, not an official LongMemEval end-to-end assistant score.</li>
+        <li><code>external_anchor</code>: Harvey LAB legal-agent memory-ablation evidence. It is external downstream work-product evidence, not a general outside-user validation report.</li>
+        <li><code>project_defined_internal</code>: StateRecoveryBench, CoordinationBench, PurposeBench, causal, consolidation, procedural, and metacognitive guardrails. These lanes protect product contracts and must not be merged into the headline 500 or Harvey LAB numbers.</li>
+      </ul>
+      <p>The active RC.1 project-defined artifacts are:</p>
+      <ul>
+        <li><a href="../reports/benchmarks/state-recovery-v1/state-recovery-benchmark.md">StateRecoveryBench</a></li>
+        <li><a href="../reports/benchmarks/coordination-real-v1/coordination-benchmark.md">CoordinationBench</a></li>
+        <li><a href="../reports/benchmarks/purpose-v1/purpose-benchmark.md">PurposeBench</a></li>
+      </ul>
+      <p>CoordinationBench has a conservative competitor-claim boundary. The <code>competitor_claim_gate</code> remains blocked for Quarq and Hybi unless a future same-harness run supplies tracked, auditable runner outputs. Release checks use explicit flags such as <code>--require-competitor-claim quarq</code> and <code>--require-competitor-claim hybi</code> only to prove that missing competitor evidence is disclosed and cannot silently become a public claim. The current CoordinationBench artifact is a Zaxy project-defined internal guardrail for accepted parent state, stale-claim rejection, duplicate consolidation, non-authoritative leakage, evidence coverage, purpose feedback, and checkout answerability.</p>
+      <p>PurposeBench follows the same disclosure posture for purpose-conditioned memory claims. Publicly derived purpose examples that mention systems such as Quarq or Semantic Reach are diagnostic holdouts only; they are not head-to-head benchmark claims and they do not establish competitor performance. The active PurposeBench report proves Zaxy&#x27;s purpose profiles and evidence policies on tracked internal lanes, while the holdout pack documents source boundaries and claim status.</p>
+      <p>The RC.1 gate fails closed when required artifacts are missing, when the headline 500 falls below the frozen quality or latency floors, or when a 2.0 internal or project-defined lane is classified as external validation. This is intentionally a release-readiness gate, not a reward function.</p>
+      <h2 id="zaxy-20-alpha-causal-and-consolidation-lane">Zaxy 2.0 Alpha Causal And Consolidation Lane</h2>
+      <p>Zaxy 2.0 alpha includes a project-defined internal guardrail lane for causal projection and review-gated consolidation. This lane is not external validation, is not part of the headline LongMemEval-compatible checkout claim, and must not be reported as a public benchmark number unless a future release explicitly publishes a full report with its own claim boundary.</p>
+      <p>The alpha lane checks behavior that is specific to the causal and consolidation contracts:</p>
+      <ul>
+        <li>causal predecessor and successor queries preserve expected endpoint and relation matching;</li>
+        <li>causal results retain Eventloom citation coverage and expose review and authority metadata;</li>
+        <li>alpha.2 consolidation segment selection is deterministic and event-sourced from replayed Eventloom ranges, with stable session-scoped segment identity;</li>
+        <li>authority-boundary preservation keeps inferred causal edges and consolidation candidates non-authoritative unless a separate gate promotes them;</li>
+        <li>stale or distractor-supported causal paths do not outrank cited target paths;</li>
+        <li>consolidation candidate scoring verifies source-event fidelity and rejects candidates that omit required source references or imply authority promotion;</li>
+        <li>generated episode, claim, and procedure candidates remain review material, not authoritative memory, even when a review disposition is <code>accepted</code>;</li>
+        <li>stale, conflicted, rejected, superseded, and <code>valid_to</code>-closed consolidation candidates are diagnosed so checkout and status surfaces do not present them as current authoritative memory.</li>
+      </ul>
+      <p>Use this lane as an engineering regression guardrail for the alpha causal and consolidation surface. The consolidation guardrail is internal and project-defined: it measures source-event fidelity, review gating, stale rejection, and authority-boundary preservation. Do not combine it with the headline 500 metrics, Harvey LAB evidence, or external-validation language.</p>
+      <h2 id="zaxy-20-beta1-reasoning-loop-guardrail">Zaxy 2.0 Beta.1 Reasoning-Loop Guardrail</h2>
+      <p>Beta.1 adds an internal guardrail scorer for reasoning-loop memory primitives. This is an engineering contract check, not a public benchmark claim and not a LongMemBench-tailored lane. It does not score final answers or tune retrieval.</p>
+      <p>The guardrail reports five transparent fields:</p>
+      <ul>
+        <li><code>observable_call</code>: primitive and belief proposal activity must be represented by replayable Eventloom event types such as <code>reasoning.primitive.called</code> or <code>belief.update.proposed</code>.</li>
+        <li><code>phase_match</code>: the recorded phase must match deterministic routing for <code>planning</code>, <code>execution</code>, <code>review</code>, or <code>reflection</code>.</li>
+        <li><code>citation_presence</code>: trace evidence must carry Eventloom citations.</li>
+        <li><code>authority_boundary</code>: primitive observations and belief proposals must remain <code>non_authoritative</code>; belief proposals remain pending until reviewed.</li>
+        <li><code>score</code>: the simple mean of the four contract ratios.</li>
+      </ul>
+      <p>Use this lane to catch regressions in observability, phase routing, citation coverage, and authority boundaries for beta.1 primitives. Do not report it as external validation, do not combine it with the headline 500 or Harvey LAB numbers, and do not use it to reward answer phrasing.</p>
+      <p>Beta.2 extends the internal guardrail to metacognition and procedural planning contracts. The scorer inspects contract fields only; it does not score final answers, expected benchmark labels, or answer phrasing. The beta.2 fields are:</p>
+      <ul>
+        <li><code>observable_metacognition</code>: known unknowns, confidence assessments, conflict clusters, and reverify requests must be replayable Eventloom event types.</li>
+        <li><code>open_reverify_status</code>: re-verification needs stay open until a separate resolution path changes state.</li>
+        <li><code>procedural_citation_presence</code>: applicable procedures must carry Eventloom citations.</li>
+        <li><code>planning_phase_match</code>: procedure-derived planning packets must remain in the planning phase unless explicitly routed otherwise.</li>
+        <li><code>authority_boundary</code>: metacognition and procedures remain <code>non_authoritative</code>; they are diagnostic or planning guidance, not accepted facts.</li>
+        <li><code>score</code>: the simple mean of the beta.2 contract ratios.</li>
+      </ul>
+      <p>This beta.2 guardrail is an internal release-quality check and readiness signal. It is not external validation and must not be merged into the headline LongMemEval-compatible or Harvey LAB results.</p>
       <h2 id="claim-boundaries">Claim Boundaries</h2>
       <ul>
         <li>Use <strong>LongMemEval-compatible checkout</strong> for the headline 500 diagnostic.</li>

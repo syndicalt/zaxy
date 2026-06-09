@@ -157,14 +157,15 @@ def test_public_benchmark_guardrail_script_is_reproducible_from_clean_checkout()
 
     assert ".cache/zaxy/benchmarks/longmemeval_oracle.json" in script
     assert ".cache/zaxy/longmemeval-embeddings.json" in script
-    assert "reports/benchmarks/longmemeval-500-hash/live-benchmark.json" in script
-    assert "reports/benchmarks/longmemeval-500-neo4j-current-checkout/live-benchmark.json" in script
-    assert "reports/benchmarks/longmemeval-500-pggraph-comparison/live-benchmark.json" in script
+    assert "reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.json" in script
+    assert "reports/benchmarks/longmemeval-500-publish-20260607/run-config.md" in script
+    assert "reports/benchmarks/longmemeval-500-hash/live-benchmark.json" not in script
     assert "benchmark-inventory" in script
+    assert "benchmark-freeze" in script
     assert "benchmark-compare" in script
-    assert "--min-mean-score 0.714" in script
-    assert "--min-answer-recall-at-5 0.626" in script
-    assert "--min-recall-at-5 0.958" in script
+    assert "--min-mean-score 0.95" in script
+    assert "--min-answer-recall-at-5 0.90" in script
+    assert "--min-recall-at-5 0.99" in script
     assert "--min-citation-coverage 1.0" in script
 
 
@@ -2075,6 +2076,70 @@ async def test_zaxy_checkout_retriever_uses_graph_sources_when_lexical_bundle_is
     assert "answer=$3,565" not in output
 
 
+async def test_zaxy_checkout_retriever_combines_graph_and_lexical_quantity_operands() -> None:
+    """Aggregate checkout synthesis should combine cited operands across graph and source lanes."""
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, limit, embedding
+            return [
+                SimpleNamespace(
+                    content=(
+                        "longmemeval_session_id=layer-feed user: I got a 50-pound batch "
+                        "of layer feed from the farm supply store."
+                    ),
+                    citation="eventloom://benchmark/events/layer-feed#abc",
+                    source="graph",
+                    score=0.99,
+                )
+            ]
+
+    class LexicalRetriever:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return [
+                (
+                    "citation=eventloom://benchmark/events/guideline#aaa "
+                    "longmemeval_session_id=guideline assistant: Provide 1-1.5 pounds "
+                    "of layer feed per hen per day as a general guideline."
+                ),
+                (
+                    "citation=eventloom://benchmark/events/scratch#def "
+                    "longmemeval_session_id=scratch user: I bought 20 pounds of organic "
+                    "scratch grains for my chickens recently."
+                ),
+            ]
+
+    retriever = ZaxyCheckoutRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=LexicalRetriever(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async(
+        "What is the total weight of the new feed I purchased in the past two months?",
+        limit=5,
+    )
+    output = "\n".join(results)
+
+    assert "checkout_answer_candidate=true" in output
+    assert "answer=70 pounds" in output
+    assert "source_id=layer-feed" in output
+    assert "source_id=scratch" in output
+    assert "answer=71.5 pounds" not in output
+
+
 async def test_zaxy_checkout_retriever_prefers_complete_quoted_duration_over_partial_absence() -> None:
     """Partial lexical absence should not preempt complete graph-backed duration synthesis."""
     expected = (
@@ -2172,6 +2237,67 @@ async def test_zaxy_checkout_retriever_prefers_complete_quoted_duration_over_par
     )
 
     assert expected in "\n".join(results[:5])
+
+
+async def test_zaxy_checkout_retriever_synthesizes_interval_across_graph_and_source_lanes() -> None:
+    """Interval checkout synthesis should combine endpoint evidence across cited lanes."""
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, limit, embedding
+            return [
+                SimpleNamespace(
+                    content=(
+                        "longmemeval_session_id=house_1 longmemeval_session_date=2022/03/02 (Wed) "
+                        "user: I started working with Rachel on February 15th."
+                    ),
+                    citation="file://longmemeval/house_1/salient-turn-0009.md:1",
+                    source="graph",
+                    score=1.0,
+                )
+            ]
+
+    class FakeLexicalRetriever:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return [
+                (
+                    "citation=eventloom://benchmark/events/found#abc "
+                    "longmemeval_session_id=house_2 longmemeval_session_date=2022/03/02 (Wed) "
+                    "user: The house I saw on March 1st really checks all the boxes."
+                ),
+                (
+                    "citation=eventloom://benchmark/events/drive#def "
+                    "longmemeval_session_id=house_1 user: I want areas within a 30-minute drive."
+                ),
+            ]
+
+    retriever = ZaxyCheckoutRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=FakeLexicalRetriever(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async(
+        "How many days did it take for me to find a house I loved after starting to work with Rachel?",
+        limit=5,
+    )
+    output = "\n".join(results)
+
+    assert "checkout_answer_candidate=true" in output
+    assert "answer=14 days. 15 days" in output
+    assert "minute_total_hours=" not in output
 
 
 async def test_zaxy_checkout_retriever_recovers_scoped_absence_support_without_temporal_filter() -> None:
@@ -3272,6 +3398,61 @@ async def test_zaxy_retriever_merges_expanded_source_queries_before_truncation()
     assert any("answer-2" in result for result in results)
 
 
+async def test_zaxy_retriever_merges_expanded_aggregation_queries_even_with_salient_primary_hits() -> None:
+    """Salient source hits are not enough to close evidence coverage for aggregation."""
+    original_contexts = [
+        (
+            "longmemeval_salient_memory_turn=true "
+            f"longmemeval_session_id=distractor-{index} model kit planning discussion {index}"
+        )
+        for index in range(1, 9)
+    ]
+    expanded_contexts = [
+        "longmemeval_session_id=answer-1 I finished a simple Revell F-15 Eagle kit.",
+        "longmemeval_session_id=answer-2 I started a Tamiya 1/48 scale Spitfire Mk.V.",
+    ]
+    seen_queries: list[str] = []
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, limit, embedding
+            return [SimpleNamespace(content="graph distractor")]
+
+    class QueryAwareLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del temporal_point
+            seen_queries.append(query)
+            if "finished started picked up" in query:
+                return expanded_contexts[:limit]
+            return original_contexts[:limit]
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=QueryAwareLexical(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async(
+        "How many model kits have I worked on or bought?",
+        limit=5,
+    )
+
+    assert any("finished started picked up" in query for query in seen_queries)
+    assert any("answer-1" in result for result in results)
+    assert any("answer-2" in result for result in results)
+
+
 async def test_zaxy_retriever_uses_graph_evidence_for_temporal_synthesis() -> None:
     """Synthesis should use graph-retrieved cited turns as well as lexical backfill."""
     class FakeRouter:
@@ -4062,6 +4243,8 @@ def test_source_synthesis_bundle_totals_social_media_break_days() -> None:
         or "social_media_break_day_values=10,7" in bundle
     )
     assert "social_media_break_total=17 days" in bundle
+    assert "social_media_break_total_answer=17 days" in bundle
+    assert "candidate_type=social_media_break" in bundle
 
 
 def test_source_synthesis_bundle_totals_road_trip_destination_drive_hours() -> None:
@@ -4880,6 +5063,63 @@ def test_scoped_fetch_limit_reaches_cap_for_sparse_domain_hits() -> None:
         "Which book did I finish a week ago?",
         ("longmemeval/2ebe6c92/",),
     ) == "Which book did I finish a week ago? longmemeval/2ebe6c92/"
+
+
+def test_source_lane_results_backfills_incomplete_scoped_aggregate_groups() -> None:
+    """Scoped aggregate source pools should backfill missing groups even after partial hits."""
+    query = "What is the total weight of the new feed I purchased in the past two months?"
+    scope = ("longmemeval/feed-case/",)
+    first_operand = (
+        "longmemeval/feed-case/layer-feed/chunk.md "
+        "citation=eventloom://benchmark/events/layer-feed#abc "
+        "longmemeval_session_id=layer-feed user: I got a 50-pound batch of layer feed."
+    )
+    second_operand = (
+        "longmemeval/feed-case/scratch/chunk.md "
+        "citation=eventloom://benchmark/events/scratch#def "
+        "longmemeval_session_id=scratch user: I bought 20 pounds of organic scratch grains."
+    )
+
+    class QueryAwareLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del temporal_point
+            if "longmemeval/feed-case/" in query:
+                return [second_operand][:limit]
+            return [
+                first_operand,
+                *[
+                    (
+                        f"longmemeval/other-case/{index}/chunk.md "
+                        f"citation=eventloom://benchmark/events/distractor-{index}#abc "
+                        "longmemeval_session_id=distractor assistant: Provide 1-1.5 pounds "
+                        "of feed per hen per day."
+                    )
+                    for index in range(20)
+                ],
+            ][:limit]
+
+    retriever = ZaxyRetriever(
+        SimpleNamespace(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=QueryAwareLexical(),  # type: ignore[arg-type]
+        scope_resolver=lambda _query: scope,
+    )
+
+    results = retriever._source_lane_results(
+        source_lane_queries(query, []),
+        temporal_point=None,
+        limit=5,
+        scope_terms=scope,
+    )
+
+    source_ids = {result for result in results if "longmemeval/feed-case/" in result}
+    assert first_operand in source_ids
+    assert second_operand in source_ids
 
 
 async def test_zaxy_retriever_scopes_source_synthesis_before_aggregation() -> None:

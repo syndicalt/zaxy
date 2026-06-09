@@ -1,0 +1,13 @@
+{
+  "accuracy": 0.954,
+  "checked_at": "2026-06-07",
+  "currentness_url": "https://omegamax.co/benchmarks",
+  "evaluator_model": "not_disclosed",
+  "evidence_date": "2026-06-07",
+  "evidence_url": "https://omegamax.co/benchmarks",
+  "metric": "official_longmemeval_task_averaged_accuracy",
+  "notes": "Conservative public baseline for strict SOTA gating. OMEGA reports 95.4% task-averaged LongMemEval accuracy over 466/500 raw correct. Higher public numbers found during June 2026 review were retrieval-only, model-stack-mismatched, or insufficiently official for this QA-accuracy gate. Refresh before publication.",
+  "question_count": 500,
+  "source_type": "vendor-disclosure",
+  "system": "OMEGA"
+}

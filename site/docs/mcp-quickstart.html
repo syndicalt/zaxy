@@ -27,7 +27,7 @@
       <p>MCP is Zaxy&#x27;s primary framework-neutral interface. Start with the default local path in the repository where you want memory captured:</p>
       <pre><code class="language-bash">zaxy init
 zaxy memory bootstrap --eventloom-path .eventloom</code></pre>
-      <p><code>zaxy init</code> chooses the embedded local runtime by default. It writes local profile and capture files, checks the repo-local graph projection posture, and prints the exact client install command or config path. No Neo4j, Postgres, Docker, Bolt URI, graph password, or hosted service is required for the local MCP path. The durable data source remains <code>.eventloom/</code>; the embedded graph is a rebuildable projection of that log.</p>
+      <p><code>zaxy init</code> chooses the embedded local runtime by default. It writes local profile and capture files, checks the repo-local graph projection posture, and prints the exact client install command or config path. For Codex, the default <code>zaxy init --codex-mcp-install auto</code> path writes or reuses user-level MCP config when it can do so non-destructively, and falls back to the copyable <code>codex mcp add</code> command when it cannot. No Neo4j, Postgres, Docker, Bolt URI, graph password, or hosted service is required for the local MCP path. The durable data source remains <code>.eventloom/</code>; the embedded graph is a rebuildable projection of that log. Human output is compact by default; run <code>zaxy init --verbose</code> to show every setup step, optional check, fallback command, resume command, and note when debugging an install.</p>
       <h2 id="client-setup">Client Setup</h2>
       <p>Use one local route per client. These commands keep the default embedded graph runtime and <code>.eventloom/</code> source log; no sidecar service is required.</p>
       <table>
@@ -41,8 +41,8 @@ zaxy memory bootstrap --eventloom-path .eventloom</code></pre>
         <tbody>
           <tr>
             <td>Codex</td>
-            <td><code>codex mcp add</code> CLI command</td>
-            <td>Keeps user-level MCP config workspace-neutral while <code>zaxy serve</code> resolves the current repo at runtime.</td>
+            <td><code>zaxy init</code></td>
+            <td>Uses <code>zaxy init --codex-mcp-install auto</code> to merge user-level Codex MCP config when safe, or prints the exact command when not.</td>
           </tr>
           <tr>
             <td>Claude Code</td>
@@ -67,8 +67,17 @@ zaxy memory bootstrap --eventloom-path .eventloom</code></pre>
         </tbody>
       </table>
       <h3 id="codex">Codex</h3>
-      <p>For Codex, copy or run the <code>codex mcp add</code> command printed by <code>zaxy init</code>. That is the recommended path for this repo because it keeps the MCP server workspace-neutral while resolving the current workspace at runtime. The command shape is:</p>
-      <pre><code class="language-bash">codex mcp add zaxy -- zaxy serve</code></pre>
+      <p>For Codex, the fastest route is the default init path:</p>
+      <pre><code class="language-bash">zaxy init</code></pre>
+      <p>That expands to:</p>
+      <pre><code class="language-bash">zaxy init --codex-mcp-install auto</code></pre>
+      <p>Auto mode writes or reuses user-level Codex MCP config when that is safe. If an existing <code>mcp_servers.zaxy</code> entry is different, it asks you to review that config before replacing it. If no safe config target exists, it prints the copyable <code>codex mcp add</code> command.</p>
+      <p>To force a direct user-level config merge, run:</p>
+      <pre><code class="language-bash">zaxy init --codex-mcp-install user</code></pre>
+      <p>This writes user-level Codex MCP config and keeps the MCP server workspace-neutral while resolving the current workspace at runtime. Restart Codex after init so it reloads the server list.</p>
+      <p>If you prefer not to let init write Codex config, force command mode and copy or run the printed command. The command shape is:</p>
+      <pre><code class="language-bash">zaxy init --codex-mcp-install command
+codex mcp add zaxy -- zaxy serve</code></pre>
       <p>If you need Zaxy to print the exact command with resolved executable and environment values:</p>
       <pre><code class="language-bash">zaxy ide-config codex --install --eventloom-path .eventloom</code></pre>
       <h3 id="claude-code">Claude Code</h3>

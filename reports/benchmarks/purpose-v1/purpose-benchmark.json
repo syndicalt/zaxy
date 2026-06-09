@@ -1,0 +1,1066 @@
+{
+  "competitor_claim_blockers": [
+    "Semantic Reach and Quarq require pinned same-harness adapters before Zaxy can publish comparative SOTA claims."
+  ],
+  "competitor_claim_status": "blocked",
+  "elapsed_ms": 16.177,
+  "generated_at": "2026-06-08T02:28:52.036995+00:00",
+  "holdout_reports": {
+    "public-derived-purpose-v1": {
+      "claim_status": "public_derived_holdout",
+      "gate_status": "diagnostic",
+      "limitations": [
+        "Diagnostic holdout metadata only; deterministic purpose-v1 lanes remain the release gate.",
+        "Cases forbid tuning on expected answers and must be reported separately from internal smoke lanes.",
+        "Synthetic customer/security/mission cases are realistic but not outside-user validation."
+      ],
+      "metrics": {
+        "action_outcome_effect": 1.0,
+        "case_count": 5,
+        "citation_coverage": 1.0,
+        "consequence_retention": 1.0,
+        "evidence_policy_discipline": 1.0,
+        "forbidden_overclaim_rejection": 1.0,
+        "governed_forgetting": 1.0,
+        "ontology_shift": 1.0,
+        "pack_fingerprint": "0d8217bb4e905164305970050ef34c987d7e9b287ce648a1730685f3dd0e61f6",
+        "purpose_recall": 1.0
+      },
+      "pack_fingerprint": "0d8217bb4e905164305970050ef34c987d7e9b287ce648a1730685f3dd0e61f6",
+      "pack_id": "public-derived-purpose-v1",
+      "source_disclosures": [
+        {
+          "kind": "first_party_repo_history",
+          "license_or_policy": "repository-owned documentation",
+          "reference": "docs/memory-is-purpose-zaxy-analysis.md",
+          "source_id": "repo-roadmap"
+        },
+        {
+          "kind": "first_party_repo_history",
+          "license_or_policy": "repository-owned documentation",
+          "reference": "CHANGELOG.md",
+          "source_id": "release-changelog"
+        },
+        {
+          "kind": "redacted_synthetic_security_history",
+          "license_or_policy": "synthetic fixture",
+          "reference": "synthetic/redacted/auth-secret-rotation.md",
+          "source_id": "security-redacted"
+        },
+        {
+          "kind": "synthetic_realistic_documents",
+          "license_or_policy": "synthetic fixture",
+          "reference": "synthetic/customers/acme-escalation.txt",
+          "source_id": "customer-docs"
+        },
+        {
+          "kind": "synthetic_multi_agent_missions",
+          "license_or_policy": "synthetic fixture",
+          "reference": "synthetic/missions/worker-conflicts.jsonl",
+          "source_id": "coordinate-conflicts"
+        }
+      ],
+      "source_policy": "Public-derived and synthetic representative purpose cases. Attribution is recorded; this is not external validation and not a same-harness competitor claim."
+    }
+  },
+  "lane_count": 10,
+  "lanes": [
+    {
+      "evidence": {
+        "passed_profiles": [
+          "coding",
+          "review",
+          "release",
+          "security",
+          "research",
+          "support",
+          "product",
+          "sales",
+          "legal",
+          "executive",
+          "coordinate"
+        ]
+      },
+      "measurement": "all purpose profiles apply recall floors and ontology evidence terms",
+      "name": "Purpose Recall",
+      "score": 1.0,
+      "status": "passed",
+      "threshold": 1.0
+    },
+    {
+      "evidence": {
+        "path_overlays": {
+          "coding": {
+            "multiplier": 1.6875,
+            "relationship_roles": [
+              "failed_attempt"
+            ]
+          },
+          "coordinate": {
+            "multiplier": 1.74,
+            "relationship_roles": [
+              "proof_packet"
+            ]
+          },
+          "release": {
+            "multiplier": 1.74,
+            "relationship_roles": [
+              "release_gate"
+            ]
+          },
+          "security": {
+            "multiplier": 1.62,
+            "relationship_roles": [
+              "risk_acceptance",
+              "credential"
+            ]
+          }
+        },
+        "signatures": {
+          "coding": [
+            "recall",
+            [
+              "implementation",
+              "implement_or_verify",
+              "cite_current_facts_and_verification",
+              "preserve_invariants_failed_attempts_and_test_evidence",
+              "invariant",
+              "regression",
+              "prior_fix",
+              "open_blocker"
+            ],
+            [
+              "invariant",
+              "regression",
+              "prior_fix",
+              "test_evidence"
+            ]
+          ],
+          "coordinate": [
+            "recall",
+            [
+              "mission_state",
+              "brief_promote_or_handoff",
+              "accepted_parent_state_with_citations_required",
+              "preserve_accepted_findings_conflicts_handoffs_and_proof_packets",
+              "accepted_finding",
+              "pending_diagnostic",
+              "conflict",
+              "stale_evidence"
+            ],
+            [
+              "accepted_state",
+              "proof_packet",
+              "handoff",
+              "conflict"
+            ]
+          ],
+          "executive": [
+            "precision",
+            [
+              "strategic_brief",
+              "summarize_risk_exception_or_pattern",
+              "strategic_exception_and_risk_evidence_required",
+              "preserve_strategic_exceptions_market_patterns_risks_and_decisions",
+              "strategic_exception",
+              "market_pattern",
+              "risk_summary",
+              "decision"
+            ],
+            [
+              "strategic_exception",
+              "market_pattern",
+              "risk_summary",
+              "decision"
+            ]
+          ],
+          "legal": [
+            "precision",
+            [
+              "obligation_review",
+              "quote_obligation_or_require_review",
+              "exact_wording_authority_and_date_required",
+              "preserve_obligations_approvals_deadlines_and_exceptions",
+              "legal_obligation",
+              "approval",
+              "deadline",
+              "exception"
+            ],
+            [
+              "legal_obligation",
+              "approval",
+              "deadline",
+              "exception"
+            ]
+          ],
+          "product": [
+            "temporal",
+            [
+              "roadmap_planning",
+              "prioritize_or_defer_with_evidence",
+              "roadmap_signal_and_tradeoff_evidence_required",
+              "preserve_roadmap_signals_promises_tradeoffs_and_experiment_outcomes",
+              "roadmap_signal",
+              "customer_promise",
+              "tradeoff",
+              "experiment"
+            ],
+            [
+              "roadmap_signal",
+              "customer_promise",
+              "tradeoff",
+              "experiment"
+            ]
+          ],
+          "release": [
+            "temporal",
+            [
+              "release_readiness",
+              "ship_block_or_defer",
+              "release_gate_evidence_required",
+              "preserve_release_gates_regressions_and_external_blockers",
+              "release_gate",
+              "regression",
+              "changelog",
+              "packaging"
+            ],
+            [
+              "release_gate",
+              "packaging",
+              "deployment",
+              "external_validation"
+            ]
+          ],
+          "research": [
+            "recall",
+            [
+              "evidence_synthesis",
+              "synthesize_or_identify_gap",
+              "multi_source_citations_preferred",
+              "preserve_claims_sources_contradictions_and_open_questions",
+              "claim",
+              "source",
+              "contradiction",
+              "method"
+            ],
+            [
+              "supports_claim",
+              "contradicts_claim",
+              "uses_method",
+              "open_question"
+            ]
+          ],
+          "review": [
+            "precision",
+            [
+              "review",
+              "approve_or_block",
+              "cited_current_facts_required",
+              "preserve_risks_decisions_and_verification",
+              "risk",
+              "regression",
+              "missing_test",
+              "accepted_decision"
+            ],
+            [
+              "risk",
+              "regression",
+              "missing_test",
+              "accepted_decision"
+            ]
+          ],
+          "sales": [
+            "precision",
+            [
+              "account_followup",
+              "prepare_commitment_or_followup",
+              "buyer_commitment_and_objection_evidence_required",
+              "preserve_commitments_objections_renewal_risks_and_account_context",
+              "buyer_commitment",
+              "objection",
+              "renewal_risk",
+              "account_context"
+            ],
+            [
+              "buyer_commitment",
+              "objection",
+              "renewal_risk",
+              "account_context"
+            ]
+          ],
+          "security": [
+            "precision",
+            [
+              "security_assessment",
+              "block_or_accept_risk",
+              "cited_security_evidence_required",
+              "preserve_threats_controls_findings_and_risk_acceptance",
+              "secret",
+              "credential",
+              "auth",
+              "authorization"
+            ],
+            [
+              "exposure",
+              "mitigation",
+              "risk_acceptance",
+              "authorization"
+            ]
+          ],
+          "support": [
+            "recall",
+            [
+              "customer_support",
+              "triage_escalate_or_apply_workaround",
+              "customer_impact_and_workaround_evidence_required",
+              "preserve_escalations_workarounds_customer_impact_and_resolutions",
+              "customer_impact",
+              "escalation",
+              "workaround",
+              "resolution"
+            ],
+            [
+              "customer_impact",
+              "escalation",
+              "workaround",
+              "resolution"
+            ]
+          ]
+        }
+      },
+      "measurement": "same source query resolves to distinct purpose-specific retrieval lenses and graph path roles",
+      "name": "Ontology Shift",
+      "score": 0.75,
+      "status": "passed",
+      "threshold": 0.75
+    },
+    {
+      "evidence": {
+        "retained_terms": {
+          "coding": [
+            "failed_fixes",
+            "test_results"
+          ],
+          "coordinate": [
+            "accepted_parent_state",
+            "proof_packets"
+          ],
+          "executive": [
+            "risk_summaries",
+            "strategic_exceptions"
+          ],
+          "legal": [
+            "deadlines",
+            "legal_obligations"
+          ],
+          "product": [
+            "experiment_outcomes",
+            "roadmap_signals"
+          ],
+          "release": [
+            "external_blockers",
+            "gate_failures"
+          ],
+          "research": [
+            "contradictions",
+            "open_questions"
+          ],
+          "review": [
+            "blocking_risks",
+            "review_decisions"
+          ],
+          "sales": [
+            "buyer_commitments",
+            "renewal_blockers"
+          ],
+          "security": [
+            "risk_acceptance",
+            "security_findings"
+          ],
+          "support": [
+            "customer_impact",
+            "workaround_history"
+          ]
+        }
+      },
+      "measurement": "profiles retain prior failures, accepted decisions, risks, and proof outcomes",
+      "name": "Consequence Retention",
+      "score": 1.0,
+      "status": "passed",
+      "threshold": 1.0
+    },
+    {
+      "evidence": {
+        "purpose_decay_half_life_days": {
+          "coding": 30,
+          "coordinate": 180,
+          "executive": 180,
+          "legal": 365,
+          "product": 120,
+          "release": 120,
+          "research": 30,
+          "review": 90,
+          "sales": 120,
+          "security": 180,
+          "support": 90
+        },
+        "purpose_expired_weights": {
+          "coordinate": 0.15,
+          "executive": 0.1,
+          "legal": 0.2,
+          "product": 0.05,
+          "release": 0.1,
+          "review": 0.05,
+          "sales": 0.08,
+          "security": 0.1,
+          "support": 0.05
+        }
+      },
+      "measurement": "decay mode downweights noise while protecting obligations and risk memory",
+      "name": "Governed Forgetting",
+      "score": 1.0,
+      "status": "passed",
+      "threshold": 1.0
+    },
+    {
+      "evidence": {
+        "boosted_context": "migration retry",
+        "feedback_payload": {
+          "actor": "assistant",
+          "citation": "eventloom://purpose/events/7#abc123",
+          "entity_name": "migration retry",
+          "entity_type": "decision",
+          "feedback": "used",
+          "importance": 0.6,
+          "purpose": {
+            "evidence_policy": "cite_current_facts_and_verification",
+            "expected_action": "implement_or_verify",
+            "ontology_lens": [
+              "invariant",
+              "regression",
+              "prior_fix",
+              "open_blocker",
+              "test_evidence"
+            ],
+            "permission_scope": "repo-local",
+            "profile": "coding",
+            "required_evidence": [
+              "current_fact_citation",
+              "verification_or_source_citation"
+            ],
+            "retain": [
+              "architectural_constraints",
+              "failed_fixes",
+              "accepted_decisions",
+              "test_results"
+            ],
+            "retention_policy": "preserve_invariants_failed_attempts_and_test_evidence",
+            "risk": "correctness-critical",
+            "role": "coding-agent",
+            "suppress": [
+              "superseded_context",
+              "uncited_claim"
+            ],
+            "task": "implementation",
+            "time_horizon": "current-change"
+          },
+          "query": "ship migration",
+          "score": 0.91,
+          "source": "eventloom"
+        },
+        "outcome_explanations": [
+          {
+            "latest_event_seq": 2,
+            "negative_count": 0,
+            "outcomes": [
+              "avoided_failed_path",
+              "prevented_redundant_investigation"
+            ],
+            "positive_count": 2,
+            "score_boost": 0.12,
+            "score_penalty": 0.0,
+            "suppression_candidate": false
+          },
+          {
+            "latest_event_seq": 4,
+            "negative_count": 2,
+            "outcomes": [
+              "caused_regression",
+              "failed"
+            ],
+            "positive_count": 0,
+            "score_boost": 0.0,
+            "score_penalty": 0.12,
+            "suppression_candidate": true
+          }
+        ]
+      },
+      "measurement": "purpose outcome history changes future rank and warning candidates",
+      "name": "Action Outcome Loop",
+      "score": 1.0,
+      "status": "passed",
+      "threshold": 1.0
+    },
+    {
+      "evidence": {
+        "coordinate": {
+          "supported": {
+            "missing_requirements": [],
+            "mode": "warn",
+            "satisfied": true,
+            "suggested_queries": []
+          },
+          "unsupported": {
+            "missing_requirements": [
+              "promotion_or_review_ref"
+            ],
+            "mode": "block_checkout",
+            "satisfied": false,
+            "suggested_queries": [
+              "Coordinate promotion review accepted parent-state evidence for coordinate: coordinate evidence policy fixture"
+            ]
+          }
+        },
+        "executive": {
+          "supported": {
+            "missing_requirements": [],
+            "mode": "warn",
+            "satisfied": true,
+            "suggested_queries": []
+          },
+          "unsupported": {
+            "missing_requirements": [
+              "risk_or_metric_ref"
+            ],
+            "mode": "warn",
+            "satisfied": false,
+            "suggested_queries": [
+              "executive risk metric or market-pattern evidence for executive: executive evidence policy fixture"
+            ]
+          }
+        },
+        "legal": {
+          "supported": {
+            "missing_requirements": [],
+            "mode": "warn",
+            "satisfied": true,
+            "suggested_queries": []
+          },
+          "unsupported": {
+            "missing_requirements": [
+              "exact_quote_ref",
+              "authority_ref",
+              "date_or_deadline_ref"
+            ],
+            "mode": "block_checkout",
+            "satisfied": false,
+            "suggested_queries": [
+              "exact quoted legal wording with citation for legal: legal evidence policy fixture",
+              "legal authority or approval evidence for legal: legal evidence policy fixture",
+              "legal date deadline or effective-window evidence for legal: legal evidence policy fixture"
+            ]
+          }
+        },
+        "product": {
+          "supported": {
+            "missing_requirements": [],
+            "mode": "warn",
+            "satisfied": true,
+            "suggested_queries": []
+          },
+          "unsupported": {
+            "missing_requirements": [
+              "tradeoff_ref",
+              "experiment_or_customer_ref"
+            ],
+            "mode": "warn",
+            "satisfied": false,
+            "suggested_queries": [
+              "product tradeoff or constraint evidence for product: product evidence policy fixture",
+              "experiment outcome or customer promise evidence for product: product evidence policy fixture"
+            ]
+          }
+        },
+        "release": {
+          "supported": {
+            "missing_requirements": [],
+            "mode": "warn",
+            "satisfied": true,
+            "suggested_queries": []
+          },
+          "unsupported": {
+            "missing_requirements": [
+              "verification_refs"
+            ],
+            "mode": "require_refresh",
+            "satisfied": false,
+            "suggested_queries": [
+              "test changelog package evidence for release readiness for release: release evidence policy fixture"
+            ]
+          }
+        },
+        "sales": {
+          "supported": {
+            "missing_requirements": [],
+            "mode": "warn",
+            "satisfied": true,
+            "suggested_queries": []
+          },
+          "unsupported": {
+            "missing_requirements": [
+              "commitment_ref",
+              "objection_or_renewal_ref"
+            ],
+            "mode": "require_refresh",
+            "satisfied": false,
+            "suggested_queries": [
+              "buyer commitment or follow-up evidence for sales: sales evidence policy fixture",
+              "buyer objection or renewal risk evidence for sales: sales evidence policy fixture"
+            ]
+          }
+        },
+        "security": {
+          "supported": {
+            "missing_requirements": [],
+            "mode": "warn",
+            "satisfied": true,
+            "suggested_queries": []
+          },
+          "unsupported": {
+            "missing_requirements": [
+              "mitigation_or_risk_owner"
+            ],
+            "mode": "require_refresh",
+            "satisfied": false,
+            "suggested_queries": [
+              "mitigation or risk owner evidence for security risk for security: security evidence policy fixture"
+            ]
+          }
+        },
+        "support": {
+          "supported": {
+            "missing_requirements": [],
+            "mode": "warn",
+            "satisfied": true,
+            "suggested_queries": []
+          },
+          "unsupported": {
+            "missing_requirements": [
+              "workaround_or_resolution_ref",
+              "impact_ref"
+            ],
+            "mode": "require_refresh",
+            "satisfied": false,
+            "suggested_queries": [
+              "workaround or resolution evidence for support case for support: support evidence policy fixture",
+              "customer impact evidence for support case for support: support evidence policy fixture"
+            ]
+          }
+        }
+      },
+      "measurement": "purpose fixtures enforce missing and supported evidence policies",
+      "name": "Evidence Policy Discipline",
+      "score": 1.0,
+      "status": "passed",
+      "threshold": 1.0
+    },
+    {
+      "evidence": {
+        "checkout_ready": {
+          "executive": {
+            "has_evidence_policy": true,
+            "has_retain": true,
+            "has_retention_policy": true,
+            "has_suppress": true,
+            "lens_applied": true
+          },
+          "legal": {
+            "has_evidence_policy": true,
+            "has_retain": true,
+            "has_retention_policy": true,
+            "has_suppress": true,
+            "lens_applied": true
+          },
+          "product": {
+            "has_evidence_policy": true,
+            "has_retain": true,
+            "has_retention_policy": true,
+            "has_suppress": true,
+            "lens_applied": true
+          },
+          "sales": {
+            "has_evidence_policy": true,
+            "has_retain": true,
+            "has_retention_policy": true,
+            "has_suppress": true,
+            "lens_applied": true
+          },
+          "support": {
+            "has_evidence_policy": true,
+            "has_retain": true,
+            "has_retention_policy": true,
+            "has_suppress": true,
+            "lens_applied": true
+          }
+        },
+        "compaction": {
+          "executive": {
+            "purpose": "executive",
+            "record_kinds": [
+              "executive_retained"
+            ],
+            "retain": [
+              "strategic_exceptions",
+              "market_patterns",
+              "risk_summaries",
+              "executive_decisions"
+            ],
+            "strategy": "purpose_preserve_all",
+            "suppress": [
+              "single_source_overclaim",
+              "uncited_claim",
+              "stale_source",
+              "low_trust_inference"
+            ]
+          },
+          "legal": {
+            "purpose": "legal",
+            "record_kinds": [
+              "legal_retained"
+            ],
+            "retain": [
+              "legal_obligations",
+              "approvals",
+              "deadlines",
+              "exceptions"
+            ],
+            "strategy": "purpose_preserve_all",
+            "suppress": [
+              "uncited_claim",
+              "paraphrased_obligation",
+              "stale_authority",
+              "low_trust_inference"
+            ]
+          },
+          "product": {
+            "purpose": "product",
+            "record_kinds": [
+              "product_exemplar"
+            ],
+            "retain": [
+              "roadmap_signals",
+              "customer_promises",
+              "tradeoffs",
+              "experiment_outcomes"
+            ],
+            "strategy": "purpose_exemplar",
+            "suppress": [
+              "single_source_overclaim",
+              "uncited_claim",
+              "stale_source"
+            ]
+          },
+          "sales": {
+            "purpose": "sales",
+            "record_kinds": [
+              "sales_retained"
+            ],
+            "retain": [
+              "buyer_commitments",
+              "buyer_objections",
+              "renewal_blockers",
+              "account_context"
+            ],
+            "strategy": "purpose_preserve_all",
+            "suppress": [
+              "uncited_claim",
+              "stale_commitment",
+              "superseded_context"
+            ]
+          },
+          "support": {
+            "purpose": "support",
+            "record_kinds": [
+              "support_exemplar"
+            ],
+            "retain": [
+              "escalation_context",
+              "workaround_history",
+              "customer_impact",
+              "resolution_evidence"
+            ],
+            "strategy": "purpose_exemplar",
+            "suppress": [
+              "uncited_claim",
+              "stale_workaround",
+              "superseded_context"
+            ]
+          }
+        },
+        "local_project_memory_positioning": true,
+        "passed_profiles": [
+          "support",
+          "product",
+          "sales",
+          "legal",
+          "executive"
+        ]
+      },
+      "measurement": "support product sales legal and executive profiles have checkout compaction and benchmark fixtures",
+      "name": "Broader Profile Fixtures",
+      "score": 1.0,
+      "status": "passed",
+      "threshold": 1.0
+    },
+    {
+      "evidence": {
+        "ingestion_audit": {
+          "action": "ok",
+          "forbidden_labels": [],
+          "safe": true,
+          "source_event_ref": "eventloom://customer-acme/events/1#9ee219565125fa6d8b1fb21a9f00d393d3c352645364cfa698e9cbc44302c00d"
+        },
+        "neutral_substrate": {
+          "name": "neutral:document:customers/acme-email.txt:1-4",
+          "properties": {
+            "action": "document_indexed",
+            "actor": "support-agent",
+            "artifact": "customers/acme-email.txt:1-4",
+            "candidate_claim": "ACME reports dashboard export failures affecting renewal",
+            "permission_scope": "project-local",
+            "quote": "ACME reports dashboard export failures affecting renewal. They ask whether the export clause applies to dashboard data and want the roadmap promise reviewed by Friday.",
+            "source": "customers/acme-email.txt",
+            "source_event_ref": "eventloom://customer-acme/events/1#9ee219565125fa6d8b1fb21a9f00d393d3c352645364cfa698e9cbc44302c00d",
+            "time": "2026-06-08T02:28:52.034920Z",
+            "uncertainty": "customer email requires purpose-specific review"
+          }
+        },
+        "purpose_projections": {
+          "executive": {
+            "neutral_substrate_id": "neutral:document:customers/acme-email.txt:1-4",
+            "projection_id": "purpose:executive:churn_risk:neutral:document:customers/acme-email.txt:1-4",
+            "purpose_label": "churn_risk",
+            "purpose_profile": "executive",
+            "quote": "ACME reports dashboard export failures affecting renewal. They ask whether the export clause applies to dashboard data and want the roadmap promise reviewed by Friday.",
+            "source_backpointer": "customers/acme-email.txt:1-4",
+            "source_event_ref": "eventloom://customer-acme/events/1#9ee219565125fa6d8b1fb21a9f00d393d3c352645364cfa698e9cbc44302c00d"
+          },
+          "legal": {
+            "neutral_substrate_id": "neutral:document:customers/acme-email.txt:1-4",
+            "projection_id": "purpose:legal:legal_obligation:neutral:document:customers/acme-email.txt:1-4",
+            "purpose_label": "legal_obligation",
+            "purpose_profile": "legal",
+            "quote": "ACME reports dashboard export failures affecting renewal. They ask whether the export clause applies to dashboard data and want the roadmap promise reviewed by Friday.",
+            "source_backpointer": "customers/acme-email.txt:1-4",
+            "source_event_ref": "eventloom://customer-acme/events/1#9ee219565125fa6d8b1fb21a9f00d393d3c352645364cfa698e9cbc44302c00d"
+          },
+          "product": {
+            "neutral_substrate_id": "neutral:document:customers/acme-email.txt:1-4",
+            "projection_id": "purpose:product:roadmap_commitment:neutral:document:customers/acme-email.txt:1-4",
+            "purpose_label": "roadmap_commitment",
+            "purpose_profile": "product",
+            "quote": "ACME reports dashboard export failures affecting renewal. They ask whether the export clause applies to dashboard data and want the roadmap promise reviewed by Friday.",
+            "source_backpointer": "customers/acme-email.txt:1-4",
+            "source_event_ref": "eventloom://customer-acme/events/1#9ee219565125fa6d8b1fb21a9f00d393d3c352645364cfa698e9cbc44302c00d"
+          },
+          "support": {
+            "neutral_substrate_id": "neutral:document:customers/acme-email.txt:1-4",
+            "projection_id": "purpose:support:customer_escalation:neutral:document:customers/acme-email.txt:1-4",
+            "purpose_label": "customer_escalation",
+            "purpose_profile": "support",
+            "quote": "ACME reports dashboard export failures affecting renewal. They ask whether the export clause applies to dashboard data and want the roadmap promise reviewed by Friday.",
+            "source_backpointer": "customers/acme-email.txt:1-4",
+            "source_event_ref": "eventloom://customer-acme/events/1#9ee219565125fa6d8b1fb21a9f00d393d3c352645364cfa698e9cbc44302c00d"
+          }
+        }
+      },
+      "measurement": "one neutral customer artifact can rebuild distinct cited purpose projections",
+      "name": "Neutral Substrate Projection",
+      "score": 1.0,
+      "status": "passed",
+      "threshold": 1.0
+    },
+    {
+      "evidence": {
+        "citations": [
+          "eventloom://purpose/events/9#def456"
+        ],
+        "payloads": {
+          "release": {
+            "actor": "assistant",
+            "citation": "eventloom://purpose/events/9#def456",
+            "entity_name": "auth token rotation",
+            "entity_type": "decision",
+            "feedback": "used",
+            "importance": 0.6,
+            "purpose": {
+              "evidence_policy": "release_gate_evidence_required",
+              "expected_action": "ship_block_or_defer",
+              "ontology_lens": [
+                "release_gate",
+                "regression",
+                "changelog",
+                "packaging",
+                "deployment",
+                "external_validation"
+              ],
+              "permission_scope": "repo-local",
+              "profile": "release",
+              "required_evidence": [
+                "release_check_ref",
+                "test_result_ref",
+                "changelog_ref"
+              ],
+              "retain": [
+                "release_decisions",
+                "gate_failures",
+                "packaging_evidence",
+                "external_blockers"
+              ],
+              "retention_policy": "preserve_release_gates_regressions_and_external_blockers",
+              "risk": "high",
+              "role": "release-manager",
+              "suppress": [
+                "draft_claim",
+                "uncited_release_assertion",
+                "stale_gate_result"
+              ],
+              "task": "release-readiness",
+              "time_horizon": "release",
+              "warnings": [
+                "Treat stale release-gate evidence as blocking until refreshed."
+              ]
+            },
+            "query": "auth token rotation",
+            "score": 0.88,
+            "source": "eventloom"
+          },
+          "review": {
+            "actor": "assistant",
+            "citation": "eventloom://purpose/events/9#def456",
+            "entity_name": "auth token rotation",
+            "entity_type": "decision",
+            "feedback": "used",
+            "importance": 0.6,
+            "purpose": {
+              "evidence_policy": "cited_current_facts_required",
+              "expected_action": "approve_or_block",
+              "ontology_lens": [
+                "risk",
+                "regression",
+                "missing_test",
+                "accepted_decision",
+                "blocker"
+              ],
+              "permission_scope": "repo-local",
+              "profile": "review",
+              "required_evidence": [
+                "accepted_or_cited_fact",
+                "verification_evidence"
+              ],
+              "retain": [
+                "blocking_risks",
+                "accepted_findings",
+                "test_results",
+                "review_decisions"
+              ],
+              "retention_policy": "preserve_risks_decisions_and_verification",
+              "risk": "high",
+              "role": "reviewer",
+              "suppress": [
+                "pending_unreviewed_claim",
+                "superseded_context",
+                "low_trust_inference"
+              ],
+              "task": "review",
+              "time_horizon": "release"
+            },
+            "query": "auth token rotation",
+            "score": 0.88,
+            "source": "eventloom"
+          },
+          "security": {
+            "actor": "assistant",
+            "citation": "eventloom://purpose/events/9#def456",
+            "entity_name": "auth token rotation",
+            "entity_type": "decision",
+            "feedback": "used",
+            "importance": 0.6,
+            "purpose": {
+              "evidence_policy": "cited_security_evidence_required",
+              "expected_action": "block_or_accept_risk",
+              "ontology_lens": [
+                "secret",
+                "credential",
+                "auth",
+                "authorization",
+                "exposure",
+                "vulnerability",
+                "risk_acceptance"
+              ],
+              "permission_scope": "repo-local",
+              "profile": "security",
+              "required_evidence": [
+                "source_citation",
+                "mitigation_ref",
+                "risk_owner_ref"
+              ],
+              "retain": [
+                "security_findings",
+                "mitigations",
+                "risk_acceptance",
+                "secret_handling"
+              ],
+              "retention_policy": "preserve_threats_controls_findings_and_risk_acceptance",
+              "risk": "critical",
+              "role": "security-reviewer",
+              "suppress": [
+                "uncited_safe_claim",
+                "low_trust_inference",
+                "stale_mitigation"
+              ],
+              "task": "security-assessment",
+              "time_horizon": "incident-or-release",
+              "warnings": [
+                "Do not treat absence of retrieved findings as evidence of safety."
+              ]
+            },
+            "query": "auth token rotation",
+            "score": 0.88,
+            "source": "eventloom"
+          }
+        },
+        "profiles": [
+          "release",
+          "review",
+          "security"
+        ]
+      },
+      "measurement": "same cited evidence can create distinct role-specific useful memory",
+      "name": "Cross-Role Citation",
+      "score": 1.0,
+      "status": "passed",
+      "threshold": 1.0
+    },
+    {
+      "evidence": {
+        "record_identities": [
+          "docs/auth.md:turn-4",
+          "eventloom://mission-auth/events/1#ea6db320b66b",
+          "finding-accepted",
+          "mission-auth"
+        ],
+        "strategy": "coordinate_authoritative",
+        "suppressed_count": 1
+      },
+      "measurement": "Coordinate projection keeps accepted parent state and suppresses pending worker rows",
+      "name": "Accepted-State Discipline",
+      "score": 1.0,
+      "status": "passed",
+      "threshold": 1.0
+    }
+  ],
+  "passed_lanes": 10,
+  "status": "passed",
+  "version": "purpose-v1"
+}

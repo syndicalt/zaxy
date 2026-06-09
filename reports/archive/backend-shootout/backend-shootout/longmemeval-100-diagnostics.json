@@ -1,0 +1,2775 @@
+{
+  "event_count": 1559,
+  "eventloom_path": "reports/backend-shootout/longmemeval-100.eventloom.jsonl",
+  "generated_at_utc": "2026-05-20T12:56:41Z",
+  "harness": "zaxy-backend-shootout",
+  "limit": 5,
+  "queries_file": "reports/backend-shootout/longmemeval-100-queries.json",
+  "query_count": 100,
+  "query_results": {
+    "bm25": [
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "GPS system not functioning correctly"
+        ],
+        "injected_tokens": 4839,
+        "missing_expected_terms": [
+          "GPS system not functioning correctly"
+        ],
+        "quality": 0.0,
+        "query": "What was the first issue I had with my new car after its first service?",
+        "returned_tokens": 4839
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "'Data Analysis using Python' webinar"
+        ],
+        "injected_tokens": 3314,
+        "missing_expected_terms": [
+          "'Data Analysis using Python' webinar"
+        ],
+        "quality": 0.0,
+        "query": "Which event did I attend first, the 'Effective Time Management' workshop or the 'Data Analysis using Python' webinar?",
+        "returned_tokens": 3314
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "bike"
+        ],
+        "injected_tokens": 4075,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "Which vehicle did I take care of first in February, the bike or the car?",
+        "returned_tokens": 4075
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "Samsung Galaxy S22"
+        ],
+        "injected_tokens": 3285,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "Which device did I got first, the Samsung Galaxy S22 or the Dell XPS 13?",
+        "returned_tokens": 3285
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "7 days. 8 days (including the last day) is also acceptable."
+        ],
+        "injected_tokens": 4095,
+        "missing_expected_terms": [
+          "7 days. 8 days (including the last day) is also acceptable."
+        ],
+        "quality": 0.0,
+        "query": "How many days before the team meeting I was preparing for did I attend the workshop on 'Effective Communication in the Workplace'?",
+        "returned_tokens": 4095
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "30 days. 31 days (including the last day) is also acceptable."
+        ],
+        "injected_tokens": 2590,
+        "missing_expected_terms": [
+          "30 days. 31 days (including the last day) is also acceptable."
+        ],
+        "quality": 0.0,
+        "query": "How many days had passed between the Sunday mass at St. Mary's Church and the Ash Wednesday service at the cathedral?",
+        "returned_tokens": 2590
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "14 days. 15 days (including the last day) is also acceptable."
+        ],
+        "injected_tokens": 4775,
+        "missing_expected_terms": [
+          "14 days. 15 days (including the last day) is also acceptable."
+        ],
+        "quality": 0.0,
+        "query": "How many days did it take for me to find a house I loved after starting to work with Rachel?",
+        "returned_tokens": 4775
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "Tomatoes"
+        ],
+        "injected_tokens": 4914,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "Which seeds were started first, the tomatoes or the marigolds?",
+        "returned_tokens": 4914
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "21 days. 22 days (including the last day) is also acceptable."
+        ],
+        "injected_tokens": 3017,
+        "missing_expected_terms": [
+          "21 days. 22 days (including the last day) is also acceptable."
+        ],
+        "quality": 0.0,
+        "query": "How many days had passed between the Hindu festival of Holi and the Sunday mass at St. Mary's Church?",
+        "returned_tokens": 3017
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "4 days."
+        ],
+        "injected_tokens": 4102,
+        "missing_expected_terms": [
+          "4 days."
+        ],
+        "quality": 0.0,
+        "query": "How many days before the 'Rack Fest' did I participate in the 'Turbocharged Tuesdays' event?",
+        "returned_tokens": 4102
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "white Adidas sneakers"
+        ],
+        "injected_tokens": 4286,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "Which pair of shoes did I clean last month?",
+        "returned_tokens": 4286
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "The malfunction of the stand mixer"
+        ],
+        "injected_tokens": 4833,
+        "missing_expected_terms": [
+          "The malfunction of the stand mixer"
+        ],
+        "quality": 0.0,
+        "query": "Which event happened first, the purchase of the coffee maker or the malfunction of the stand mixer?",
+        "returned_tokens": 4833
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "14 days. 8 days (including the last day) is also acceptable."
+        ],
+        "injected_tokens": 4422,
+        "missing_expected_terms": [
+          "14 days. 8 days (including the last day) is also acceptable."
+        ],
+        "quality": 0.0,
+        "query": "How many days had passed between the 'Walk for Hunger' event and the 'Coastal Cleanup' event?",
+        "returned_tokens": 4422
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "Training pads for Luna"
+        ],
+        "injected_tokens": 4698,
+        "missing_expected_terms": [
+          "Training pads for Luna"
+        ],
+        "quality": 0.0,
+        "query": "Which item did I purchase first, the dog bed for Max or the training pads for Luna?",
+        "returned_tokens": 4698
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "Fixing the fence"
+        ],
+        "injected_tokens": 4822,
+        "missing_expected_terms": [
+          "Fixing the fence"
+        ],
+        "quality": 0.0,
+        "query": "Which task did I complete first, fixing the fence or trimming the goats' hooves?",
+        "returned_tokens": 4822
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "4"
+        ],
+        "injected_tokens": 4819,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many charity events did I participate in before the 'Run for the Cure' event?",
+        "returned_tokens": 4819
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "4 years and 9 months"
+        ],
+        "injected_tokens": 3788,
+        "missing_expected_terms": [
+          "4 years and 9 months"
+        ],
+        "quality": 0.0,
+        "query": "How long have I been working before I started my current job at NovaTech?",
+        "returned_tokens": 3788
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "'The Hate U Give'"
+        ],
+        "injected_tokens": 4087,
+        "missing_expected_terms": [
+          "'The Hate U Give'"
+        ],
+        "quality": 0.0,
+        "query": "Which book did I finish reading first, 'The Hate U Give' or 'The Nightingale'?",
+        "returned_tokens": 4087
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "Smart thermostat"
+        ],
+        "injected_tokens": 4858,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "Which device did I set up first, the smart thermostat or the mesh network system?",
+        "returned_tokens": 4858
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "Five months ago"
+        ],
+        "injected_tokens": 4011,
+        "missing_expected_terms": [
+          "Five months ago"
+        ],
+        "quality": 0.0,
+        "query": "How many months ago did I book the Airbnb in San Francisco?",
+        "returned_tokens": 4011
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "5.5 weeks"
+        ],
+        "injected_tokens": 4079,
+        "missing_expected_terms": [
+          "5.5 weeks"
+        ],
+        "quality": 0.0,
+        "query": "How long did I take to finish 'The Seven Husbands of Evelyn Hugo' and 'The Nightingale' combined?",
+        "returned_tokens": 4079
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "June 3rd"
+        ],
+        "injected_tokens": 3328,
+        "missing_expected_terms": [
+          "June 3rd"
+        ],
+        "quality": 0.0,
+        "query": "What was the date on which I attended the first BBQ event in June?",
+        "returned_tokens": 3328
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "7 days. 8 days (including the last day) is also acceptable."
+        ],
+        "injected_tokens": 3383,
+        "missing_expected_terms": [
+          "7 days. 8 days (including the last day) is also acceptable."
+        ],
+        "quality": 0.0,
+        "query": "How many days before I bought the iPhone 13 Pro did I attend the Holiday Market?",
+        "returned_tokens": 3383
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "'Game of Thrones'"
+        ],
+        "injected_tokens": 4081,
+        "missing_expected_terms": [
+          "'Game of Thrones'"
+        ],
+        "quality": 0.0,
+        "query": "Which show did I start watching first, 'The Crown' or 'Game of Thrones'?",
+        "returned_tokens": 4081
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "Two weeks"
+        ],
+        "injected_tokens": 3322,
+        "missing_expected_terms": [
+          "Two weeks"
+        ],
+        "quality": 0.0,
+        "query": "How long had I been a member of 'Book Lovers Unite' when I attended the meetup?",
+        "returned_tokens": 3322
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "2 months"
+        ],
+        "injected_tokens": 3333,
+        "missing_expected_terms": [
+          "2 months"
+        ],
+        "quality": 0.0,
+        "query": "How long had I been watching stand-up comedy specials regularly when I attended the open mic night at the local comedy club?",
+        "returned_tokens": 3333
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "6:45 AM"
+        ],
+        "injected_tokens": 3365,
+        "missing_expected_terms": [
+          "6:45 AM"
+        ],
+        "quality": 0.0,
+        "query": "What time do I wake up on Tuesdays and Thursdays?",
+        "returned_tokens": 3365
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "14 days. 15 days (including the last day) is also acceptable."
+        ],
+        "injected_tokens": 3799,
+        "missing_expected_terms": [
+          "14 days. 15 days (including the last day) is also acceptable."
+        ],
+        "quality": 0.0,
+        "query": "How many days had passed since I bought my Adidas running shoes when I realized one of the shoelaces on my old Converse sneakers had broken?",
+        "returned_tokens": 3799
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "The arrival of the new prime lens"
+        ],
+        "injected_tokens": 4729,
+        "missing_expected_terms": [
+          "The arrival of the new prime lens"
+        ],
+        "quality": 0.0,
+        "query": "Which event happened first, the road trip to the coast or the arrival of the new prime lens?",
+        "returned_tokens": 4729
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "United Airlines"
+        ],
+        "injected_tokens": 4085,
+        "missing_expected_terms": [
+          "United Airlines"
+        ],
+        "quality": 0.0,
+        "query": "Which airline did I fly with the most in March and April?",
+        "returned_tokens": 4085
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "Two months"
+        ],
+        "injected_tokens": 3308,
+        "missing_expected_terms": [
+          "Two months"
+        ],
+        "quality": 0.0,
+        "query": "How long had I been bird watching when I attended the bird watching workshop?",
+        "returned_tokens": 3308
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "The solo trip to Thailand"
+        ],
+        "injected_tokens": 4125,
+        "missing_expected_terms": [
+          "The solo trip to Thailand"
+        ],
+        "quality": 0.0,
+        "query": "Which trip did I take first, the one to Europe with family or the solo trip to Thailand?",
+        "returned_tokens": 4125
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "new router"
+        ],
+        "injected_tokens": 4136,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "Which device did I set up first, the smart thermostat or the new router?",
+        "returned_tokens": 4136
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "Persistent cough"
+        ],
+        "injected_tokens": 4755,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "Which health issue did I deal with first, the persistent cough or the skin tag removal?",
+        "returned_tokens": 4755
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "27"
+        ],
+        "injected_tokens": 4687,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How old was I when I moved to the United States?",
+        "returned_tokens": 4687
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "One week. Answers ranging from 7 days to 10 days are also acceptable."
+        ],
+        "injected_tokens": 3314,
+        "missing_expected_terms": [
+          "One week. Answers ranging from 7 days to 10 days are also acceptable."
+        ],
+        "quality": 0.0,
+        "query": "How long had I been using the new area rug when I rearranged my living room furniture?",
+        "returned_tokens": 3314
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "7 days. 8 days (including the last day) is also acceptable."
+        ],
+        "injected_tokens": 4744,
+        "missing_expected_terms": [
+          "7 days. 8 days (including the last day) is also acceptable."
+        ],
+        "quality": 0.0,
+        "query": "How many days before my best friend's birthday party did I order her gift?",
+        "returned_tokens": 4744
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "The family road trip across the American Southwest"
+        ],
+        "injected_tokens": 4080,
+        "missing_expected_terms": [
+          "The family road trip across the American Southwest"
+        ],
+        "quality": 0.0,
+        "query": "Which trip did the narrator take first, the solo trip to Europe or the family road trip across the American Southwest?",
+        "returned_tokens": 4080
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "Two weeks"
+        ],
+        "injected_tokens": 3405,
+        "missing_expected_terms": [
+          "Two weeks"
+        ],
+        "quality": 0.0,
+        "query": "How long did I use my new binoculars before I saw the American goldfinches returning to the area?",
+        "returned_tokens": 3405
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "Tom"
+        ],
+        "injected_tokens": 3905,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "Who did I meet first, Mark and Sarah or Tom?",
+        "returned_tokens": 3905
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "one week"
+        ],
+        "injected_tokens": 3316,
+        "missing_expected_terms": [
+          "one week"
+        ],
+        "quality": 0.0,
+        "query": "How many weeks have I been accepted into the exchange program when I started attending the pre-departure orientation sessions?",
+        "returned_tokens": 3316
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "Page Turners"
+        ],
+        "injected_tokens": 3312,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "Which group did I join first, 'Page Turners' or 'Marketing Professionals'?",
+        "returned_tokens": 3312
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "Four weeks"
+        ],
+        "injected_tokens": 4604,
+        "missing_expected_terms": [
+          "Four weeks"
+        ],
+        "quality": 0.0,
+        "query": "How long had I been taking guitar lessons when I bought the new guitar amp?",
+        "returned_tokens": 4604
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "Disney+"
+        ],
+        "injected_tokens": 4771,
+        "missing_expected_terms": [
+          "Disney+"
+        ],
+        "quality": 0.0,
+        "query": "Which streaming service did I start using most recently?",
+        "returned_tokens": 4771
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "2"
+        ],
+        "injected_tokens": 3974,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many months before my anniversary did Rachel get engaged?",
+        "returned_tokens": 3974
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "Receiving the new phone case"
+        ],
+        "injected_tokens": 4184,
+        "missing_expected_terms": [
+          "Receiving the new phone case"
+        ],
+        "quality": 0.0,
+        "query": "Which event happened first, the narrator losing their phone charger or the narrator receiving their new phone case?",
+        "returned_tokens": 4184
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "the woman selling jam at the farmer's market"
+        ],
+        "injected_tokens": 3378,
+        "missing_expected_terms": [
+          "the woman selling jam at the farmer's market"
+        ],
+        "quality": 0.0,
+        "query": "Who did I meet first, the woman selling jam at the farmer's market or the tourist from Australia?",
+        "returned_tokens": 3378
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "The meeting with Rachel"
+        ],
+        "injected_tokens": 4055,
+        "missing_expected_terms": [
+          "The meeting with Rachel"
+        ],
+        "quality": 0.0,
+        "query": "Which event happened first, the meeting with Rachel or the pride parade?",
+        "returned_tokens": 4055
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "the photo album for my mom"
+        ],
+        "injected_tokens": 4820,
+        "missing_expected_terms": [
+          "the photo album for my mom"
+        ],
+        "quality": 0.0,
+        "query": "Which gift did I buy first, the necklace for my sister or the photo album for my mom?",
+        "returned_tokens": 4820
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "volleyball league"
+        ],
+        "injected_tokens": 4063,
+        "missing_expected_terms": [
+          "volleyball league"
+        ],
+        "quality": 0.0,
+        "query": "Which event did I participate in first, the volleyball league or the charity 5K run to raise money for a local children's hospital?",
+        "returned_tokens": 4063
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "Spanish classes"
+        ],
+        "injected_tokens": 4743,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "Which event happened first, my attendance at a cultural festival or the start of my Spanish classes?",
+        "returned_tokens": 4743
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "Japanese Zero fighter plane model"
+        ],
+        "injected_tokens": 4117,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "Which project did I start first, the Ferrari model or the Japanese Zero fighter plane model?",
+        "returned_tokens": 4117
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "Alex"
+        ],
+        "injected_tokens": 4524,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "Who became a parent first, Rachel or Alex?",
+        "returned_tokens": 4524
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "7 days. 8 days (including the last day) is also acceptable."
+        ],
+        "injected_tokens": 4040,
+        "missing_expected_terms": [
+          "7 days. 8 days (including the last day) is also acceptable."
+        ],
+        "quality": 0.0,
+        "query": "How many days had passed between the day I bought a gift for my brother's graduation ceremony and the day I bought a birthday gift for my best friend?",
+        "returned_tokens": 4040
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "The information provided is not enough. You mentioned fixing the fence but did not mention purchasing cows from Peter."
+        ],
+        "injected_tokens": 3349,
+        "missing_expected_terms": [
+          "The information provided is not enough. You mentioned fixing the fence but did not mention purchasing cows from Peter."
+        ],
+        "quality": 0.0,
+        "query": "Which task did I complete first, fixing the fence or purchasing three cows from Peter?",
+        "returned_tokens": 3349
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "The information provided is not enough. From the information provided, You haven't started working at Google yet."
+        ],
+        "injected_tokens": 4773,
+        "missing_expected_terms": [
+          "The information provided is not enough. From the information provided, You haven't started working at Google yet."
+        ],
+        "quality": 0.0,
+        "query": "How long have I been working before I started my current job at Google?",
+        "returned_tokens": 4773
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "The information provided is not enough. You only mentioned booking Airbnb in San Francisco."
+        ],
+        "injected_tokens": 4011,
+        "missing_expected_terms": [
+          "The information provided is not enough. You only mentioned booking Airbnb in San Francisco."
+        ],
+        "quality": 0.0,
+        "query": "When did I book the Airbnb in Sacramento?",
+        "returned_tokens": 4011
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "The information provided is not enough. You mentioned getting the iPhone 13 Pro and attending the market, but you did not mention buying an iPad."
+        ],
+        "injected_tokens": 3373,
+        "missing_expected_terms": [
+          "The information provided is not enough. You mentioned getting the iPhone 13 Pro and attending the market, but you did not mention buying an iPad."
+        ],
+        "quality": 0.0,
+        "query": "How many days before I bought my iPad did I attend the Holiday Market?",
+        "returned_tokens": 3373
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "The information provided is not enough. You did not mention starting the Porsche 991 Turbo S model."
+        ],
+        "injected_tokens": 4732,
+        "missing_expected_terms": [
+          "The information provided is not enough. You did not mention starting the Porsche 991 Turbo S model."
+        ],
+        "quality": 0.0,
+        "query": "Which project did I start first, the Ferrari model or the Porsche 991 Turbo S model?",
+        "returned_tokens": 4732
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "The information provided is not enough. You mentioned Alex becoming a parent in January, but you didn't mention anything about Tom."
+        ],
+        "injected_tokens": 3662,
+        "missing_expected_terms": [
+          "The information provided is not enough. You mentioned Alex becoming a parent in January, but you didn't mention anything about Tom."
+        ],
+        "quality": 0.0,
+        "query": "Who became a parent first, Tom or Alex?",
+        "returned_tokens": 3662
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "3"
+        ],
+        "injected_tokens": 4066,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many items of clothing do I need to pick up or return from a store?",
+        "returned_tokens": 4066
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "2"
+        ],
+        "injected_tokens": 4750,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many projects have I led or am currently leading?",
+        "returned_tokens": 4750
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "I have worked on or bought five model kits. The scales of the models are: Revell F-15 Eagle (scale not mentioned), Tamiya 1/48 scale Spitfire Mk.V, 1/16 scale German Tiger I tank, 1/72 scale B-29 bomber, and 1/24 scale '69 Camaro."
+        ],
+        "injected_tokens": 4030,
+        "missing_expected_terms": [
+          "I have worked on or bought five model kits. The scales of the models are: Revell F-15 Eagle (scale not mentioned), Tamiya 1/48 scale Spitfire Mk.V, 1/16 scale German Tiger I tank, 1/72 scale B-29 bomber, and 1/24 scale '69 Camaro."
+        ],
+        "quality": 0.0,
+        "query": "How many model kits have I worked on or bought?",
+        "returned_tokens": 4030
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "8 days."
+        ],
+        "injected_tokens": 3985,
+        "missing_expected_terms": [
+          "8 days."
+        ],
+        "quality": 0.0,
+        "query": "How many days did I spend on camping trips in the United States this year?",
+        "returned_tokens": 3985
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "3.5 weeks"
+        ],
+        "injected_tokens": 4149,
+        "missing_expected_terms": [
+          "3.5 weeks"
+        ],
+        "quality": 0.0,
+        "query": "How many weeks did it take me to watch all the Marvel Cinematic Universe movies and the main Star Wars films?",
+        "returned_tokens": 4149
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "3"
+        ],
+        "injected_tokens": 4798,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many plants did I acquire in the last month?",
+        "returned_tokens": 4798
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "$185"
+        ],
+        "injected_tokens": 4796,
+        "missing_expected_terms": [
+          "$185"
+        ],
+        "quality": 0.0,
+        "query": "How much total money have I spent on bike-related expenses since the start of the year?",
+        "returned_tokens": 4796
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "15 hours for getting to the three destinations (or 30 hours for the round trip)"
+        ],
+        "injected_tokens": 4806,
+        "missing_expected_terms": [
+          "15 hours for getting to the three destinations (or 30 hours for the round trip)"
+        ],
+        "quality": 0.0,
+        "query": "How many hours in total did I spend driving to my three road trip destinations combined?",
+        "returned_tokens": 4806
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "I visited three different doctors: a primary care physician, an ENT specialist, and a dermatologist."
+        ],
+        "injected_tokens": 4827,
+        "missing_expected_terms": [
+          "I visited three different doctors: a primary care physician, an ENT specialist, and a dermatologist."
+        ],
+        "quality": 0.0,
+        "query": "How many different doctors did I visit?",
+        "returned_tokens": 4827
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "2 AM"
+        ],
+        "injected_tokens": 4818,
+        "missing_expected_terms": [
+          "2 AM"
+        ],
+        "quality": 0.0,
+        "query": "What time did I go to bed on the day before I had a doctor's appointment?",
+        "returned_tokens": 4818
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "3"
+        ],
+        "injected_tokens": 4559,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many different types of citrus fruits have I used in my cocktail recipes?",
+        "returned_tokens": 4559
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "I attended four movie festivals."
+        ],
+        "injected_tokens": 4062,
+        "missing_expected_terms": [
+          "I attended four movie festivals."
+        ],
+        "quality": 0.0,
+        "query": "How many movie festivals that I attended?",
+        "returned_tokens": 4062
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "17 days"
+        ],
+        "injected_tokens": 4622,
+        "missing_expected_terms": [
+          "17 days"
+        ],
+        "quality": 0.0,
+        "query": "How many days did I take social media breaks in total?",
+        "returned_tokens": 4622
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "3"
+        ],
+        "injected_tokens": 4847,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many tanks do I currently have, including the one I set up for my friend's kid?",
+        "returned_tokens": 4847
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "$2,500"
+        ],
+        "injected_tokens": 4846,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "What is the total amount I spent on luxury items in the past few months?",
+        "returned_tokens": 4846
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "140 hours"
+        ],
+        "injected_tokens": 3351,
+        "missing_expected_terms": [
+          "140 hours"
+        ],
+        "quality": 0.0,
+        "query": "How many hours have I spent playing games in total?",
+        "returned_tokens": 3351
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "I attended three weddings. The couples were Rachel and Mike, Emily and Sarah, and Jen and Tom."
+        ],
+        "injected_tokens": 4117,
+        "missing_expected_terms": [
+          "I attended three weddings. The couples were Rachel and Mike, Emily and Sarah, and Jen and Tom."
+        ],
+        "quality": 0.0,
+        "query": "How many weddings have I attended in this year?",
+        "returned_tokens": 4117
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "5"
+        ],
+        "injected_tokens": 3354,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many babies were born to friends and family members in the last few months?",
+        "returned_tokens": 3354
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "4"
+        ],
+        "injected_tokens": 4825,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many pieces of furniture did I buy, assemble, sell, or fix in the past few months?",
+        "returned_tokens": 4825
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "4"
+        ],
+        "injected_tokens": 4107,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many times did I bake something in the past two weeks?",
+        "returned_tokens": 4107
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "2"
+        ],
+        "injected_tokens": 4844,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many different museums or galleries did I visit in the month of February?",
+        "returned_tokens": 4844
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "4"
+        ],
+        "injected_tokens": 3891,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many different cuisines have I learned to cook or tried out in the past few months?",
+        "returned_tokens": 3891
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "I viewed four properties before making an offer on the townhouse in the Brookside neighborhood. The reasons I didn't make an offer on them were: the kitchen of the bungalow needed serious renovation, the property in Cedar Creek was out of my budget, the noise from the highway was a deal-breaker for the 1-bedroom condo, and my offer on the 2-bedroom condo was rejected due to a higher bid."
+        ],
+        "injected_tokens": 4104,
+        "missing_expected_terms": [
+          "I viewed four properties before making an offer on the townhouse in the Brookside neighborhood. The reasons I didn't make an offer on them were: the kitchen of the bungalow needed serious renovation, the property in Cedar Creek was out of my budget, the noise from the highway was a deal-breaker for the 1-bedroom condo, and my offer on the 2-bedroom condo was rejected due to a higher bid."
+        ],
+        "quality": 0.0,
+        "query": "How many properties did I view before making an offer on the townhouse in the Brookside neighborhood?",
+        "returned_tokens": 4104
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "3"
+        ],
+        "injected_tokens": 4779,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many different types of food delivery services have I used recently?",
+        "returned_tokens": 4779
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "0.5 hours"
+        ],
+        "injected_tokens": 4645,
+        "missing_expected_terms": [
+          "0.5 hours"
+        ],
+        "quality": 0.0,
+        "query": "How many hours of jogging and yoga did I do last week?",
+        "returned_tokens": 4645
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "TikTok"
+        ],
+        "injected_tokens": 4015,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "Which social media platform did I gain the most followers on over the past month?",
+        "returned_tokens": 4015
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "Thrive Market"
+        ],
+        "injected_tokens": 4448,
+        "missing_expected_terms": [
+          "Thrive Market"
+        ],
+        "quality": 0.0,
+        "query": "Which grocery store did I spend the most money at in the past month?",
+        "returned_tokens": 4448
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "$270"
+        ],
+        "injected_tokens": 4037,
+        "missing_expected_terms": [
+          "$270"
+        ],
+        "quality": 0.0,
+        "query": "How much more did I spend on accommodations per night in Hawaii compared to Tokyo?",
+        "returned_tokens": 4037
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "4"
+        ],
+        "injected_tokens": 4737,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many different art-related events did I attend in the past month?",
+        "returned_tokens": 4737
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "59.6"
+        ],
+        "injected_tokens": 4083,
+        "missing_expected_terms": [
+          "59.6"
+        ],
+        "quality": 0.0,
+        "query": "What is the average age of me, my parents, and my grandparents?",
+        "returned_tokens": 4083
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "2"
+        ],
+        "injected_tokens": 4846,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many doctor's appointments did I go to in March?",
+        "returned_tokens": 4846
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "5 days. 6 days (including the last day) is also acceptable."
+        ],
+        "injected_tokens": 3222,
+        "missing_expected_terms": [
+          "5 days. 6 days (including the last day) is also acceptable."
+        ],
+        "quality": 0.0,
+        "query": "How many days did it take for me to receive the new remote shutter release after I ordered it?",
+        "returned_tokens": 3222
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "4"
+        ],
+        "injected_tokens": 4753,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many health-related devices do I use in a day?",
+        "returned_tokens": 4753
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "17"
+        ],
+        "injected_tokens": 4030,
+        "missing_expected_terms": [
+          "17"
+        ],
+        "quality": 0.0,
+        "query": "How many fish are there in total in both of my aquariums?",
+        "returned_tokens": 4030
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "5"
+        ],
+        "injected_tokens": 4288,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many fitness classes do I attend in a typical week?",
+        "returned_tokens": 4288
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "5 days. 6 days (including the last day) is also acceptable."
+        ],
+        "injected_tokens": 4165,
+        "missing_expected_terms": [
+          "5 days. 6 days (including the last day) is also acceptable."
+        ],
+        "quality": 0.0,
+        "query": "How many days did it take for my laptop backpack to arrive after I bought it?",
+        "returned_tokens": 4165
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "3"
+        ],
+        "injected_tokens": 4876,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many pieces of jewelry did I acquire in the last two months?",
+        "returned_tokens": 4876
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "$5,850"
+        ],
+        "injected_tokens": 4072,
+        "missing_expected_terms": [
+          "$5,850"
+        ],
+        "quality": 0.0,
+        "query": "How much money did I raise in total through all the charity events I participated in?",
+        "returned_tokens": 4072
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "2"
+        ],
+        "injected_tokens": 4139,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many projects have I been working on simultaneously, excluding my thesis?",
+        "returned_tokens": 4139
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "I currently own 4 musical instruments. I've had the Fender Stratocaster electric guitar for 5 years, the Yamaha FG800 acoustic guitar for 8 years, the 5-piece Pearl Export drum set for an unspecified amount of time, and the Korg B1 piano for 3 years."
+        ],
+        "injected_tokens": 4867,
+        "missing_expected_terms": [
+          "I currently own 4 musical instruments. I've had the Fender Stratocaster electric guitar for 5 years, the Yamaha FG800 acoustic guitar for 8 years, the 5-piece Pearl Export drum set for an unspecified amount of time, and the Korg B1 piano for 3 years."
+        ],
+        "quality": 0.0,
+        "query": "How many musical instruments do I currently own?",
+        "returned_tokens": 4867
+      }
+    ],
+    "embedded": [
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "GPS system not functioning correctly"
+        ],
+        "injected_tokens": 1168,
+        "missing_expected_terms": [
+          "GPS system not functioning correctly"
+        ],
+        "quality": 0.0,
+        "query": "What was the first issue I had with my new car after its first service?",
+        "returned_tokens": 1063
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "'Data Analysis using Python' webinar"
+        ],
+        "injected_tokens": 2626,
+        "missing_expected_terms": [
+          "'Data Analysis using Python' webinar"
+        ],
+        "quality": 0.0,
+        "query": "Which event did I attend first, the 'Effective Time Management' workshop or the 'Data Analysis using Python' webinar?",
+        "returned_tokens": 2525
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "bike"
+        ],
+        "injected_tokens": 1834,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "Which vehicle did I take care of first in February, the bike or the car?",
+        "returned_tokens": 1733
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "Samsung Galaxy S22"
+        ],
+        "injected_tokens": 1908,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "Which device did I got first, the Samsung Galaxy S22 or the Dell XPS 13?",
+        "returned_tokens": 1803
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "7 days. 8 days (including the last day) is also acceptable."
+        ],
+        "injected_tokens": 1852,
+        "missing_expected_terms": [
+          "7 days. 8 days (including the last day) is also acceptable."
+        ],
+        "quality": 0.0,
+        "query": "How many days before the team meeting I was preparing for did I attend the workshop on 'Effective Communication in the Workplace'?",
+        "returned_tokens": 1751
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "30 days. 31 days (including the last day) is also acceptable."
+        ],
+        "injected_tokens": 1098,
+        "missing_expected_terms": [
+          "30 days. 31 days (including the last day) is also acceptable."
+        ],
+        "quality": 0.0,
+        "query": "How many days had passed between the Sunday mass at St. Mary's Church and the Ash Wednesday service at the cathedral?",
+        "returned_tokens": 997
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "14 days. 15 days (including the last day) is also acceptable."
+        ],
+        "injected_tokens": 1831,
+        "missing_expected_terms": [
+          "14 days. 15 days (including the last day) is also acceptable."
+        ],
+        "quality": 0.0,
+        "query": "How many days did it take for me to find a house I loved after starting to work with Rachel?",
+        "returned_tokens": 1731
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "Tomatoes"
+        ],
+        "injected_tokens": 4169,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "Which seeds were started first, the tomatoes or the marigolds?",
+        "returned_tokens": 4070
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "21 days. 22 days (including the last day) is also acceptable."
+        ],
+        "injected_tokens": 1156,
+        "missing_expected_terms": [
+          "21 days. 22 days (including the last day) is also acceptable."
+        ],
+        "quality": 0.0,
+        "query": "How many days had passed between the Hindu festival of Holi and the Sunday mass at St. Mary's Church?",
+        "returned_tokens": 1054
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "4 days."
+        ],
+        "injected_tokens": 1141,
+        "missing_expected_terms": [
+          "4 days."
+        ],
+        "quality": 0.0,
+        "query": "How many days before the 'Rack Fest' did I participate in the 'Turbocharged Tuesdays' event?",
+        "returned_tokens": 1038
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "white Adidas sneakers"
+        ],
+        "injected_tokens": 1084,
+        "missing_expected_terms": [
+          "white Adidas sneakers"
+        ],
+        "quality": 0.0,
+        "query": "Which pair of shoes did I clean last month?",
+        "returned_tokens": 984
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "The malfunction of the stand mixer"
+        ],
+        "injected_tokens": 2564,
+        "missing_expected_terms": [
+          "The malfunction of the stand mixer"
+        ],
+        "quality": 0.0,
+        "query": "Which event happened first, the purchase of the coffee maker or the malfunction of the stand mixer?",
+        "returned_tokens": 2465
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "14 days. 8 days (including the last day) is also acceptable."
+        ],
+        "injected_tokens": 1823,
+        "missing_expected_terms": [
+          "14 days. 8 days (including the last day) is also acceptable."
+        ],
+        "quality": 0.0,
+        "query": "How many days had passed between the 'Walk for Hunger' event and the 'Coastal Cleanup' event?",
+        "returned_tokens": 1724
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "Training pads for Luna"
+        ],
+        "injected_tokens": 1866,
+        "missing_expected_terms": [
+          "Training pads for Luna"
+        ],
+        "quality": 0.0,
+        "query": "Which item did I purchase first, the dog bed for Max or the training pads for Luna?",
+        "returned_tokens": 1764
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "Fixing the fence"
+        ],
+        "injected_tokens": 1882,
+        "missing_expected_terms": [
+          "Fixing the fence"
+        ],
+        "quality": 0.0,
+        "query": "Which task did I complete first, fixing the fence or trimming the goats' hooves?",
+        "returned_tokens": 1778
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "4"
+        ],
+        "injected_tokens": 1825,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many charity events did I participate in before the 'Run for the Cure' event?",
+        "returned_tokens": 1726
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "4 years and 9 months"
+        ],
+        "injected_tokens": 1164,
+        "missing_expected_terms": [
+          "4 years and 9 months"
+        ],
+        "quality": 0.0,
+        "query": "How long have I been working before I started my current job at NovaTech?",
+        "returned_tokens": 1060
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "'The Hate U Give'"
+        ],
+        "injected_tokens": 3308,
+        "missing_expected_terms": [
+          "'The Hate U Give'"
+        ],
+        "quality": 0.0,
+        "query": "Which book did I finish reading first, 'The Hate U Give' or 'The Nightingale'?",
+        "returned_tokens": 3210
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "Smart thermostat"
+        ],
+        "injected_tokens": 2662,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "Which device did I set up first, the smart thermostat or the mesh network system?",
+        "returned_tokens": 2560
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "Five months ago"
+        ],
+        "injected_tokens": 2555,
+        "missing_expected_terms": [
+          "Five months ago"
+        ],
+        "quality": 0.0,
+        "query": "How many months ago did I book the Airbnb in San Francisco?",
+        "returned_tokens": 2453
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "5.5 weeks"
+        ],
+        "injected_tokens": 1144,
+        "missing_expected_terms": [
+          "5.5 weeks"
+        ],
+        "quality": 0.0,
+        "query": "How long did I take to finish 'The Seven Husbands of Evelyn Hugo' and 'The Nightingale' combined?",
+        "returned_tokens": 1041
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "June 3rd"
+        ],
+        "injected_tokens": 1836,
+        "missing_expected_terms": [
+          "June 3rd"
+        ],
+        "quality": 0.0,
+        "query": "What was the date on which I attended the first BBQ event in June?",
+        "returned_tokens": 1733
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "7 days. 8 days (including the last day) is also acceptable."
+        ],
+        "injected_tokens": 1171,
+        "missing_expected_terms": [
+          "7 days. 8 days (including the last day) is also acceptable."
+        ],
+        "quality": 0.0,
+        "query": "How many days before I bought the iPhone 13 Pro did I attend the Holiday Market?",
+        "returned_tokens": 1067
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "'Game of Thrones'"
+        ],
+        "injected_tokens": 1071,
+        "missing_expected_terms": [
+          "'Game of Thrones'"
+        ],
+        "quality": 0.0,
+        "query": "Which show did I start watching first, 'The Crown' or 'Game of Thrones'?",
+        "returned_tokens": 967
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "Two weeks"
+        ],
+        "injected_tokens": 1170,
+        "missing_expected_terms": [
+          "Two weeks"
+        ],
+        "quality": 0.0,
+        "query": "How long had I been a member of 'Book Lovers Unite' when I attended the meetup?",
+        "returned_tokens": 1066
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "2 months"
+        ],
+        "injected_tokens": 3336,
+        "missing_expected_terms": [
+          "2 months"
+        ],
+        "quality": 0.0,
+        "query": "How long had I been watching stand-up comedy specials regularly when I attended the open mic night at the local comedy club?",
+        "returned_tokens": 3241
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "6:45 AM"
+        ],
+        "injected_tokens": 1111,
+        "missing_expected_terms": [
+          "6:45 AM"
+        ],
+        "quality": 0.0,
+        "query": "What time do I wake up on Tuesdays and Thursdays?",
+        "returned_tokens": 1008
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "14 days. 15 days (including the last day) is also acceptable."
+        ],
+        "injected_tokens": 1107,
+        "missing_expected_terms": [
+          "14 days. 15 days (including the last day) is also acceptable."
+        ],
+        "quality": 0.0,
+        "query": "How many days had passed since I bought my Adidas running shoes when I realized one of the shoelaces on my old Converse sneakers had broken?",
+        "returned_tokens": 1006
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "The arrival of the new prime lens"
+        ],
+        "injected_tokens": 1761,
+        "missing_expected_terms": [
+          "The arrival of the new prime lens"
+        ],
+        "quality": 0.0,
+        "query": "Which event happened first, the road trip to the coast or the arrival of the new prime lens?",
+        "returned_tokens": 1661
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "United Airlines"
+        ],
+        "injected_tokens": 2598,
+        "missing_expected_terms": [
+          "United Airlines"
+        ],
+        "quality": 0.0,
+        "query": "Which airline did I fly with the most in March and April?",
+        "returned_tokens": 2498
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "Two months"
+        ],
+        "injected_tokens": 1199,
+        "missing_expected_terms": [
+          "Two months"
+        ],
+        "quality": 0.0,
+        "query": "How long had I been bird watching when I attended the bird watching workshop?",
+        "returned_tokens": 1095
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "The solo trip to Thailand"
+        ],
+        "injected_tokens": 2632,
+        "missing_expected_terms": [
+          "The solo trip to Thailand"
+        ],
+        "quality": 0.0,
+        "query": "Which trip did I take first, the one to Europe with family or the solo trip to Thailand?",
+        "returned_tokens": 2530
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "new router"
+        ],
+        "injected_tokens": 1908,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "Which device did I set up first, the smart thermostat or the new router?",
+        "returned_tokens": 1804
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "Persistent cough"
+        ],
+        "injected_tokens": 2600,
+        "missing_expected_terms": [
+          "Persistent cough"
+        ],
+        "quality": 0.0,
+        "query": "Which health issue did I deal with first, the persistent cough or the skin tag removal?",
+        "returned_tokens": 2499
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "27"
+        ],
+        "injected_tokens": 1173,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How old was I when I moved to the United States?",
+        "returned_tokens": 1068
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "One week. Answers ranging from 7 days to 10 days are also acceptable."
+        ],
+        "injected_tokens": 1117,
+        "missing_expected_terms": [
+          "One week. Answers ranging from 7 days to 10 days are also acceptable."
+        ],
+        "quality": 0.0,
+        "query": "How long had I been using the new area rug when I rearranged my living room furniture?",
+        "returned_tokens": 1015
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "7 days. 8 days (including the last day) is also acceptable."
+        ],
+        "injected_tokens": 3329,
+        "missing_expected_terms": [
+          "7 days. 8 days (including the last day) is also acceptable."
+        ],
+        "quality": 0.0,
+        "query": "How many days before my best friend's birthday party did I order her gift?",
+        "returned_tokens": 3230
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "The family road trip across the American Southwest"
+        ],
+        "injected_tokens": 1159,
+        "missing_expected_terms": [
+          "The family road trip across the American Southwest"
+        ],
+        "quality": 0.0,
+        "query": "Which trip did the narrator take first, the solo trip to Europe or the family road trip across the American Southwest?",
+        "returned_tokens": 1055
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "Two weeks"
+        ],
+        "injected_tokens": 1184,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How long did I use my new binoculars before I saw the American goldfinches returning to the area?",
+        "returned_tokens": 1080
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "Tom"
+        ],
+        "injected_tokens": 3132,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "Who did I meet first, Mark and Sarah or Tom?",
+        "returned_tokens": 3033
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "one week"
+        ],
+        "injected_tokens": 4086,
+        "missing_expected_terms": [
+          "one week"
+        ],
+        "quality": 0.0,
+        "query": "How many weeks have I been accepted into the exchange program when I started attending the pre-departure orientation sessions?",
+        "returned_tokens": 3987
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "Page Turners"
+        ],
+        "injected_tokens": 1813,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "Which group did I join first, 'Page Turners' or 'Marketing Professionals'?",
+        "returned_tokens": 1709
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "Four weeks"
+        ],
+        "injected_tokens": 1144,
+        "missing_expected_terms": [
+          "Four weeks"
+        ],
+        "quality": 0.0,
+        "query": "How long had I been taking guitar lessons when I bought the new guitar amp?",
+        "returned_tokens": 1040
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "Disney+"
+        ],
+        "injected_tokens": 4053,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "Which streaming service did I start using most recently?",
+        "returned_tokens": 3957
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "2"
+        ],
+        "injected_tokens": 2666,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many months before my anniversary did Rachel get engaged?",
+        "returned_tokens": 2569
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "Receiving the new phone case"
+        ],
+        "injected_tokens": 3270,
+        "missing_expected_terms": [
+          "Receiving the new phone case"
+        ],
+        "quality": 0.0,
+        "query": "Which event happened first, the narrator losing their phone charger or the narrator receiving their new phone case?",
+        "returned_tokens": 3169
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "the woman selling jam at the farmer's market"
+        ],
+        "injected_tokens": 1194,
+        "missing_expected_terms": [
+          "the woman selling jam at the farmer's market"
+        ],
+        "quality": 0.0,
+        "query": "Who did I meet first, the woman selling jam at the farmer's market or the tourist from Australia?",
+        "returned_tokens": 1089
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "The meeting with Rachel"
+        ],
+        "injected_tokens": 1906,
+        "missing_expected_terms": [
+          "The meeting with Rachel"
+        ],
+        "quality": 0.0,
+        "query": "Which event happened first, the meeting with Rachel or the pride parade?",
+        "returned_tokens": 1805
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "the photo album for my mom"
+        ],
+        "injected_tokens": 1156,
+        "missing_expected_terms": [
+          "the photo album for my mom"
+        ],
+        "quality": 0.0,
+        "query": "Which gift did I buy first, the necklace for my sister or the photo album for my mom?",
+        "returned_tokens": 1053
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "volleyball league"
+        ],
+        "injected_tokens": 2561,
+        "missing_expected_terms": [
+          "volleyball league"
+        ],
+        "quality": 0.0,
+        "query": "Which event did I participate in first, the volleyball league or the charity 5K run to raise money for a local children's hospital?",
+        "returned_tokens": 2462
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "Spanish classes"
+        ],
+        "injected_tokens": 1869,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "Which event happened first, my attendance at a cultural festival or the start of my Spanish classes?",
+        "returned_tokens": 1767
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "Japanese Zero fighter plane model"
+        ],
+        "injected_tokens": 2671,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "Which project did I start first, the Ferrari model or the Japanese Zero fighter plane model?",
+        "returned_tokens": 2567
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "Alex"
+        ],
+        "injected_tokens": 1901,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "Who became a parent first, Rachel or Alex?",
+        "returned_tokens": 1798
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "7 days. 8 days (including the last day) is also acceptable."
+        ],
+        "injected_tokens": 1816,
+        "missing_expected_terms": [
+          "7 days. 8 days (including the last day) is also acceptable."
+        ],
+        "quality": 0.0,
+        "query": "How many days had passed between the day I bought a gift for my brother's graduation ceremony and the day I bought a birthday gift for my best friend?",
+        "returned_tokens": 1716
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "The information provided is not enough. You mentioned fixing the fence but did not mention purchasing cows from Peter."
+        ],
+        "injected_tokens": 1236,
+        "missing_expected_terms": [
+          "The information provided is not enough. You mentioned fixing the fence but did not mention purchasing cows from Peter."
+        ],
+        "quality": 0.0,
+        "query": "Which task did I complete first, fixing the fence or purchasing three cows from Peter?",
+        "returned_tokens": 1129
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "The information provided is not enough. From the information provided, You haven't started working at Google yet."
+        ],
+        "injected_tokens": 1103,
+        "missing_expected_terms": [
+          "The information provided is not enough. From the information provided, You haven't started working at Google yet."
+        ],
+        "quality": 0.0,
+        "query": "How long have I been working before I started my current job at Google?",
+        "returned_tokens": 1002
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "The information provided is not enough. You only mentioned booking Airbnb in San Francisco."
+        ],
+        "injected_tokens": 1108,
+        "missing_expected_terms": [
+          "The information provided is not enough. You only mentioned booking Airbnb in San Francisco."
+        ],
+        "quality": 0.0,
+        "query": "When did I book the Airbnb in Sacramento?",
+        "returned_tokens": 1005
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "The information provided is not enough. You mentioned getting the iPhone 13 Pro and attending the market, but you did not mention buying an iPad."
+        ],
+        "injected_tokens": 1165,
+        "missing_expected_terms": [
+          "The information provided is not enough. You mentioned getting the iPhone 13 Pro and attending the market, but you did not mention buying an iPad."
+        ],
+        "quality": 0.0,
+        "query": "How many days before I bought my iPad did I attend the Holiday Market?",
+        "returned_tokens": 1061
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "The information provided is not enough. You did not mention starting the Porsche 991 Turbo S model."
+        ],
+        "injected_tokens": 3324,
+        "missing_expected_terms": [
+          "The information provided is not enough. You did not mention starting the Porsche 991 Turbo S model."
+        ],
+        "quality": 0.0,
+        "query": "Which project did I start first, the Ferrari model or the Porsche 991 Turbo S model?",
+        "returned_tokens": 3222
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "The information provided is not enough. You mentioned Alex becoming a parent in January, but you didn't mention anything about Tom."
+        ],
+        "injected_tokens": 1901,
+        "missing_expected_terms": [
+          "The information provided is not enough. You mentioned Alex becoming a parent in January, but you didn't mention anything about Tom."
+        ],
+        "quality": 0.0,
+        "query": "Who became a parent first, Tom or Alex?",
+        "returned_tokens": 1798
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "3"
+        ],
+        "injected_tokens": 3325,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many items of clothing do I need to pick up or return from a store?",
+        "returned_tokens": 3229
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "2"
+        ],
+        "injected_tokens": 1842,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many projects have I led or am currently leading?",
+        "returned_tokens": 1738
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "I have worked on or bought five model kits. The scales of the models are: Revell F-15 Eagle (scale not mentioned), Tamiya 1/48 scale Spitfire Mk.V, 1/16 scale German Tiger I tank, 1/72 scale B-29 bomber, and 1/24 scale '69 Camaro."
+        ],
+        "injected_tokens": 1088,
+        "missing_expected_terms": [
+          "I have worked on or bought five model kits. The scales of the models are: Revell F-15 Eagle (scale not mentioned), Tamiya 1/48 scale Spitfire Mk.V, 1/16 scale German Tiger I tank, 1/72 scale B-29 bomber, and 1/24 scale '69 Camaro."
+        ],
+        "quality": 0.0,
+        "query": "How many model kits have I worked on or bought?",
+        "returned_tokens": 985
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "8 days."
+        ],
+        "injected_tokens": 1923,
+        "missing_expected_terms": [
+          "8 days."
+        ],
+        "quality": 0.0,
+        "query": "How many days did I spend on camping trips in the United States this year?",
+        "returned_tokens": 1820
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "3.5 weeks"
+        ],
+        "injected_tokens": 1013,
+        "missing_expected_terms": [
+          "3.5 weeks"
+        ],
+        "quality": 0.0,
+        "query": "How many weeks did it take me to watch all the Marvel Cinematic Universe movies and the main Star Wars films?",
+        "returned_tokens": 907
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "3"
+        ],
+        "injected_tokens": 1935,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many plants did I acquire in the last month?",
+        "returned_tokens": 1833
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "$185"
+        ],
+        "injected_tokens": 2623,
+        "missing_expected_terms": [
+          "$185"
+        ],
+        "quality": 0.0,
+        "query": "How much total money have I spent on bike-related expenses since the start of the year?",
+        "returned_tokens": 2523
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "15 hours for getting to the three destinations (or 30 hours for the round trip)"
+        ],
+        "injected_tokens": 1097,
+        "missing_expected_terms": [
+          "15 hours for getting to the three destinations (or 30 hours for the round trip)"
+        ],
+        "quality": 0.0,
+        "query": "How many hours in total did I spend driving to my three road trip destinations combined?",
+        "returned_tokens": 996
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "I visited three different doctors: a primary care physician, an ENT specialist, and a dermatologist."
+        ],
+        "injected_tokens": 1845,
+        "missing_expected_terms": [
+          "I visited three different doctors: a primary care physician, an ENT specialist, and a dermatologist."
+        ],
+        "quality": 0.0,
+        "query": "How many different doctors did I visit?",
+        "returned_tokens": 1745
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "2 AM"
+        ],
+        "injected_tokens": 1156,
+        "missing_expected_terms": [
+          "2 AM"
+        ],
+        "quality": 0.0,
+        "query": "What time did I go to bed on the day before I had a doctor's appointment?",
+        "returned_tokens": 1053
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "3"
+        ],
+        "injected_tokens": 1040,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many different types of citrus fruits have I used in my cocktail recipes?",
+        "returned_tokens": 938
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "I attended four movie festivals."
+        ],
+        "injected_tokens": 1546,
+        "missing_expected_terms": [
+          "I attended four movie festivals."
+        ],
+        "quality": 0.0,
+        "query": "How many movie festivals that I attended?",
+        "returned_tokens": 1447
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "17 days"
+        ],
+        "injected_tokens": 3886,
+        "missing_expected_terms": [
+          "17 days"
+        ],
+        "quality": 0.0,
+        "query": "How many days did I take social media breaks in total?",
+        "returned_tokens": 3790
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "3"
+        ],
+        "injected_tokens": 1106,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many tanks do I currently have, including the one I set up for my friend's kid?",
+        "returned_tokens": 1004
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "$2,500"
+        ],
+        "injected_tokens": 2509,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "What is the total amount I spent on luxury items in the past few months?",
+        "returned_tokens": 2411
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "140 hours"
+        ],
+        "injected_tokens": 1801,
+        "missing_expected_terms": [
+          "140 hours"
+        ],
+        "quality": 0.0,
+        "query": "How many hours have I spent playing games in total?",
+        "returned_tokens": 1703
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "I attended three weddings. The couples were Rachel and Mike, Emily and Sarah, and Jen and Tom."
+        ],
+        "injected_tokens": 1131,
+        "missing_expected_terms": [
+          "I attended three weddings. The couples were Rachel and Mike, Emily and Sarah, and Jen and Tom."
+        ],
+        "quality": 0.0,
+        "query": "How many weddings have I attended in this year?",
+        "returned_tokens": 1029
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "5"
+        ],
+        "injected_tokens": 1166,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many babies were born to friends and family members in the last few months?",
+        "returned_tokens": 1064
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "4"
+        ],
+        "injected_tokens": 1787,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many pieces of furniture did I buy, assemble, sell, or fix in the past few months?",
+        "returned_tokens": 1684
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "4"
+        ],
+        "injected_tokens": 1098,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many times did I bake something in the past two weeks?",
+        "returned_tokens": 994
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "2"
+        ],
+        "injected_tokens": 2619,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many different museums or galleries did I visit in the month of February?",
+        "returned_tokens": 2519
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "4"
+        ],
+        "injected_tokens": 1648,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many different cuisines have I learned to cook or tried out in the past few months?",
+        "returned_tokens": 1549
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "I viewed four properties before making an offer on the townhouse in the Brookside neighborhood. The reasons I didn't make an offer on them were: the kitchen of the bungalow needed serious renovation, the property in Cedar Creek was out of my budget, the noise from the highway was a deal-breaker for the 1-bedroom condo, and my offer on the 2-bedroom condo was rejected due to a higher bid."
+        ],
+        "injected_tokens": 2587,
+        "missing_expected_terms": [
+          "I viewed four properties before making an offer on the townhouse in the Brookside neighborhood. The reasons I didn't make an offer on them were: the kitchen of the bungalow needed serious renovation, the property in Cedar Creek was out of my budget, the noise from the highway was a deal-breaker for the 1-bedroom condo, and my offer on the 2-bedroom condo was rejected due to a higher bid."
+        ],
+        "quality": 0.0,
+        "query": "How many properties did I view before making an offer on the townhouse in the Brookside neighborhood?",
+        "returned_tokens": 2486
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "3"
+        ],
+        "injected_tokens": 1786,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many different types of food delivery services have I used recently?",
+        "returned_tokens": 1687
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "0.5 hours"
+        ],
+        "injected_tokens": 2327,
+        "missing_expected_terms": [
+          "0.5 hours"
+        ],
+        "quality": 0.0,
+        "query": "How many hours of jogging and yoga did I do last week?",
+        "returned_tokens": 2231
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "TikTok"
+        ],
+        "injected_tokens": 1883,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "Which social media platform did I gain the most followers on over the past month?",
+        "returned_tokens": 1780
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "Thrive Market"
+        ],
+        "injected_tokens": 1168,
+        "missing_expected_terms": [
+          "Thrive Market"
+        ],
+        "quality": 0.0,
+        "query": "Which grocery store did I spend the most money at in the past month?",
+        "returned_tokens": 1064
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "$270"
+        ],
+        "injected_tokens": 1802,
+        "missing_expected_terms": [
+          "$270"
+        ],
+        "quality": 0.0,
+        "query": "How much more did I spend on accommodations per night in Hawaii compared to Tokyo?",
+        "returned_tokens": 1702
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "4"
+        ],
+        "injected_tokens": 3312,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many different art-related events did I attend in the past month?",
+        "returned_tokens": 3219
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "59.6"
+        ],
+        "injected_tokens": 1146,
+        "missing_expected_terms": [
+          "59.6"
+        ],
+        "quality": 0.0,
+        "query": "What is the average age of me, my parents, and my grandparents?",
+        "returned_tokens": 1041
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "2"
+        ],
+        "injected_tokens": 1097,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many doctor's appointments did I go to in March?",
+        "returned_tokens": 993
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "5 days. 6 days (including the last day) is also acceptable."
+        ],
+        "injected_tokens": 1184,
+        "missing_expected_terms": [
+          "5 days. 6 days (including the last day) is also acceptable."
+        ],
+        "quality": 0.0,
+        "query": "How many days did it take for me to receive the new remote shutter release after I ordered it?",
+        "returned_tokens": 1081
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "4"
+        ],
+        "injected_tokens": 2950,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many health-related devices do I use in a day?",
+        "returned_tokens": 2850
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "17"
+        ],
+        "injected_tokens": 2574,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many fish are there in total in both of my aquariums?",
+        "returned_tokens": 2477
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "5"
+        ],
+        "injected_tokens": 1853,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many fitness classes do I attend in a typical week?",
+        "returned_tokens": 1751
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "5 days. 6 days (including the last day) is also acceptable."
+        ],
+        "injected_tokens": 1247,
+        "missing_expected_terms": [
+          "5 days. 6 days (including the last day) is also acceptable."
+        ],
+        "quality": 0.0,
+        "query": "How many days did it take for my laptop backpack to arrive after I bought it?",
+        "returned_tokens": 1144
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "3"
+        ],
+        "injected_tokens": 1118,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many pieces of jewelry did I acquire in the last two months?",
+        "returned_tokens": 1016
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "$5,850"
+        ],
+        "injected_tokens": 1140,
+        "missing_expected_terms": [
+          "$5,850"
+        ],
+        "quality": 0.0,
+        "query": "How much money did I raise in total through all the charity events I participated in?",
+        "returned_tokens": 1039
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "2"
+        ],
+        "injected_tokens": 1141,
+        "missing_expected_terms": [],
+        "quality": 1.0,
+        "query": "How many projects have I been working on simultaneously, excluding my thesis?",
+        "returned_tokens": 1039
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "I currently own 4 musical instruments. I've had the Fender Stratocaster electric guitar for 5 years, the Yamaha FG800 acoustic guitar for 8 years, the 5-piece Pearl Export drum set for an unspecified amount of time, and the Korg B1 piano for 3 years."
+        ],
+        "injected_tokens": 2601,
+        "missing_expected_terms": [
+          "I currently own 4 musical instruments. I've had the Fender Stratocaster electric guitar for 5 years, the Yamaha FG800 acoustic guitar for 8 years, the 5-piece Pearl Export drum set for an unspecified amount of time, and the Korg B1 piano for 3 years."
+        ],
+        "quality": 0.0,
+        "query": "How many musical instruments do I currently own?",
+        "returned_tokens": 2501
+      }
+    ]
+  },
+  "report_schema_version": 1,
+  "session_id": "default",
+  "source_fingerprints": {
+    "eventloom_sha256": "9385a1462713c3ea0b99ced904d4e8f335cacc9071ae797a27f587672cdfae93",
+    "queries_sha256": "c486d8b11c3e1f6013dc652011243f41443826b28d3e188578ac0fa36cc405a0"
+  },
+  "summaries": [
+    {
+      "answer_at_5": 0.35,
+      "answer_at_5_per_1k_injected_tokens": 0.1849,
+      "answer_at_5_per_1k_returned_tokens": 0.1954,
+      "append_to_projection_p95_ms": 25.243,
+      "backend": "embedded",
+      "checkout_p95_ms": 99.822,
+      "checkout_p99_ms": 127.225,
+      "citation_coverage": 1.0,
+      "cold_bootstrap_ms": 108.659,
+      "dashboard_graph_edges": 100,
+      "dashboard_graph_load_ms": 156.333,
+      "dashboard_graph_nodes": 100,
+      "dashboard_graph_source": "embedded",
+      "error": null,
+      "exact_p50_ms": 6.062,
+      "exact_p95_ms": 7.553,
+      "exact_p99_ms": 8.078,
+      "first_checkout_ms": 65.706,
+      "first_useful_init_ms": 31118.336,
+      "keyword_p50_ms": 40.393,
+      "keyword_p95_ms": 56.737,
+      "keyword_p99_ms": 64.51,
+      "mean_injected_tokens": 1892.97,
+      "mean_quality": 0.35,
+      "mean_returned_tokens": 1791.53,
+      "memory_footprint_bytes": 57270272,
+      "on_disk_footprint_bytes": 57270272,
+      "projection_events_per_second": 50.275,
+      "quality_per_1k_injected_tokens": 0.1849,
+      "quality_per_1k_returned_tokens": 0.1954,
+      "query_count": 100,
+      "rebuild_recovery_ms": 34840.575,
+      "recall_at_5": 0.35,
+      "resident_memory_delta_bytes": 1446199296,
+      "status": "ok",
+      "traversal_p50_ms": 0.004,
+      "traversal_p95_ms": 0.006,
+      "traversal_p99_ms": 0.006,
+      "vector_p50_ms": 8.212,
+      "vector_p95_ms": 10.308,
+      "vector_p99_ms": 11.042
+    },
+    {
+      "answer_at_5": 0.34,
+      "answer_at_5_per_1k_injected_tokens": 0.0813,
+      "answer_at_5_per_1k_returned_tokens": 0.0813,
+      "append_to_projection_p95_ms": null,
+      "backend": "bm25",
+      "checkout_p95_ms": 462.58,
+      "checkout_p99_ms": 470.971,
+      "citation_coverage": 1.0,
+      "cold_bootstrap_ms": 15.806,
+      "dashboard_graph_edges": null,
+      "dashboard_graph_load_ms": null,
+      "dashboard_graph_nodes": null,
+      "dashboard_graph_source": null,
+      "error": null,
+      "exact_p50_ms": null,
+      "exact_p95_ms": null,
+      "exact_p99_ms": null,
+      "first_checkout_ms": 456.914,
+      "first_useful_init_ms": 15.806,
+      "keyword_p50_ms": null,
+      "keyword_p95_ms": null,
+      "keyword_p99_ms": null,
+      "mean_injected_tokens": 4179.5,
+      "mean_quality": 0.34,
+      "mean_returned_tokens": 4179.5,
+      "memory_footprint_bytes": 4797838,
+      "on_disk_footprint_bytes": 0,
+      "projection_events_per_second": null,
+      "quality_per_1k_injected_tokens": 0.0813,
+      "quality_per_1k_returned_tokens": 0.0813,
+      "query_count": 100,
+      "rebuild_recovery_ms": 0.0,
+      "recall_at_5": 0.34,
+      "resident_memory_delta_bytes": 61440,
+      "status": "ok",
+      "traversal_p50_ms": null,
+      "traversal_p95_ms": null,
+      "traversal_p99_ms": null,
+      "vector_p50_ms": null,
+      "vector_p95_ms": null,
+      "vector_p99_ms": null
+    }
+  ],
+  "workload_fingerprints": {
+    "events_sha256": "79018ca643e1dfa9f6843a2d80982ee3be5440f81be20a0faa62fc29799c36f8",
+    "queries_sha256": "33d92ca63b130e542eebf4e104373a0edf6f90968d85ad60d49fbbb8bdce6fd1"
+  }
+}

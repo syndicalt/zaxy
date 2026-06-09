@@ -96,8 +96,97 @@ projects the event through the same extractor and graph path as
 `memory_append`. Use it when an agent learns, validates, revises, applies, or
 records outcomes for a reusable procedure. The helper accepts `version`, `name`,
 `summary`, `procedure`, `applicability`, `citations`, `task`, `success_score`,
-`feedback`, `evidence`, `reason`, and `supersedes_version` as relevant to the
-action. Skill updates are never implicit checkout side effects.
+`feedback`, `evidence`, `reason`, `failure_modes`, `rollback`,
+`contradiction_reason`, and `supersedes_version` as relevant to the action.
+Skill updates are never implicit checkout side effects.
+
+## Alpha Causal And Consolidation Tools
+
+Zaxy 2.0 alpha.1 exposes a narrow causal and consolidation MCP surface.
+Alpha.2 extends consolidation with deterministic proposal generation from
+Eventloom history while keeping the same non-authoritative review boundary:
+
+`memory_causal_successors(entity_name, relation_type?, depth?, session_id?)`
+reads graph-backed causal effects that start at `entity_name`. When
+`relation_type` is provided, it must use the causal taxonomy value such as
+`caused`, `enabled`, `blocked`, `prevented`, `regressed`, `fixed`, or
+`explained`; the server maps that to the corresponding `causal_...` graph
+relation label. Results include endpoint references, relation labels,
+confidence, method, citation, review status, authority status, evidence, and
+path length when available.
+
+`memory_causal_predecessors(entity_name, relation_type?, depth?, session_id?)`
+uses the same contract in the incoming causal direction, returning cited causes
+that lead to `entity_name`.
+
+`memory_consolidation_candidate(candidate_type, title, summary, source_events,
+confidence, method, purpose?, session_id?, actor?)` appends a cited
+`consolidation.candidate.created` event and immediately projects it. The
+candidate type must be `episode`, `claim`, or `procedure`; `source_events` must
+cite Eventloom events with sequence and hash; and the returned event reference
+is the durable audit handle for the candidate.
+
+`memory_consolidation_propose_from_log(session_id?, actor?, purpose?, limit?,
+max_events?, window_size?)` replays Eventloom history for the selected session,
+selects deterministic event segments, and appends generated episode, claim, or
+procedure candidates through the same `consolidation.candidate.created`
+contract. It is a proposal tool, not an authority tool. It must not mark
+generated summaries as current facts, bypass review, or promote accepted-looking
+content into authoritative memory. Its output should be presented as cited
+review material with Eventloom source-event sequence and hash coverage.
+
+`memory_consolidation_review(candidate_id, status, rationale, session_id?,
+actor?)` appends a `consolidation.candidate.reviewed` event. Review status is a
+lifecycle disposition, not an authority promotion. Valid review statuses are
+`accepted`, `rejected`, `deferred`, and `conflicted`. An `accepted` review
+means the candidate received that disposition; it does not make the generated
+episode, claim, or procedure authoritative without a separate promotion event.
+
+`memory_consolidation_status(session_id?)` reports proposal and review counts
+for the selected session, including pending, accepted, rejected, conflicted,
+stale, superseded, and `valid_to`-closed candidates when those states are
+projected. Use this for review queues and diagnostics, not as evidence of
+external validation.
+
+The trust contract is intentionally conservative. Causal edges and
+consolidation candidates are proposed, cited, non-authoritative memory surfaces
+in alpha. They should be used as diagnostics and operator review material, not
+as hidden facts. Memory Checkout keeps this boundary visible by reporting
+causal context and consolidation candidates in diagnostics and prompt guidance
+separate from deterministic current facts. Checkout diagnostics include
+candidate counts by type and review/staleness state so clients can distinguish
+pending, accepted, rejected, conflicted, stale, superseded, and closed
+candidates. Clients should preserve that separation in their own prompts and
+UI, especially when a candidate is pending, stale, conflicted, rejected, or
+superseded, when a causal edge is inferred, or when citations do not cover the
+claim.
+
+Beta.1 reasoning-loop primitives follow the same boundary. Primitive calls are
+observable Eventloom records, not hidden chain-of-thought state: a call records
+the primitive name, deterministic phase (`planning`, `execution`, `review`, or
+`reflection`), status, result count, and cited evidence count. Belief updates
+are appended only as `belief.update.proposed` events with
+`authority_status=non_authoritative` and `review_status=pending`. A belief
+proposal can be inspected, replayed, and reviewed, but it does not update
+current facts unless a separate authority path promotes supported state.
+Memory Checkout reports these surfaces under
+`diagnostics.reasoning_primitives` and
+`diagnostics.belief_update_proposals` so clients can show trace evidence
+without granting authority.
+
+Beta.2 adds metacognitive and procedural planning tools on the same boundary.
+`memory_record_known_unknown(question, reason, source_events, claim_key, ...)`
+records an open, cited, non-authoritative uncertainty item.
+`memory_known_unknowns`, `memory_confidence_trajectory`, and
+`memory_reverification_needs` replay the Eventloom log to surface open
+unknowns, append-only confidence assessments, unresolved conflict clusters, and
+explicit re-verification requests. Confidence trajectory events do not overwrite
+truth, and re-verification requests remain open until a separate workflow
+records a resolution. `memory_plan_from_procedures(goal, ...)` builds a
+non-authoritative planning packet from applicable procedural memory; rejected,
+conflicted, deprecated, contradicted, stale, superseded, closed, or uncited
+procedures are diagnostic or excluded instead of being returned as operational
+instructions.
 
 `memory_replay(session_id, from_seq?)` rebuilds session history from the
 Eventloom log. This is useful for handoffs, audits, and debugging. In remote SSE
@@ -153,15 +242,21 @@ a purpose-selected scoring profile; the applied policy is reported in
 `diagnostics.purpose_retrieval_policy`. Purpose suppress rules are
 then enforced before checkout projection, and any excluded rows are summarized in
 `diagnostics.purpose_policy` and `retention.purpose_policy` so clients can audit
-why retrieved material did not become current memory. When applicable Skill Memory is retrieved,
+why retrieved material did not become current memory.
+
+### Skill Analytics
+
+When applicable Skill Memory is retrieved,
 diagnostics also include a `skills` block and the prompt includes an
 `Applicable Skills` section with cited procedure steps. This lane is read-only:
 models may follow the guidance, but revisions require a new `memory_skill` or
 `memory_append` event. When retrieved skill versions and outcomes include enough
-history, diagnostics also include `skill_analytics` and the prompt includes a
-`Skill Analytics` section. That section reports read-only promotion candidates,
-rollback candidates, contradiction counts, outcome counts, scores, and citations
-so the model can decide whether to apply, avoid, or explicitly revise a skill.
+history, diagnostics also include `skill_analytics` and
+`procedural_memory`, and the prompt includes skill and procedural diagnostics.
+Those sections report applicable, diagnostic, and excluded procedural memory;
+read-only promotion candidates; rollback candidates; contradiction counts;
+outcome counts; scores; citations; and exclusion reasons so the model can decide
+whether to apply, avoid, or explicitly revise a skill.
 This is the preferred tool when a model needs a
 bounded, auditable working state rather than a raw list of retrieval hits. The
 response also includes `guidance` with
@@ -174,6 +269,14 @@ Checkout only returns `answer_from_memory` when current facts have current
 Eventloom citations and the checkout has no warnings; missing, superseded-only,
 uncited, or compacted checkout states ask the model to refresh memory or ask the
 user instead of answering from stale context.
+When reasoning-loop primitive observations or belief proposals are present,
+checkout guidance explicitly tells the model to treat primitive observations as
+replayable reasoning trace evidence rather than authority, and to treat belief
+updates as proposals until reviewed and promoted by a separate authority path.
+When metacognitive state is present, checkout reports
+`diagnostics.metacognition` and tells the model to use known unknowns,
+confidence trajectories, conflict clusters, and reverify requests as diagnostic
+uncertainty signals, not as accepted facts.
 When `ref` is supplied, checkout resolves a Git-style memory ref such as `HEAD`
 or `refs/heads/main` and filters replay/context to the target event identity.
 MCP clients discover this tool through the standard `tools/list` handshake, so
@@ -206,6 +309,29 @@ fixture when changing the tool response.
     "warning_count": 0,
     "feedback_recommended": true,
     "feedback_tool": "memory_feedback",
+    "consolidation_candidates": {
+      "candidate_count": 1,
+      "candidate_types": ["episode"],
+      "pending_count": 1,
+      "accepted_count": 0,
+      "rejected_count": 0,
+      "conflicted_count": 0,
+      "stale_count": 0,
+      "superseded_count": 0,
+      "valid_to_count": 0,
+      "authority_status": "non_authoritative"
+    },
+    "reasoning_primitives": {
+      "context_count": 2,
+      "phase_counts": {"planning": 1, "review": 1},
+      "primitive_counts": {"explain_outcome": 1, "get_claim_confidence": 1},
+      "authority_status": "non_authoritative"
+    },
+    "belief_update_proposals": {
+      "proposal_count": 1,
+      "pending_count": 1,
+      "authority_status": "non_authoritative"
+    },
     "skills": {
       "count": 1,
       "items": [
@@ -480,10 +606,12 @@ zaxy hooks claude-code --eventloom-path .eventloom --domain zaxy
 zaxy hooks codex --eventloom-path .eventloom --domain zaxy
 ```
 
-For Codex, the default local preset also writes `.codex/zaxy-capture.json` and
-prints a `zaxy capture start --workspace .` command. That managed watcher reads
-Codex's local session JSONL and appends normalized Eventloom observations. It
-does not proxy provider traffic or require an OpenAI API key.
+For Codex, the default local preset also writes `.codex/zaxy-capture.json`.
+Starting Codex through the printed `zaxy activate codex ... --launch` command
+ensures that managed watcher is running; explicit supervisors can still call
+`zaxy capture start --workspace .`. The watcher reads Codex's local session JSONL
+and appends normalized Eventloom observations. It does not proxy provider
+traffic or require an OpenAI API key.
 For supervised checks, add `--watch-iterations <n>` to run a bounded number of
 capture passes to the underlying `zaxy codex-capture --watch` command. Add
 `--graph` to `zaxy capture start` when the selected projection backend should

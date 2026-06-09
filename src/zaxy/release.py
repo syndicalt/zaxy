@@ -1269,6 +1269,8 @@ def _has_token_efficiency(payload: dict[str, Any]) -> bool:
         return False
     prompt_tokens = value.get("prompt_tokens")
     facts_per_1k = value.get("facts_per_1k_prompt_tokens")
+    if isinstance(prompt_tokens, bool) or isinstance(facts_per_1k, bool):
+        return False
     return isinstance(prompt_tokens, int | float) and isinstance(facts_per_1k, int | float)
 
 

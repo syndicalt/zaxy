@@ -202,6 +202,8 @@ def _direct_numeric_fallback_allowed(content: str) -> bool:
 
 
 def _preferred_answer_key(fields: dict[str, str], *, content: str = "") -> str | None:
+    if elapsed_total_key := _elapsed_total_answer_key(fields, query=_line_value(content, "query") or ""):
+        return elapsed_total_key
     keys = [
         key
         for key in fields
@@ -216,6 +218,19 @@ def _preferred_answer_key(fields: dict[str, str], *, content: str = "") -> str |
             return total_keys[0]
     keys.sort(key=_answer_key_sort_key)
     return keys[0]
+
+
+def _elapsed_total_answer_key(fields: dict[str, str], *, query: str) -> str | None:
+    """Return the aggregate elapsed-time surface for how-many-ago queries."""
+    query_text = " ".join(query.casefold().split())
+    match = re.search(r"\bhow\s+many\s+(?P<unit>days?|weeks?|months?)\s+ago\b", query_text)
+    if not match:
+        return None
+    unit = match.group("unit").removesuffix("s")
+    for key in (f"{unit}_total_words", f"{unit}_total"):
+        if key in fields:
+            return key
+    return None
 
 
 def _query_text_from_items(items: list[dict[str, Any]]) -> str:
@@ -234,11 +249,18 @@ def _aggregate_total_query_text(query: str) -> bool:
 
 
 def _answer_key_sort_key(key: str) -> tuple[int, str]:
+    if key in {"percentage_answer", "boolean_comparison_answer"}:
+        return -1, key
+    if key in {"day_total_words", "day_total", "week_total_words", "week_total", "month_total_words", "month_total"}:
+        return 0, key
     if key in {
         "latest_state_answer",
         "query_bound_direct_answer",
         "query_bound_difference_answer",
         "query_bound_scalar_total_answer",
+        "road_trip_drive_total_answer",
+        "routine_time_total_answer",
+        "social_media_break_total_answer",
         "relative_temporal_anchor_answer",
     }:
         return 0, key
@@ -258,8 +280,6 @@ def _answer_key_sort_key(key: str) -> tuple[int, str]:
         "page_total_answer",
         "distance_total_answer",
         "pages_remaining_answer",
-        "percentage_answer",
-        "boolean_comparison_answer",
         "boolean_evidence_answer",
         "property_outcome_answer",
         "instrument_ownership_answer",
@@ -294,11 +314,18 @@ def _additive_fallback_candidates(
     typed_candidates: list[dict[str, Any]],
     fallback_candidates: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Keep rendered answer surfaces that add a distinct candidate type/key."""
+    """Keep rendered answer surfaces that add a distinct candidate operation."""
     typed_identities = {
         (
             str(candidate.get("type", "")),
             str(candidate.get("answer_key", "")),
+        )
+        for candidate in typed_candidates
+    }
+    typed_blocks = {
+        (
+            _parse_candidate_int(candidate.get("rank"), default=1),
+            str(candidate.get("type", "")),
         )
         for candidate in typed_candidates
     }
@@ -309,6 +336,12 @@ def _additive_fallback_candidates(
             str(candidate.get("answer_key", "")),
         )
         if identity in typed_identities:
+            continue
+        block = (
+            _parse_candidate_int(candidate.get("rank"), default=1),
+            str(candidate.get("type", "")),
+        )
+        if block in typed_blocks:
             continue
         additive.append(candidate)
     return additive
@@ -429,6 +462,8 @@ def _json_value(value: Any) -> Any:
 def _answer_candidate_type(answer_key: str | None) -> str:
     if not answer_key:
         return "unknown"
+    if answer_key in {"day_total_words", "day_total", "week_total_words", "week_total", "month_total_words", "month_total"}:
+        return "duration"
     return answer_key.removesuffix("_answer")
 
 

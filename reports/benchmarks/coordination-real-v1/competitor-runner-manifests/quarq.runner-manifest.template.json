@@ -1,0 +1,24 @@
+{
+  "adapter_contract": "coordinationbench-v1",
+  "adapter_version": "v0.4.0",
+  "capability_status": "unsupported_runner_required",
+  "dataset_contract": "coordinationbench-v1 workload JSON; runner receives --workload <path>",
+  "display_name": "Quarq",
+  "install_command": "git clone https://github.com/quarqlabs/agent-oss.git quarq-agent-oss && git -C quarq-agent-oss checkout b68386048795765d46c87bef5bd88ecfb1301337",
+  "name": "quarq",
+  "result_export_schema": "schemas/result.schema.json; runner must write --output <path>",
+  "result_file": "quarq-coordination-result.json",
+  "run_command": [
+    "python",
+    "-m",
+    "zaxy.resources.coordinationbench.unsupported_runner",
+    "--adapter",
+    "quarq"
+  ],
+  "source_ref": "git:b68386048795765d46c87bef5bd88ecfb1301337",
+  "source_url": "https://github.com/quarqlabs/agent-oss",
+  "template": true,
+  "unsupported_reason": "Quarq Agent is a local personal-memory agent, but no Zaxy-pinned CoordinationBench runner adapter is committed for its current public runtime.",
+  "workload_file": "coordination-workload.json",
+  "workload_fingerprint": "b63e156150b92c9aa7d8895604741484f85f4c231d4c7d2097a2467fdaf14bd0"
+}

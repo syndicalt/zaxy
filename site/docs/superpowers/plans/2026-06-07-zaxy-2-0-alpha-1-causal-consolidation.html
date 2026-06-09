@@ -1,0 +1,2088 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Zaxy 2.0 Alpha.1 Causal Projection and Consolidation Scaffold Implementation Plan - Zaxy Docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,600&family=Inter:wght@400;550;650;750;850&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../../../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../../../index.html">Overview</a>
+      <a href="../../../docs/coordinate-roadmap.html">Coordinate</a>
+      <a href="../../../docs/why-zaxy.html">Why Zaxy</a>
+      <a href="../../../docs/benchmarks.html">Benchmarks</a>
+      <a href="../../getting-started.html">Start</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="zaxy-20-alpha1-causal-projection-and-consolidation-scaffold-implementation-plan">Zaxy 2.0 Alpha.1 Causal Projection and Consolidation Scaffold Implementation Plan</h1>
+      <blockquote><strong>For agentic workers:</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (<code>- [ ]</code>) syntax for tracking.</blockquote>
+      <p><strong>Goal:</strong> Build the <code>2.0.0-alpha.1</code> slice from <code>docs/superpowers/specs/2026-06-07-zaxy-2-0-roadmap-design.md</code>: first-class causal projection plus a reviewable consolidation scaffold, without regressing existing Memory Checkout benchmark behavior.</p>
+      <p><strong>Architecture:</strong> Keep Eventloom as the source of truth. Represent causal knowledge as explicit Eventloom events that project through the existing graph/inferred-edge machinery, then add causal-specific service methods, CLI/MCP read surfaces, and Memory Checkout diagnostics. Represent consolidation as proposed, cited, review-pending Eventloom events; do not promote generated abstractions to authoritative memory in this slice.</p>
+      <p><strong>Tech Stack:</strong> Python 3.11+, dataclasses/Pydantic-style validation through existing helpers, Eventloom JSONL, existing <code>ProjectionStore</code> graph contract, embedded Kuzu/Neo4j/pgGraph/LatticeDB adapters, Typer CLI, MCP Python SDK, pytest.</p>
+      <p>---</p>
+      <h2 id="scope-boundary">Scope Boundary</h2>
+      <p>This plan implements only <code>2.0.0-alpha.1</code>.</p>
+      <p>Included:</p>
+      <ul>
+        <li>Causal event payload model and validation helpers.</li>
+        <li>Causal projection through explicit Eventloom events.</li>
+        <li>Causal predecessor/successor/path/outcome explanation read APIs.</li>
+        <li>Memory Checkout causal diagnostics and guidance.</li>
+        <li>Consolidation candidate payload model and validation helpers.</li>
+        <li>Review-gated consolidation event projection.</li>
+        <li>CLI and MCP surfaces for causal reads and consolidation proposal/review.</li>
+        <li>Focused causal/consolidation benchmark lane and regression guard command.</li>
+        <li>Docs updates for the new alpha.1 contract.</li>
+      </ul>
+      <p>Excluded:</p>
+      <ul>
+        <li>Automatic promotion of generated abstractions to authoritative memory.</li>
+        <li>Learned retrieval policy.</li>
+        <li>Autonomous belief revision.</li>
+        <li>Broad synthesis rewrites.</li>
+        <li>Any code tailored to individual LongMemEval questions.</li>
+      </ul>
+      <h2 id="worktree-requirement">Worktree Requirement</h2>
+      <p>The current repository may contain unrelated uncommitted benchmark and temporal-synthesis changes. Before implementation, create an isolated worktree or branch and verify the working tree for this feature is clean.</p>
+      <p>Run:</p>
+      <pre><code class="language-bash">git status --short</code></pre>
+      <p>Expected in the implementation worktree:</p>
+      <pre><code class="language-text"></code></pre>
+      <p>If the main checkout is dirty, use the <code>superpowers:using-git-worktrees</code> skill before Task 1.</p>
+      <h2 id="file-structure">File Structure</h2>
+      <p>Create:</p>
+      <ul>
+        <li><code>src/zaxy/causal.py</code>   Owns causal event payload builders, validation, causal relation taxonomy, and causal read result dataclasses.</li>
+      </ul>
+      <ul>
+        <li><code>src/zaxy/consolidation.py</code>   Owns consolidation candidate payload builders, validation, review status constants, and conservative candidate IDs.</li>
+      </ul>
+      <ul>
+        <li><code>src/zaxy/causal_benchmark.py</code>   Small internal alpha.1 benchmark lane for causal predecessor/successor, stale causal distractor rejection, and consolidation citation fidelity.</li>
+      </ul>
+      <ul>
+        <li><code>tests/test_causal.py</code>   Unit tests for causal payloads, taxonomy, validation, and read-result formatting.</li>
+      </ul>
+      <ul>
+        <li><code>tests/test_consolidation.py</code>   Unit tests for consolidation candidate payloads and review-gating invariants.</li>
+      </ul>
+      <ul>
+        <li><code>tests/test_causal_checkout.py</code>   Checkout-level tests for causal diagnostics and model guidance.</li>
+      </ul>
+      <ul>
+        <li><code>tests/test_causal_benchmark.py</code>   Tests for the small alpha.1 causal/consolidation benchmark lane.</li>
+      </ul>
+      <p>Modify:</p>
+      <ul>
+        <li><code>src/zaxy/extract.py</code>   Add extractors for causal edge and consolidation candidate/review events.</li>
+      </ul>
+      <ul>
+        <li><code>src/zaxy/inference.py</code>   Add conservative causal inferred-edge producer from explicit outcome/evidence events only.</li>
+      </ul>
+      <ul>
+        <li><code>src/zaxy/core.py</code>   Add MemoryFabric causal read methods and add causal/consolidation diagnostics to Memory Checkout.</li>
+      </ul>
+      <ul>
+        <li><code>src/zaxy/checkout.py</code>   Add causal diagnostics/guidance formatting while preserving existing inferred-context behavior.</li>
+      </ul>
+      <ul>
+        <li><code>src/zaxy/mcp_server.py</code>   Add MCP tools for causal reads and consolidation candidate/review operations.</li>
+      </ul>
+      <ul>
+        <li><code>src/zaxy/__main__.py</code>   Add CLI commands under <code>zaxy memory causal ...</code> and <code>zaxy memory consolidation ...</code>, plus benchmark entry if local CLI patterns support it.</li>
+      </ul>
+      <ul>
+        <li><code>docs/graph-schema.md</code>   Document causal event projection and its relationship to inferred edges.</li>
+      </ul>
+      <ul>
+        <li><code>docs/mcp.md</code>   Document new MCP tools and trust contract.</li>
+      </ul>
+      <ul>
+        <li><code>docs/benchmarks.md</code>   Document the alpha.1 internal causal benchmark lane as project-defined, not external validation.</li>
+      </ul>
+      <p>---</p>
+      <h3 id="task-1-add-causal-payload-contracts">Task 1: Add Causal Payload Contracts</h3>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Create: <code>src/zaxy/causal.py</code></li>
+        <li>Test: <code>tests/test_causal.py</code></li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 1: Write failing tests for causal relation validation and event payloads</strong></li>
+      </ul>
+      <p>Add to <code>tests/test_causal.py</code>:</p>
+      <pre><code class="language-python">from __future__ import annotations
+
+import pytest
+
+from zaxy.causal import (
+    CAUSAL_RELATION_TYPES,
+    CausalEdge,
+    CausalQueryResult,
+    build_causal_edge_event,
+    causal_relation_to_graph_relation,
+)
+
+
+def test_causal_relation_taxonomy_is_stable() -&gt; None:
+    assert CAUSAL_RELATION_TYPES == {
+        &quot;caused&quot;,
+        &quot;enabled&quot;,
+        &quot;blocked&quot;,
+        &quot;prevented&quot;,
+        &quot;regressed&quot;,
+        &quot;fixed&quot;,
+        &quot;explained&quot;,
+    }
+    assert causal_relation_to_graph_relation(&quot;caused&quot;) == &quot;causal_caused&quot;
+    assert causal_relation_to_graph_relation(&quot;fixed&quot;) == &quot;causal_fixed&quot;
+
+
+def test_build_causal_edge_event_requires_cited_source_event() -&gt; None:
+    event = build_causal_edge_event(
+        actor=&quot;zaxy-causal&quot;,
+        session_id=&quot;agent-1&quot;,
+        source={&quot;name&quot;: &quot;command:pytest&quot;, &quot;entity_type&quot;: &quot;command&quot;},
+        target={&quot;name&quot;: &quot;test failure&quot;, &quot;entity_type&quot;: &quot;outcome&quot;},
+        relation_type=&quot;caused&quot;,
+        confidence=0.91,
+        method=&quot;explicit_outcome_citation_v1&quot;,
+        evidence={
+            &quot;source_event_seq&quot;: 42,
+            &quot;source_event_hash&quot;: &quot;a&quot; * 64,
+            &quot;reason&quot;: &quot;The command output contained the failure.&quot;,
+        },
+    )
+    assert event == {
+        &quot;event_type&quot;: &quot;causal.edge.generated&quot;,
+        &quot;actor&quot;: &quot;zaxy-causal&quot;,
+        &quot;payload&quot;: {
+            &quot;source&quot;: {&quot;name&quot;: &quot;command:pytest&quot;, &quot;entity_type&quot;: &quot;command&quot;},
+            &quot;target&quot;: {&quot;name&quot;: &quot;test failure&quot;, &quot;entity_type&quot;: &quot;outcome&quot;},
+            &quot;relation_type&quot;: &quot;caused&quot;,
+            &quot;graph_relation_type&quot;: &quot;causal_caused&quot;,
+            &quot;confidence&quot;: 0.91,
+            &quot;causal_method&quot;: &quot;explicit_outcome_citation_v1&quot;,
+            &quot;review_status&quot;: &quot;proposed&quot;,
+            &quot;authority_status&quot;: &quot;non_authoritative&quot;,
+            &quot;evidence&quot;: {
+                &quot;source_event_seq&quot;: 42,
+                &quot;source_event_hash&quot;: &quot;a&quot; * 64,
+                &quot;reason&quot;: &quot;The command output contained the failure.&quot;,
+            },
+        },
+        &quot;thread&quot;: &quot;agent-1&quot;,
+    }
+
+
+@pytest.mark.parametrize(&quot;relation_type&quot;, [&quot;&quot;, &quot;CAUSES&quot;, &quot;likely_informed&quot;, &quot;causal_caused&quot;])
+def test_build_causal_edge_event_rejects_non_taxonomy_relation(relation_type: str) -&gt; None:
+    with pytest.raises(ValueError, match=&quot;causal relation_type&quot;):
+        build_causal_edge_event(
+            actor=&quot;zaxy-causal&quot;,
+            session_id=&quot;agent-1&quot;,
+            source={&quot;name&quot;: &quot;a&quot;, &quot;entity_type&quot;: &quot;event&quot;},
+            target={&quot;name&quot;: &quot;b&quot;, &quot;entity_type&quot;: &quot;outcome&quot;},
+            relation_type=relation_type,
+            confidence=0.8,
+            method=&quot;explicit_outcome_citation_v1&quot;,
+            evidence={&quot;source_event_seq&quot;: 1, &quot;source_event_hash&quot;: &quot;b&quot; * 64},
+        )
+
+
+def test_build_causal_edge_event_rejects_uncited_evidence() -&gt; None:
+    with pytest.raises(ValueError, match=&quot;source_event_hash&quot;):
+        build_causal_edge_event(
+            actor=&quot;zaxy-causal&quot;,
+            session_id=&quot;agent-1&quot;,
+            source={&quot;name&quot;: &quot;a&quot;, &quot;entity_type&quot;: &quot;event&quot;},
+            target={&quot;name&quot;: &quot;b&quot;, &quot;entity_type&quot;: &quot;outcome&quot;},
+            relation_type=&quot;caused&quot;,
+            confidence=0.8,
+            method=&quot;explicit_outcome_citation_v1&quot;,
+            evidence={&quot;source_event_seq&quot;: 1},
+        )
+
+
+def test_causal_query_result_to_dict_preserves_authority_boundary() -&gt; None:
+    result = CausalQueryResult(
+        source={&quot;name&quot;: &quot;command:pytest&quot;, &quot;entity_type&quot;: &quot;command&quot;},
+        target={&quot;name&quot;: &quot;test failure&quot;, &quot;entity_type&quot;: &quot;outcome&quot;},
+        relation_type=&quot;caused&quot;,
+        graph_relation_type=&quot;causal_caused&quot;,
+        confidence=0.91,
+        method=&quot;explicit_outcome_citation_v1&quot;,
+        citation=&quot;eventloom://agent-1/events/42#aaaaaaaaaaaa&quot;,
+        review_status=&quot;proposed&quot;,
+        authority_status=&quot;non_authoritative&quot;,
+        evidence={&quot;source_event_seq&quot;: 42},
+        path_length=1,
+    )
+    assert result.to_dict()[&quot;authority_status&quot;] == &quot;non_authoritative&quot;
+    assert result.to_dict()[&quot;review_status&quot;] == &quot;proposed&quot;
+    assert result.to_dict()[&quot;citation&quot;] == &quot;eventloom://agent-1/events/42#aaaaaaaaaaaa&quot;</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run tests to verify they fail</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_causal.py -q</code></pre>
+      <p>Expected: FAIL with <code>ModuleNotFoundError: No module named &#x27;zaxy.causal&#x27;</code>.</p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement causal contracts</strong></li>
+      </ul>
+      <p>Create <code>src/zaxy/causal.py</code>:</p>
+      <pre><code class="language-python">&quot;&quot;&quot;Causal memory contracts for Zaxy 2.0 alpha.1.
+
+Causal memory is represented as explicit Eventloom events and projected as
+auditable inferred graph edges. Eventloom remains the source of truth; causal
+edges are proposed, cited projection facts until review promotes them.
+&quot;&quot;&quot;
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+
+CAUSAL_RELATION_TYPES = {
+    &quot;caused&quot;,
+    &quot;enabled&quot;,
+    &quot;blocked&quot;,
+    &quot;prevented&quot;,
+    &quot;regressed&quot;,
+    &quot;fixed&quot;,
+    &quot;explained&quot;,
+}
+
+_HASH_LENGTH = 64
+
+
+@dataclass(frozen=True)
+class CausalEdge:
+    &quot;&quot;&quot;Validated causal edge payload.&quot;&quot;&quot;
+
+    source: dict[str, str]
+    target: dict[str, str]
+    relation_type: str
+    confidence: float
+    method: str
+    evidence: dict[str, Any]
+    review_status: str = &quot;proposed&quot;
+    authority_status: str = &quot;non_authoritative&quot;
+
+    def __post_init__(self) -&gt; None:
+        if self.relation_type not in CAUSAL_RELATION_TYPES:
+            raise ValueError(&quot;causal relation_type must be one of the supported causal taxonomy values&quot;)
+        if not 0.0 &lt;= self.confidence &lt;= 1.0:
+            raise ValueError(&quot;causal confidence must be between 0.0 and 1.0&quot;)
+        if not self.method.strip():
+            raise ValueError(&quot;causal method is required&quot;)
+        _validate_entity_ref(self.source, &quot;source&quot;)
+        _validate_entity_ref(self.target, &quot;target&quot;)
+        _validate_evidence(self.evidence)
+
+    @property
+    def graph_relation_type(self) -&gt; str:
+        return causal_relation_to_graph_relation(self.relation_type)
+
+    def to_payload(self) -&gt; dict[str, Any]:
+        return {
+            &quot;source&quot;: dict(self.source),
+            &quot;target&quot;: dict(self.target),
+            &quot;relation_type&quot;: self.relation_type,
+            &quot;graph_relation_type&quot;: self.graph_relation_type,
+            &quot;confidence&quot;: self.confidence,
+            &quot;causal_method&quot;: self.method,
+            &quot;review_status&quot;: self.review_status,
+            &quot;authority_status&quot;: self.authority_status,
+            &quot;evidence&quot;: dict(self.evidence),
+        }
+
+
+@dataclass(frozen=True)
+class CausalQueryResult:
+    &quot;&quot;&quot;Model-facing causal read result.&quot;&quot;&quot;
+
+    source: dict[str, str]
+    target: dict[str, str]
+    relation_type: str
+    graph_relation_type: str
+    confidence: float
+    method: str
+    citation: str | None
+    review_status: str
+    authority_status: str
+    evidence: dict[str, Any] = field(default_factory=dict)
+    path_length: int = 1
+
+    def to_dict(self) -&gt; dict[str, Any]:
+        return {
+            &quot;source&quot;: dict(self.source),
+            &quot;target&quot;: dict(self.target),
+            &quot;relation_type&quot;: self.relation_type,
+            &quot;graph_relation_type&quot;: self.graph_relation_type,
+            &quot;confidence&quot;: self.confidence,
+            &quot;method&quot;: self.method,
+            &quot;citation&quot;: self.citation,
+            &quot;review_status&quot;: self.review_status,
+            &quot;authority_status&quot;: self.authority_status,
+            &quot;evidence&quot;: dict(self.evidence),
+            &quot;path_length&quot;: self.path_length,
+        }
+
+
+def causal_relation_to_graph_relation(relation_type: str) -&gt; str:
+    &quot;&quot;&quot;Return the graph relation_type stored on RELATES edges.&quot;&quot;&quot;
+    if relation_type not in CAUSAL_RELATION_TYPES:
+        raise ValueError(&quot;causal relation_type must be one of the supported causal taxonomy values&quot;)
+    return f&quot;causal_{relation_type}&quot;
+
+
+def build_causal_edge_event(
+    *,
+    actor: str,
+    session_id: str,
+    source: dict[str, str],
+    target: dict[str, str],
+    relation_type: str,
+    confidence: float,
+    method: str,
+    evidence: dict[str, Any],
+) -&gt; dict[str, Any]:
+    &quot;&quot;&quot;Build an explicit Eventloom causal edge event spec.&quot;&quot;&quot;
+    edge = CausalEdge(
+        source=source,
+        target=target,
+        relation_type=relation_type,
+        confidence=confidence,
+        method=method,
+        evidence=evidence,
+    )
+    return {
+        &quot;event_type&quot;: &quot;causal.edge.generated&quot;,
+        &quot;actor&quot;: actor,
+        &quot;payload&quot;: edge.to_payload(),
+        &quot;thread&quot;: session_id,
+    }
+
+
+def _validate_entity_ref(value: dict[str, str], role: str) -&gt; None:
+    if not isinstance(value, dict):
+        raise ValueError(f&quot;causal {role} must be an entity reference&quot;)
+    if not str(value.get(&quot;name&quot;, &quot;&quot;)).strip():
+        raise ValueError(f&quot;causal {role}.name is required&quot;)
+    if not str(value.get(&quot;entity_type&quot;, &quot;&quot;)).strip():
+        raise ValueError(f&quot;causal {role}.entity_type is required&quot;)
+
+
+def _validate_evidence(evidence: dict[str, Any]) -&gt; None:
+    if not isinstance(evidence, dict):
+        raise ValueError(&quot;causal evidence must be an object&quot;)
+    if int(evidence.get(&quot;source_event_seq&quot;) or 0) &lt;= 0:
+        raise ValueError(&quot;causal evidence.source_event_seq is required&quot;)
+    source_hash = str(evidence.get(&quot;source_event_hash&quot;) or &quot;&quot;)
+    if len(source_hash) != _HASH_LENGTH or any(char not in &quot;0123456789abcdef&quot; for char in source_hash):
+        raise ValueError(&quot;causal evidence.source_event_hash must be a 64-character lowercase hex hash&quot;)</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 4: Run tests to verify they pass</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_causal.py -q</code></pre>
+      <p>Expected: PASS.</p>
+      <ul>
+        <li>[ ] <strong>Step 5: Commit</strong></li>
+      </ul>
+      <pre><code class="language-bash">git add src/zaxy/causal.py tests/test_causal.py
+git commit -m &quot;feat: add causal memory contracts&quot;</code></pre>
+      <p>---</p>
+      <h3 id="task-2-project-explicit-causal-edge-events">Task 2: Project Explicit Causal Edge Events</h3>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Modify: <code>src/zaxy/extract.py</code></li>
+        <li>Test: <code>tests/test_extract.py</code></li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 1: Write failing extraction tests</strong></li>
+      </ul>
+      <p>Append to <code>tests/test_extract.py</code>:</p>
+      <pre><code class="language-python">def test_extract_causal_edge_generated_projects_inferred_causal_relation() -&gt; None:
+    event = _make_event(
+        &quot;causal.edge.generated&quot;,
+        {
+            &quot;source&quot;: {&quot;name&quot;: &quot;command:pytest&quot;, &quot;entity_type&quot;: &quot;command&quot;},
+            &quot;target&quot;: {&quot;name&quot;: &quot;test failure&quot;, &quot;entity_type&quot;: &quot;outcome&quot;},
+            &quot;relation_type&quot;: &quot;caused&quot;,
+            &quot;graph_relation_type&quot;: &quot;causal_caused&quot;,
+            &quot;confidence&quot;: 0.91,
+            &quot;causal_method&quot;: &quot;explicit_outcome_citation_v1&quot;,
+            &quot;review_status&quot;: &quot;proposed&quot;,
+            &quot;authority_status&quot;: &quot;non_authoritative&quot;,
+            &quot;evidence&quot;: {
+                &quot;source_event_seq&quot;: 42,
+                &quot;source_event_hash&quot;: &quot;a&quot; * 64,
+                &quot;reason&quot;: &quot;The command output contained the failure.&quot;,
+            },
+        },
+    )
+
+    result = extract(event)
+
+    assert {entity.name for entity in result.entities} == {&quot;command:pytest&quot;, &quot;test failure&quot;}
+    assert result.edges == [
+        ExtractedEdge(
+            source=&quot;command:pytest&quot;,
+            target=&quot;test failure&quot;,
+            relation_type=&quot;causal_caused&quot;,
+            valid_from=event.timestamp,
+            inferred=True,
+            confidence=0.91,
+            inference_method=&quot;explicit_outcome_citation_v1&quot;,
+            evidence={
+                &quot;causal_relation_type&quot;: &quot;caused&quot;,
+                &quot;review_status&quot;: &quot;proposed&quot;,
+                &quot;authority_status&quot;: &quot;non_authoritative&quot;,
+                &quot;source_event_seq&quot;: 42,
+                &quot;source_event_hash&quot;: &quot;a&quot; * 64,
+                &quot;reason&quot;: &quot;The command output contained the failure.&quot;,
+            },
+        )
+    ]
+
+
+def test_extract_causal_edge_generated_rejects_uncited_payload() -&gt; None:
+    event = _make_event(
+        &quot;causal.edge.generated&quot;,
+        {
+            &quot;source&quot;: {&quot;name&quot;: &quot;a&quot;, &quot;entity_type&quot;: &quot;event&quot;},
+            &quot;target&quot;: {&quot;name&quot;: &quot;b&quot;, &quot;entity_type&quot;: &quot;outcome&quot;},
+            &quot;relation_type&quot;: &quot;caused&quot;,
+            &quot;graph_relation_type&quot;: &quot;causal_caused&quot;,
+            &quot;confidence&quot;: 0.8,
+            &quot;causal_method&quot;: &quot;explicit_outcome_citation_v1&quot;,
+            &quot;evidence&quot;: {&quot;source_event_seq&quot;: 1},
+        },
+    )
+
+    with pytest.raises(ValueError, match=&quot;source_event_hash&quot;):
+        extract(event)</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run tests to verify they fail</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_extract.py::test_extract_causal_edge_generated_projects_inferred_causal_relation tests/test_extract.py::test_extract_causal_edge_generated_rejects_uncited_payload -q</code></pre>
+      <p>Expected: FAIL because the extractor is not registered.</p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement extractor</strong></li>
+      </ul>
+      <p>Add near the existing inferred-edge extractors in <code>src/zaxy/extract.py</code>:</p>
+      <pre><code class="language-python">@register(&quot;causal.edge.generated&quot;)
+def _extract_causal_edge_generated(event: Event) -&gt; ExtractionResult:
+    &quot;&quot;&quot;Project an explicit causal edge as an auditable inferred graph edge.&quot;&quot;&quot;
+    from zaxy.causal import CAUSAL_RELATION_TYPES, causal_relation_to_graph_relation
+
+    payload = event.payload
+    relation_type = _required_inference_text(payload, &quot;relation_type&quot;, event.seq)
+    if relation_type not in CAUSAL_RELATION_TYPES:
+        raise ValueError(f&quot;causal.edge.generated event {event.seq} has unsupported relation_type&quot;)
+    graph_relation_type = _required_inference_text(payload, &quot;graph_relation_type&quot;, event.seq)
+    expected_graph_relation_type = causal_relation_to_graph_relation(relation_type)
+    if graph_relation_type != expected_graph_relation_type:
+        raise ValueError(
+            f&quot;causal.edge.generated event {event.seq} graph_relation_type must be {expected_graph_relation_type}&quot;
+        )
+    source = _required_inference_entity(payload.get(&quot;source&quot;), event.seq, role=&quot;source&quot;)
+    target = _required_inference_entity(payload.get(&quot;target&quot;), event.seq, role=&quot;target&quot;)
+    confidence = _required_inference_confidence(payload, event.seq)
+    method = _required_inference_text(payload, &quot;causal_method&quot;, event.seq)
+    evidence = _inference_evidence(payload.get(&quot;evidence&quot;))
+    if not evidence.get(&quot;source_event_hash&quot;):
+        raise ValueError(f&quot;causal.edge.generated event {event.seq} missing evidence source_event_hash&quot;)
+    edge_evidence = {
+        &quot;causal_relation_type&quot;: relation_type,
+        &quot;review_status&quot;: _optional_text(payload.get(&quot;review_status&quot;)) or &quot;proposed&quot;,
+        &quot;authority_status&quot;: _optional_text(payload.get(&quot;authority_status&quot;)) or &quot;non_authoritative&quot;,
+        **evidence,
+    }
+    return ExtractionResult(
+        entities=[source, target],
+        edges=[
+            ExtractedEdge(
+                source=source.name,
+                target=target.name,
+                relation_type=graph_relation_type,
+                valid_from=event.timestamp,
+                inferred=True,
+                confidence=confidence,
+                inference_method=method,
+                evidence=edge_evidence,
+            )
+        ],
+        source_event_seq=event.seq,
+    )</code></pre>
+      <p>If <code>_inference_evidence</code>, <code>_required_inference_text</code>, or <code>_required_inference_entity</code> are not visible at this insertion point, place the extractor near the existing <code>inference.edge.generated</code> extractor where those helpers are already used.</p>
+      <ul>
+        <li>[ ] <strong>Step 4: Run focused tests</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_extract.py::test_extract_causal_edge_generated_projects_inferred_causal_relation tests/test_extract.py::test_extract_causal_edge_generated_rejects_uncited_payload -q</code></pre>
+      <p>Expected: PASS.</p>
+      <ul>
+        <li>[ ] <strong>Step 5: Run inferred-edge regression tests</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_extract.py -k &quot;inferred_edge or causal_edge&quot; -q</code></pre>
+      <p>Expected: PASS.</p>
+      <ul>
+        <li>[ ] <strong>Step 6: Commit</strong></li>
+      </ul>
+      <pre><code class="language-bash">git add src/zaxy/extract.py tests/test_extract.py
+git commit -m &quot;feat: project explicit causal edge events&quot;</code></pre>
+      <p>---</p>
+      <h3 id="task-3-add-conservative-causal-producer">Task 3: Add Conservative Causal Producer</h3>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Modify: <code>src/zaxy/inference.py</code></li>
+        <li>Test: <code>tests/test_inference.py</code></li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 1: Write failing producer tests</strong></li>
+      </ul>
+      <p>Append to the existing <code>tests/test_inference.py</code>:</p>
+      <pre><code class="language-python">from __future__ import annotations
+
+from zaxy.event import Event
+from zaxy.inference import build_inferred_edge_events
+
+
+def _event(event_type: str, payload: dict[str, object]) -&gt; Event:
+    return Event(
+        seq=9,
+        timestamp=&quot;2026-06-07T12:00:00Z&quot;,
+        type=event_type,
+        actor=&quot;assistant&quot;,
+        payload=payload,
+        prev_hash=&quot;0&quot; * 64,
+        hash=&quot;f&quot; * 64,
+        thread=&quot;agent-1&quot;,
+    )
+
+
+def test_outcome_explained_event_generates_cited_causal_edge() -&gt; None:
+    generated = build_inferred_edge_events(
+        _event(
+            &quot;outcome.explained&quot;,
+            {
+                &quot;cause&quot;: {&quot;name&quot;: &quot;command:pytest&quot;, &quot;entity_type&quot;: &quot;command&quot;},
+                &quot;effect&quot;: {&quot;name&quot;: &quot;test failure&quot;, &quot;entity_type&quot;: &quot;outcome&quot;},
+                &quot;relation_type&quot;: &quot;caused&quot;,
+                &quot;confidence&quot;: 0.92,
+                &quot;evidence&quot;: {
+                    &quot;source_event_seq&quot;: 9,
+                    &quot;source_event_hash&quot;: &quot;f&quot; * 64,
+                    &quot;reason&quot;: &quot;The command output contained the failure.&quot;,
+                },
+            },
+        )
+    )
+
+    assert generated == [
+        {
+            &quot;event_type&quot;: &quot;causal.edge.generated&quot;,
+            &quot;actor&quot;: &quot;zaxy-causal&quot;,
+            &quot;payload&quot;: {
+                &quot;source&quot;: {&quot;name&quot;: &quot;command:pytest&quot;, &quot;entity_type&quot;: &quot;command&quot;},
+                &quot;target&quot;: {&quot;name&quot;: &quot;test failure&quot;, &quot;entity_type&quot;: &quot;outcome&quot;},
+                &quot;relation_type&quot;: &quot;caused&quot;,
+                &quot;graph_relation_type&quot;: &quot;causal_caused&quot;,
+                &quot;confidence&quot;: 0.92,
+                &quot;causal_method&quot;: &quot;explicit_outcome_explanation_v1&quot;,
+                &quot;review_status&quot;: &quot;proposed&quot;,
+                &quot;authority_status&quot;: &quot;non_authoritative&quot;,
+                &quot;evidence&quot;: {
+                    &quot;source_event_seq&quot;: 9,
+                    &quot;source_event_hash&quot;: &quot;f&quot; * 64,
+                    &quot;reason&quot;: &quot;The command output contained the failure.&quot;,
+                },
+            },
+            &quot;thread&quot;: &quot;agent-1&quot;,
+        }
+    ]
+
+
+def test_outcome_explained_event_without_citation_generates_nothing() -&gt; None:
+    generated = build_inferred_edge_events(
+        _event(
+            &quot;outcome.explained&quot;,
+            {
+                &quot;cause&quot;: {&quot;name&quot;: &quot;command:pytest&quot;, &quot;entity_type&quot;: &quot;command&quot;},
+                &quot;effect&quot;: {&quot;name&quot;: &quot;test failure&quot;, &quot;entity_type&quot;: &quot;outcome&quot;},
+                &quot;relation_type&quot;: &quot;caused&quot;,
+                &quot;confidence&quot;: 0.92,
+                &quot;evidence&quot;: {&quot;reason&quot;: &quot;No Eventloom citation.&quot;},
+            },
+        )
+    )
+
+    assert generated == []</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run tests to verify they fail</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_inference.py -q</code></pre>
+      <p>Expected: FAIL because <code>outcome.explained</code> is not handled.</p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement conservative producer</strong></li>
+      </ul>
+      <p>Modify <code>src/zaxy/inference.py</code>:</p>
+      <pre><code class="language-python">def build_inferred_edge_events(event: Event) -&gt; list[dict[str, Any]]:
+    &quot;&quot;&quot;Return inferred-edge Eventloom event specs generated from cited evidence.&quot;&quot;&quot;
+    if event.type == &quot;task.completed&quot;:
+        inferred = _task_completed_decision_inference(event)
+        return [inferred] if inferred is not None else []
+    if event.type == &quot;outcome.explained&quot;:
+        inferred = _outcome_explained_causal_inference(event)
+        return [inferred] if inferred is not None else []
+    if event.type == &quot;inference.edge.contradicted&quot;:
+        retracted = _inference_edge_retraction(event)
+        return [retracted] if retracted is not None else []
+    return []
+
+
+def _outcome_explained_causal_inference(event: Event) -&gt; dict[str, Any] | None:
+    &quot;&quot;&quot;Infer a causal edge only from explicit, cited outcome explanations.&quot;&quot;&quot;
+    from zaxy.causal import CAUSAL_RELATION_TYPES, build_causal_edge_event
+
+    cause = _entity_ref(event.payload.get(&quot;cause&quot;))
+    effect = _entity_ref(event.payload.get(&quot;effect&quot;))
+    relation_type = _text(event.payload.get(&quot;relation_type&quot;))
+    if relation_type not in CAUSAL_RELATION_TYPES:
+        return None
+    confidence = _confidence(event.payload.get(&quot;confidence&quot;))
+    evidence = event.payload.get(&quot;evidence&quot;)
+    if not isinstance(evidence, dict):
+        return None
+    source_event_seq = _positive_int(evidence.get(&quot;source_event_seq&quot;))
+    source_event_hash = _event_hash(evidence.get(&quot;source_event_hash&quot;))
+    if not (cause and effect and confidence is not None and source_event_seq and source_event_hash):
+        return None
+    reason = _text(evidence.get(&quot;reason&quot;)) or &quot;outcome.explained explicitly cited causal evidence&quot;
+    return build_causal_edge_event(
+        actor=&quot;zaxy-causal&quot;,
+        session_id=event.thread,
+        source=cause,
+        target=effect,
+        relation_type=relation_type,
+        confidence=confidence,
+        method=&quot;explicit_outcome_explanation_v1&quot;,
+        evidence={
+            &quot;source_event_seq&quot;: source_event_seq,
+            &quot;source_event_hash&quot;: source_event_hash,
+            &quot;reason&quot;: reason,
+        },
+    )
+
+
+def _confidence(value: object) -&gt; float | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = float(str(value))
+    except (TypeError, ValueError):
+        return None
+    if not 0.0 &lt;= parsed &lt;= 1.0:
+        return None
+    return parsed</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 4: Run tests</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_inference.py -q</code></pre>
+      <p>Expected: PASS.</p>
+      <ul>
+        <li>[ ] <strong>Step 5: Commit</strong></li>
+      </ul>
+      <pre><code class="language-bash">git add src/zaxy/inference.py tests/test_inference.py
+git commit -m &quot;feat: infer causal edges from cited outcomes&quot;</code></pre>
+      <p>---</p>
+      <h3 id="task-4-add-causal-read-apis-to-memoryfabric">Task 4: Add Causal Read APIs to MemoryFabric</h3>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Modify: <code>src/zaxy/core.py</code></li>
+        <li>Test: <code>tests/test_causal.py</code></li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 1: Write failing service tests</strong></li>
+      </ul>
+      <p>Append to <code>tests/test_causal.py</code>:</p>
+      <pre><code class="language-python">import pytest
+
+from zaxy.core import MemoryFabric
+from zaxy.graph import GraphEntity, SearchResult
+
+
+class _CausalStore:
+    def __init__(self) -&gt; None:
+        self.traversal_calls: list[dict[str, object]] = []
+
+    async def search_traversal(
+        self,
+        start_name: str,
+        relation_type: str | None = None,
+        depth: int = 2,
+        temporal_point: str | None = None,
+        session_id: str = &quot;default&quot;,
+    ) -&gt; list[GraphEntity]:
+        self.traversal_calls.append(
+            {
+                &quot;start_name&quot;: start_name,
+                &quot;relation_type&quot;: relation_type,
+                &quot;depth&quot;: depth,
+                &quot;temporal_point&quot;: temporal_point,
+                &quot;session_id&quot;: session_id,
+            }
+        )
+        return [
+            GraphEntity(
+                name=&quot;test failure&quot;,
+                entity_type=&quot;outcome&quot;,
+                valid_from=&quot;2026-06-07T12:00:00Z&quot;,
+                valid_to=None,
+                session_id=session_id,
+                properties={
+                    &quot;_path_relation_types&quot;: [&quot;causal_caused&quot;],
+                    &quot;_path_inferred_confidences&quot;: [0.91],
+                    &quot;_path_inference_methods&quot;: [&quot;explicit_outcome_citation_v1&quot;],
+                    &quot;_path_inferred_source_event_refs&quot;: [42],
+                    &quot;_path_inferred_evidence_counts&quot;: [1],
+                    &quot;source_event_hash&quot;: &quot;a&quot; * 64,
+                },
+            )
+        ]
+
+
+@pytest.mark.asyncio
+async def test_query_causal_successors_uses_causal_relation_filter() -&gt; None:
+    fabric = MemoryFabric(eventloom_path=&quot;unused.jsonl&quot;)
+    store = _CausalStore()
+    fabric.graph = store
+
+    results = await fabric.query_causal_successors(
+        &quot;command:pytest&quot;,
+        relation_type=&quot;caused&quot;,
+        session_id=&quot;agent-1&quot;,
+    )
+
+    assert store.traversal_calls == [
+        {
+            &quot;start_name&quot;: &quot;command:pytest&quot;,
+            &quot;relation_type&quot;: &quot;causal_caused&quot;,
+            &quot;depth&quot;: 2,
+            &quot;temporal_point&quot;: None,
+            &quot;session_id&quot;: &quot;agent-1&quot;,
+        }
+    ]
+    assert results[0][&quot;target&quot;][&quot;name&quot;] == &quot;test failure&quot;
+    assert results[0][&quot;relation_type&quot;] == &quot;caused&quot;
+    assert results[0][&quot;authority_status&quot;] == &quot;non_authoritative&quot;</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run test to verify it fails</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_causal.py::test_query_causal_successors_uses_causal_relation_filter -q</code></pre>
+      <p>Expected: FAIL because <code>MemoryFabric.query_causal_successors</code> does not exist.</p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement causal read methods</strong></li>
+      </ul>
+      <p>Add to <code>MemoryFabric</code> in <code>src/zaxy/core.py</code>:</p>
+      <pre><code class="language-python">    async def query_causal_successors(
+        self,
+        entity_name: str,
+        *,
+        relation_type: str | None = None,
+        depth: int = 2,
+        temporal_point: str | None = None,
+        session_id: str = &quot;default&quot;,
+    ) -&gt; list[dict[str, Any]]:
+        &quot;&quot;&quot;Return causal effects reachable from an entity.&quot;&quot;&quot;
+        from zaxy.causal import causal_relation_to_graph_relation
+
+        graph_relation = causal_relation_to_graph_relation(relation_type) if relation_type else None
+        entities = await self.graph.search_traversal(
+            entity_name,
+            relation_type=graph_relation,
+            depth=depth,
+            temporal_point=temporal_point,
+            session_id=session_id,
+        )
+        return [_causal_result_from_entity(entity, source_name=entity_name).to_dict() for entity in entities]
+
+    async def query_causal_predecessors(
+        self,
+        entity_name: str,
+        *,
+        relation_type: str | None = None,
+        depth: int = 2,
+        temporal_point: str | None = None,
+        session_id: str = &quot;default&quot;,
+    ) -&gt; list[dict[str, Any]]:
+        &quot;&quot;&quot;Return likely causes for an entity.
+
+        Alpha.1 uses graph traversal over causal_* relations. Backend-specific
+        reverse traversal can be added later without changing this public method.
+        &quot;&quot;&quot;
+        return await self.query_causal_successors(
+            entity_name,
+            relation_type=relation_type,
+            depth=depth,
+            temporal_point=temporal_point,
+            session_id=session_id,
+        )</code></pre>
+      <p>Add module-level helper near other checkout helpers:</p>
+      <pre><code class="language-python">def _causal_result_from_entity(entity: GraphEntity, *, source_name: str) -&gt; CausalQueryResult:
+    from zaxy.causal import CausalQueryResult
+
+    properties = entity.properties or {}
+    relation_types = properties.get(&quot;_path_relation_types&quot;)
+    graph_relation_type = relation_types[0] if isinstance(relation_types, list) and relation_types else &quot;causal_caused&quot;
+    causal_relation_type = str(graph_relation_type).replace(&quot;causal_&quot;, &quot;&quot;, 1)
+    confidences = properties.get(&quot;_path_inferred_confidences&quot;)
+    confidence = float(confidences[0]) if isinstance(confidences, list) and confidences else 0.0
+    methods = properties.get(&quot;_path_inference_methods&quot;)
+    method = str(methods[0]) if isinstance(methods, list) and methods else &quot;unknown&quot;
+    source_event_refs = properties.get(&quot;_path_inferred_source_event_refs&quot;)
+    source_event_seq = source_event_refs[0] if isinstance(source_event_refs, list) and source_event_refs else None
+    source_event_hash = properties.get(&quot;source_event_hash&quot;)
+    citation = None
+    if source_event_seq and isinstance(source_event_hash, str) and source_event_hash:
+        citation = f&quot;eventloom://{entity.session_id}/events/{source_event_seq}#{source_event_hash[:12]}&quot;
+    return CausalQueryResult(
+        source={&quot;name&quot;: source_name, &quot;entity_type&quot;: &quot;unknown&quot;},
+        target={&quot;name&quot;: entity.name, &quot;entity_type&quot;: entity.entity_type},
+        relation_type=causal_relation_type,
+        graph_relation_type=str(graph_relation_type),
+        confidence=confidence,
+        method=method,
+        citation=citation,
+        review_status=str(properties.get(&quot;review_status&quot;) or &quot;proposed&quot;),
+        authority_status=str(properties.get(&quot;authority_status&quot;) or &quot;non_authoritative&quot;),
+        evidence={&quot;source_event_seq&quot;: source_event_seq} if source_event_seq else {},
+        path_length=1,
+    )</code></pre>
+      <p>Add the required imports under <code>TYPE_CHECKING</code> or normal imports as needed:</p>
+      <pre><code class="language-python">from zaxy.causal import CausalQueryResult
+from zaxy.graph import GraphEntity</code></pre>
+      <p>If importing <code>GraphEntity</code> at runtime creates a circular import, put it under <code>TYPE_CHECKING</code> and avoid the annotation.</p>
+      <ul>
+        <li>[ ] <strong>Step 4: Run focused test</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_causal.py::test_query_causal_successors_uses_causal_relation_filter -q</code></pre>
+      <p>Expected: PASS.</p>
+      <ul>
+        <li>[ ] <strong>Step 5: Commit</strong></li>
+      </ul>
+      <pre><code class="language-bash">git add src/zaxy/core.py tests/test_causal.py
+git commit -m &quot;feat: add causal read APIs&quot;</code></pre>
+      <p>---</p>
+      <h3 id="task-5-add-consolidation-candidate-contracts">Task 5: Add Consolidation Candidate Contracts</h3>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Create: <code>src/zaxy/consolidation.py</code></li>
+        <li>Test: <code>tests/test_consolidation.py</code></li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 1: Write failing tests</strong></li>
+      </ul>
+      <p>Add to <code>tests/test_consolidation.py</code>:</p>
+      <pre><code class="language-python">from __future__ import annotations
+
+import pytest
+
+from zaxy.consolidation import (
+    CONSOLIDATION_CANDIDATE_TYPES,
+    build_consolidation_candidate_event,
+    build_consolidation_review_event,
+)
+
+
+def test_build_episode_candidate_is_review_pending_and_cited() -&gt; None:
+    event = build_consolidation_candidate_event(
+        actor=&quot;zaxy-consolidation&quot;,
+        session_id=&quot;agent-1&quot;,
+        candidate_type=&quot;episode&quot;,
+        title=&quot;Pytest failure investigation&quot;,
+        summary=&quot;The agent ran pytest, saw a failure, and identified the cause.&quot;,
+        source_events=[
+            {&quot;seq&quot;: 10, &quot;hash&quot;: &quot;a&quot; * 64},
+            {&quot;seq&quot;: 11, &quot;hash&quot;: &quot;b&quot; * 64},
+        ],
+        confidence=0.74,
+        method=&quot;event_segment_cluster_v1&quot;,
+        purpose=&quot;coding&quot;,
+    )
+
+    assert event[&quot;event_type&quot;] == &quot;consolidation.candidate.created&quot;
+    assert event[&quot;thread&quot;] == &quot;agent-1&quot;
+    assert event[&quot;payload&quot;][&quot;candidate_type&quot;] == &quot;episode&quot;
+    assert event[&quot;payload&quot;][&quot;review_status&quot;] == &quot;pending&quot;
+    assert event[&quot;payload&quot;][&quot;authority_status&quot;] == &quot;non_authoritative&quot;
+    assert event[&quot;payload&quot;][&quot;source_events&quot;] == [
+        {&quot;seq&quot;: 10, &quot;hash&quot;: &quot;a&quot; * 64},
+        {&quot;seq&quot;: 11, &quot;hash&quot;: &quot;b&quot; * 64},
+    ]
+
+
+def test_consolidation_candidate_rejects_missing_source_events() -&gt; None:
+    with pytest.raises(ValueError, match=&quot;source_events&quot;):
+        build_consolidation_candidate_event(
+            actor=&quot;zaxy-consolidation&quot;,
+            session_id=&quot;agent-1&quot;,
+            candidate_type=&quot;claim&quot;,
+            title=&quot;Unsupported claim&quot;,
+            summary=&quot;No citation.&quot;,
+            source_events=[],
+            confidence=0.5,
+            method=&quot;event_segment_cluster_v1&quot;,
+        )
+
+
+def test_build_review_event_cannot_promote_to_authority_in_alpha_1() -&gt; None:
+    event = build_consolidation_review_event(
+        actor=&quot;reviewer&quot;,
+        session_id=&quot;agent-1&quot;,
+        candidate_id=&quot;consolidation:episode:abc123&quot;,
+        status=&quot;accepted&quot;,
+        rationale=&quot;Cited and useful, but alpha.1 keeps authority separate.&quot;,
+    )
+
+    assert event == {
+        &quot;event_type&quot;: &quot;consolidation.candidate.reviewed&quot;,
+        &quot;actor&quot;: &quot;reviewer&quot;,
+        &quot;payload&quot;: {
+            &quot;candidate_id&quot;: &quot;consolidation:episode:abc123&quot;,
+            &quot;status&quot;: &quot;accepted&quot;,
+            &quot;authority_status&quot;: &quot;non_authoritative&quot;,
+            &quot;rationale&quot;: &quot;Cited and useful, but alpha.1 keeps authority separate.&quot;,
+        },
+        &quot;thread&quot;: &quot;agent-1&quot;,
+    }
+
+
+def test_candidate_type_taxonomy_is_stable() -&gt; None:
+    assert CONSOLIDATION_CANDIDATE_TYPES == {&quot;episode&quot;, &quot;claim&quot;, &quot;procedure&quot;}</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run tests to verify they fail</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_consolidation.py -q</code></pre>
+      <p>Expected: FAIL with <code>ModuleNotFoundError: No module named &#x27;zaxy.consolidation&#x27;</code>.</p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement contracts</strong></li>
+      </ul>
+      <p>Create <code>src/zaxy/consolidation.py</code>:</p>
+      <pre><code class="language-python">&quot;&quot;&quot;Reviewable consolidation candidate contracts for Zaxy 2.0 alpha.1.&quot;&quot;&quot;
+
+from __future__ import annotations
+
+import hashlib
+import json
+from typing import Any
+
+CONSOLIDATION_CANDIDATE_TYPES = {&quot;episode&quot;, &quot;claim&quot;, &quot;procedure&quot;}
+CONSOLIDATION_REVIEW_STATUSES = {&quot;accepted&quot;, &quot;rejected&quot;, &quot;deferred&quot;, &quot;conflicted&quot;}
+_HASH_LENGTH = 64
+
+
+def build_consolidation_candidate_event(
+    *,
+    actor: str,
+    session_id: str,
+    candidate_type: str,
+    title: str,
+    summary: str,
+    source_events: list[dict[str, Any]],
+    confidence: float,
+    method: str,
+    purpose: str | None = None,
+) -&gt; dict[str, Any]:
+    &quot;&quot;&quot;Build a cited, review-pending consolidation candidate event.&quot;&quot;&quot;
+    _validate_candidate_type(candidate_type)
+    _validate_text(title, &quot;title&quot;)
+    _validate_text(summary, &quot;summary&quot;)
+    _validate_text(method, &quot;method&quot;)
+    _validate_confidence(confidence)
+    normalized_sources = [_normalize_source_event(source) for source in source_events]
+    if not normalized_sources:
+        raise ValueError(&quot;consolidation source_events must include at least one Eventloom citation&quot;)
+    payload: dict[str, Any] = {
+        &quot;candidate_id&quot;: _candidate_id(candidate_type, title, normalized_sources),
+        &quot;candidate_type&quot;: candidate_type,
+        &quot;title&quot;: title.strip(),
+        &quot;summary&quot;: summary.strip(),
+        &quot;source_events&quot;: normalized_sources,
+        &quot;confidence&quot;: confidence,
+        &quot;method&quot;: method.strip(),
+        &quot;review_status&quot;: &quot;pending&quot;,
+        &quot;authority_status&quot;: &quot;non_authoritative&quot;,
+    }
+    if purpose:
+        payload[&quot;purpose&quot;] = purpose.strip()
+    return {
+        &quot;event_type&quot;: &quot;consolidation.candidate.created&quot;,
+        &quot;actor&quot;: actor,
+        &quot;payload&quot;: payload,
+        &quot;thread&quot;: session_id,
+    }
+
+
+def build_consolidation_review_event(
+    *,
+    actor: str,
+    session_id: str,
+    candidate_id: str,
+    status: str,
+    rationale: str,
+) -&gt; dict[str, Any]:
+    &quot;&quot;&quot;Build a review event; alpha.1 never promotes authority automatically.&quot;&quot;&quot;
+    _validate_text(candidate_id, &quot;candidate_id&quot;)
+    _validate_text(rationale, &quot;rationale&quot;)
+    if status not in CONSOLIDATION_REVIEW_STATUSES:
+        raise ValueError(&quot;consolidation review status is unsupported&quot;)
+    return {
+        &quot;event_type&quot;: &quot;consolidation.candidate.reviewed&quot;,
+        &quot;actor&quot;: actor,
+        &quot;payload&quot;: {
+            &quot;candidate_id&quot;: candidate_id.strip(),
+            &quot;status&quot;: status,
+            &quot;authority_status&quot;: &quot;non_authoritative&quot;,
+            &quot;rationale&quot;: rationale.strip(),
+        },
+        &quot;thread&quot;: session_id,
+    }
+
+
+def _candidate_id(candidate_type: str, title: str, source_events: list[dict[str, Any]]) -&gt; str:
+    raw = json.dumps(
+        {&quot;candidate_type&quot;: candidate_type, &quot;title&quot;: title, &quot;source_events&quot;: source_events},
+        sort_keys=True,
+        separators=(&quot;,&quot;, &quot;:&quot;),
+    )
+    return f&quot;consolidation:{candidate_type}:{hashlib.sha256(raw.encode(&#x27;utf-8&#x27;)).hexdigest()[:16]}&quot;
+
+
+def _validate_candidate_type(value: str) -&gt; None:
+    if value not in CONSOLIDATION_CANDIDATE_TYPES:
+        raise ValueError(&quot;consolidation candidate_type is unsupported&quot;)
+
+
+def _validate_text(value: str, field: str) -&gt; None:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f&quot;consolidation {field} is required&quot;)
+
+
+def _validate_confidence(value: float) -&gt; None:
+    if not 0.0 &lt;= value &lt;= 1.0:
+        raise ValueError(&quot;consolidation confidence must be between 0.0 and 1.0&quot;)
+
+
+def _normalize_source_event(source: dict[str, Any]) -&gt; dict[str, Any]:
+    seq = int(source.get(&quot;seq&quot;) or 0)
+    event_hash = str(source.get(&quot;hash&quot;) or &quot;&quot;)
+    if seq &lt;= 0:
+        raise ValueError(&quot;consolidation source_events entries require seq&quot;)
+    if len(event_hash) != _HASH_LENGTH or any(char not in &quot;0123456789abcdef&quot; for char in event_hash):
+        raise ValueError(&quot;consolidation source_events entries require 64-character lowercase hex hash&quot;)
+    return {&quot;seq&quot;: seq, &quot;hash&quot;: event_hash}</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 4: Run tests</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_consolidation.py -q</code></pre>
+      <p>Expected: PASS.</p>
+      <ul>
+        <li>[ ] <strong>Step 5: Commit</strong></li>
+      </ul>
+      <pre><code class="language-bash">git add src/zaxy/consolidation.py tests/test_consolidation.py
+git commit -m &quot;feat: add consolidation candidate contracts&quot;</code></pre>
+      <p>---</p>
+      <h3 id="task-6-project-consolidation-candidate-and-review-events">Task 6: Project Consolidation Candidate and Review Events</h3>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Modify: <code>src/zaxy/extract.py</code></li>
+        <li>Test: <code>tests/test_extract.py</code></li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 1: Write failing extraction tests</strong></li>
+      </ul>
+      <p>Append to <code>tests/test_extract.py</code>:</p>
+      <pre><code class="language-python">def test_extract_consolidation_candidate_created_projects_review_pending_memory() -&gt; None:
+    event = _make_event(
+        &quot;consolidation.candidate.created&quot;,
+        {
+            &quot;candidate_id&quot;: &quot;consolidation:episode:abc123&quot;,
+            &quot;candidate_type&quot;: &quot;episode&quot;,
+            &quot;title&quot;: &quot;Pytest failure investigation&quot;,
+            &quot;summary&quot;: &quot;The agent ran pytest and identified the cause.&quot;,
+            &quot;source_events&quot;: [{&quot;seq&quot;: 10, &quot;hash&quot;: &quot;a&quot; * 64}],
+            &quot;confidence&quot;: 0.74,
+            &quot;method&quot;: &quot;event_segment_cluster_v1&quot;,
+            &quot;review_status&quot;: &quot;pending&quot;,
+            &quot;authority_status&quot;: &quot;non_authoritative&quot;,
+            &quot;purpose&quot;: &quot;coding&quot;,
+        },
+    )
+
+    result = extract(event)
+
+    candidate = result.entities[0]
+    assert candidate.name == &quot;consolidation:episode:abc123&quot;
+    assert candidate.entity_type == &quot;consolidation_candidate&quot;
+    assert candidate.summary == &quot;The agent ran pytest and identified the cause.&quot;
+    assert candidate.properties[&quot;candidate_type&quot;] == &quot;episode&quot;
+    assert candidate.properties[&quot;review_status&quot;] == &quot;pending&quot;
+    assert candidate.properties[&quot;authority_status&quot;] == &quot;non_authoritative&quot;
+    assert candidate.properties[&quot;source_event_count&quot;] == 1
+
+
+def test_extract_consolidation_review_links_review_to_candidate() -&gt; None:
+    event = _make_event(
+        &quot;consolidation.candidate.reviewed&quot;,
+        {
+            &quot;candidate_id&quot;: &quot;consolidation:episode:abc123&quot;,
+            &quot;status&quot;: &quot;accepted&quot;,
+            &quot;authority_status&quot;: &quot;non_authoritative&quot;,
+            &quot;rationale&quot;: &quot;Useful but still alpha.1 non-authoritative.&quot;,
+        },
+    )
+
+    result = extract(event)
+
+    assert {entity.entity_type for entity in result.entities} == {&quot;consolidation_review&quot;, &quot;consolidation_candidate&quot;}
+    assert result.edges[0].relation_type == &quot;reviewed_consolidation_candidate&quot;
+    assert result.edges[0].source.startswith(&quot;consolidation_review:&quot;)
+    assert result.edges[0].target == &quot;consolidation:episode:abc123&quot;</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run tests to verify they fail</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_extract.py::test_extract_consolidation_candidate_created_projects_review_pending_memory tests/test_extract.py::test_extract_consolidation_review_links_review_to_candidate -q</code></pre>
+      <p>Expected: FAIL because extractors are not registered.</p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement extractors</strong></li>
+      </ul>
+      <p>Add to <code>src/zaxy/extract.py</code>:</p>
+      <pre><code class="language-python">@register(&quot;consolidation.candidate.created&quot;)
+def _extract_consolidation_candidate_created(event: Event) -&gt; ExtractionResult:
+    &quot;&quot;&quot;Project a review-pending consolidation candidate.&quot;&quot;&quot;
+    payload = event.payload
+    candidate_id = _required_text(payload, &quot;candidate_id&quot;, event.seq)
+    candidate_type = _required_text(payload, &quot;candidate_type&quot;, event.seq)
+    title = _required_text(payload, &quot;title&quot;, event.seq)
+    summary = _required_text(payload, &quot;summary&quot;, event.seq)
+    source_events = payload.get(&quot;source_events&quot;)
+    if not isinstance(source_events, list) or not source_events:
+        raise ValueError(f&quot;consolidation.candidate.created event {event.seq} missing source_events&quot;)
+    entity = ExtractedEntity(
+        name=candidate_id,
+        entity_type=&quot;consolidation_candidate&quot;,
+        observed_at=event.timestamp,
+        summary=summary,
+        properties={
+            &quot;candidate_type&quot;: candidate_type,
+            &quot;title&quot;: title,
+            &quot;confidence&quot;: float(payload.get(&quot;confidence&quot;) or 0.0),
+            &quot;method&quot;: _optional_text(payload.get(&quot;method&quot;)) or &quot;unknown&quot;,
+            &quot;review_status&quot;: _optional_text(payload.get(&quot;review_status&quot;)) or &quot;pending&quot;,
+            &quot;authority_status&quot;: _optional_text(payload.get(&quot;authority_status&quot;)) or &quot;non_authoritative&quot;,
+            &quot;purpose&quot;: _optional_text(payload.get(&quot;purpose&quot;)),
+            &quot;source_event_count&quot;: len(source_events),
+            &quot;source_events&quot;: source_events,
+        },
+    )
+    return ExtractionResult(entities=[entity], edges=[], source_event_seq=event.seq)
+
+
+@register(&quot;consolidation.candidate.reviewed&quot;)
+def _extract_consolidation_candidate_reviewed(event: Event) -&gt; ExtractionResult:
+    &quot;&quot;&quot;Project a review event linked to its consolidation candidate.&quot;&quot;&quot;
+    payload = event.payload
+    candidate_id = _required_text(payload, &quot;candidate_id&quot;, event.seq)
+    status = _required_text(payload, &quot;status&quot;, event.seq)
+    review_id = f&quot;consolidation_review:{candidate_id}:{event.seq}&quot;
+    review = ExtractedEntity(
+        name=review_id,
+        entity_type=&quot;consolidation_review&quot;,
+        observed_at=event.timestamp,
+        summary=_optional_text(payload.get(&quot;rationale&quot;)),
+        properties={
+            &quot;candidate_id&quot;: candidate_id,
+            &quot;status&quot;: status,
+            &quot;authority_status&quot;: _optional_text(payload.get(&quot;authority_status&quot;)) or &quot;non_authoritative&quot;,
+        },
+    )
+    candidate = ExtractedEntity(
+        name=candidate_id,
+        entity_type=&quot;consolidation_candidate&quot;,
+        observed_at=event.timestamp,
+    )
+    edge = ExtractedEdge(
+        source=review_id,
+        target=candidate_id,
+        relation_type=&quot;reviewed_consolidation_candidate&quot;,
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(entities=[review, candidate], edges=[edge], source_event_seq=event.seq)</code></pre>
+      <p>If <code>_required_text</code> does not exist in this file, add:</p>
+      <pre><code class="language-python">def _required_text(payload: dict[str, Any], field: str, event_seq: int) -&gt; str:
+    value = _optional_text(payload.get(field))
+    if value is None:
+        raise ValueError(f&quot;event {event_seq} missing required {field}&quot;)
+    return value</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 4: Run focused tests</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_extract.py::test_extract_consolidation_candidate_created_projects_review_pending_memory tests/test_extract.py::test_extract_consolidation_review_links_review_to_candidate -q</code></pre>
+      <p>Expected: PASS.</p>
+      <ul>
+        <li>[ ] <strong>Step 5: Commit</strong></li>
+      </ul>
+      <pre><code class="language-bash">git add src/zaxy/extract.py tests/test_extract.py
+git commit -m &quot;feat: project consolidation candidate events&quot;</code></pre>
+      <p>---</p>
+      <h3 id="task-7-add-memory-checkout-causal-and-consolidation-diagnostics">Task 7: Add Memory Checkout Causal and Consolidation Diagnostics</h3>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Modify: <code>src/zaxy/checkout.py</code></li>
+        <li>Modify: <code>src/zaxy/core.py</code></li>
+        <li>Test: <code>tests/test_causal_checkout.py</code></li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 1: Write failing checkout tests</strong></li>
+      </ul>
+      <p>Add <code>tests/test_causal_checkout.py</code>:</p>
+      <pre><code class="language-python">from __future__ import annotations
+
+from zaxy.checkout import build_checkout_diagnostics, build_checkout_guidance
+
+
+def test_checkout_diagnostics_summarize_causal_context() -&gt; None:
+    current_facts = [
+        {
+            &quot;entity_name&quot;: &quot;test failure&quot;,
+            &quot;entity_type&quot;: &quot;outcome&quot;,
+            &quot;citation&quot;: &quot;eventloom://agent-1/events/42#aaaaaaaaaaaa&quot;,
+            &quot;score_explanation&quot;: {
+                &quot;inferred_relation_types&quot;: [&quot;causal_caused&quot;],
+                &quot;inference_methods&quot;: [&quot;explicit_outcome_citation_v1&quot;],
+                &quot;inferred_edge_count&quot;: 1,
+                &quot;inferred_edge_trust&quot;: 0.91,
+                &quot;inferred_edge_trust_multiplier&quot;: 1.09,
+            },
+        },
+        {
+            &quot;entity_name&quot;: &quot;consolidation:episode:abc123&quot;,
+            &quot;entity_type&quot;: &quot;consolidation_candidate&quot;,
+            &quot;citation&quot;: &quot;eventloom://agent-1/events/55#bbbbbbbbbbbb&quot;,
+            &quot;metadata&quot;: {
+                &quot;candidate_type&quot;: &quot;episode&quot;,
+                &quot;review_status&quot;: &quot;pending&quot;,
+                &quot;authority_status&quot;: &quot;non_authoritative&quot;,
+            },
+        },
+    ]
+
+    diagnostics = build_checkout_diagnostics(
+        query=&quot;why did tests fail?&quot;,
+        purpose=None,
+        source_lanes={&quot;graph&quot;: 2},
+        current_facts=current_facts,
+        evidence=current_facts,
+        retention={},
+        warnings=[],
+    )
+
+    assert diagnostics[&quot;causal_context&quot;] == {
+        &quot;context_count&quot;: 1,
+        &quot;edge_count&quot;: 1,
+        &quot;relation_types&quot;: [&quot;causal_caused&quot;],
+        &quot;methods&quot;: [&quot;explicit_outcome_citation_v1&quot;],
+        &quot;average_trust&quot;: 0.91,
+        &quot;authority_status&quot;: &quot;non_authoritative&quot;,
+    }
+    assert diagnostics[&quot;consolidation_candidates&quot;] == {
+        &quot;candidate_count&quot;: 1,
+        &quot;candidate_types&quot;: [&quot;episode&quot;],
+        &quot;pending_count&quot;: 1,
+        &quot;accepted_count&quot;: 0,
+        &quot;authority_status&quot;: &quot;non_authoritative&quot;,
+    }
+
+
+def test_checkout_guidance_marks_causal_context_as_explanatory_not_authoritative() -&gt; None:
+    current_facts = [
+        {
+            &quot;entity_name&quot;: &quot;test failure&quot;,
+            &quot;entity_type&quot;: &quot;outcome&quot;,
+            &quot;citation&quot;: &quot;eventloom://agent-1/events/42#aaaaaaaaaaaa&quot;,
+            &quot;score_explanation&quot;: {
+                &quot;inferred_relation_types&quot;: [&quot;causal_caused&quot;],
+                &quot;inference_methods&quot;: [&quot;explicit_outcome_citation_v1&quot;],
+                &quot;inferred_edge_count&quot;: 1,
+                &quot;inferred_edge_trust&quot;: 0.91,
+            },
+        }
+    ]
+
+    guidance = build_checkout_guidance(
+        query=&quot;why did tests fail?&quot;,
+        purpose=None,
+        current_facts=current_facts,
+        retention={},
+        evidence=current_facts,
+    )
+
+    assert &quot;Use causal_context as explanatory memory, not as authoritative state.&quot; in guidance[&quot;trust&quot;]
+    assert &quot;Do not treat proposed causal edges as accepted facts without review status.&quot; in guidance[&quot;ignore&quot;]</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run tests to verify they fail</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_causal_checkout.py -q</code></pre>
+      <p>Expected: FAIL because diagnostics do not include <code>causal_context</code> or <code>consolidation_candidates</code>.</p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement diagnostics helpers</strong></li>
+      </ul>
+      <p>Add to <code>src/zaxy/checkout.py</code> near <code>_inferred_context_diagnostics</code>:</p>
+      <pre><code class="language-python">def _causal_context_diagnostics(items: list[dict[str, Any]]) -&gt; dict[str, Any]:
+    causal_items = [
+        item for item in items
+        if any(str(value).startswith(&quot;causal_&quot;) for value in _text_list(_inferred_score_explanation(item).get(&quot;inferred_relation_types&quot;)))
+    ]
+    if not causal_items:
+        return {}
+    explanations = [_inferred_score_explanation(item) for item in causal_items]
+    relation_types = sorted(
+        {
+            relation
+            for explanation in explanations
+            for relation in _text_list(explanation.get(&quot;inferred_relation_types&quot;))
+            if relation.startswith(&quot;causal_&quot;)
+        }
+    )
+    methods = sorted(
+        {
+            method
+            for explanation in explanations
+            for method in _text_list(explanation.get(&quot;inference_methods&quot;))
+        }
+    )
+    trusts = [
+        float(explanation.get(&quot;inferred_edge_trust&quot;))
+        for explanation in explanations
+        if isinstance(explanation.get(&quot;inferred_edge_trust&quot;), int | float)
+    ]
+    edge_count = sum(_int_metric(explanation.get(&quot;inferred_edge_count&quot;)) for explanation in explanations)
+    return {
+        &quot;context_count&quot;: len(causal_items),
+        &quot;edge_count&quot;: edge_count,
+        &quot;relation_types&quot;: relation_types,
+        &quot;methods&quot;: methods,
+        &quot;average_trust&quot;: round(sum(trusts) / len(trusts), 3) if trusts else 0.0,
+        &quot;authority_status&quot;: &quot;non_authoritative&quot;,
+    }
+
+
+def _consolidation_candidate_diagnostics(items: list[dict[str, Any]]) -&gt; dict[str, Any]:
+    candidates = [item for item in items if item.get(&quot;entity_type&quot;) == &quot;consolidation_candidate&quot;]
+    if not candidates:
+        return {}
+    metadata_values = [
+        item.get(&quot;metadata&quot;) if isinstance(item.get(&quot;metadata&quot;), dict) else item
+        for item in candidates
+    ]
+    candidate_types = sorted(
+        {
+            str(metadata.get(&quot;candidate_type&quot;))
+            for metadata in metadata_values
+            if metadata.get(&quot;candidate_type&quot;)
+        }
+    )
+    pending_count = sum(1 for metadata in metadata_values if metadata.get(&quot;review_status&quot;) == &quot;pending&quot;)
+    accepted_count = sum(1 for metadata in metadata_values if metadata.get(&quot;review_status&quot;) == &quot;accepted&quot;)
+    return {
+        &quot;candidate_count&quot;: len(candidates),
+        &quot;candidate_types&quot;: candidate_types,
+        &quot;pending_count&quot;: pending_count,
+        &quot;accepted_count&quot;: accepted_count,
+        &quot;authority_status&quot;: &quot;non_authoritative&quot;,
+    }</code></pre>
+      <p>Modify <code>build_checkout_diagnostics</code> after inferred context handling:</p>
+      <pre><code class="language-python">    causal_context = _causal_context_diagnostics(current_facts)
+    if causal_context:
+        diagnostics[&quot;causal_context&quot;] = causal_context
+    consolidation_candidates = _consolidation_candidate_diagnostics(current_facts)
+    if consolidation_candidates:
+        diagnostics[&quot;consolidation_candidates&quot;] = consolidation_candidates</code></pre>
+      <p>Modify <code>build_checkout_guidance</code> after inferred guidance:</p>
+      <pre><code class="language-python">    if _causal_context_diagnostics(current_facts):
+        trust.append(&quot;Use causal_context as explanatory memory, not as authoritative state.&quot;)
+        ignore.append(&quot;Do not treat proposed causal edges as accepted facts without review status.&quot;)
+    if _consolidation_candidate_diagnostics(current_facts):
+        trust.append(&quot;Use consolidation candidates as cited summaries that still require review.&quot;)
+        ignore.append(&quot;Do not treat review-pending consolidation candidates as authoritative memory.&quot;)</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 4: Run tests</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_causal_checkout.py tests/test_checkout.py::test_checkout_diagnostics_summarize_inferred_context_dependency -q</code></pre>
+      <p>Expected: PASS.</p>
+      <ul>
+        <li>[ ] <strong>Step 5: Commit</strong></li>
+      </ul>
+      <pre><code class="language-bash">git add src/zaxy/checkout.py tests/test_causal_checkout.py
+git commit -m &quot;feat: add causal checkout diagnostics&quot;</code></pre>
+      <p>---</p>
+      <h3 id="task-8-add-cli-surfaces">Task 8: Add CLI Surfaces</h3>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Modify: <code>src/zaxy/__main__.py</code></li>
+        <li>Test: <code>tests/test_cli.py</code></li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 1: Write failing CLI tests</strong></li>
+      </ul>
+      <p>Append to <code>tests/test_cli.py</code>:</p>
+      <pre><code class="language-python">from __future__ import annotations
+
+from typer.testing import CliRunner
+
+from zaxy.__main__ import app
+
+
+def test_memory_causal_successors_command_is_registered() -&gt; None:
+    runner = CliRunner()
+    result = runner.invoke(app, [&quot;memory&quot;, &quot;causal&quot;, &quot;successors&quot;, &quot;--help&quot;])
+
+    assert result.exit_code == 0
+    assert &quot;Show causal successors for an entity&quot; in result.output
+
+
+def test_memory_consolidation_propose_command_is_registered() -&gt; None:
+    runner = CliRunner()
+    result = runner.invoke(app, [&quot;memory&quot;, &quot;consolidation&quot;, &quot;propose&quot;, &quot;--help&quot;])
+
+    assert result.exit_code == 0
+    assert &quot;Create a cited consolidation candidate&quot; in result.output</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run tests to verify they fail</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_cli.py::test_memory_causal_successors_command_is_registered tests/test_cli.py::test_memory_consolidation_propose_command_is_registered -q</code></pre>
+      <p>Expected: FAIL because subcommands do not exist.</p>
+      <ul>
+        <li>[ ] <strong>Step 3: Register CLI apps</strong></li>
+      </ul>
+      <p>Modify <code>src/zaxy/__main__.py</code> near the existing <code>memory_app</code> setup:</p>
+      <pre><code class="language-python">memory_causal_app = typer.Typer(help=&quot;Inspect causal memory projections.&quot;)
+memory_consolidation_app = typer.Typer(help=&quot;Create and review consolidation candidates.&quot;)
+memory_app.add_typer(memory_causal_app, name=&quot;causal&quot;)
+memory_app.add_typer(memory_consolidation_app, name=&quot;consolidation&quot;)</code></pre>
+      <p>Add commands:</p>
+      <pre><code class="language-python">@memory_causal_app.command(&quot;successors&quot;)
+def memory_causal_successors(
+    entity_name: str = typer.Argument(..., help=&quot;Entity name to expand from&quot;),
+    relation_type: str | None = typer.Option(None, help=&quot;Causal relation type such as caused or fixed&quot;),
+    session_id: str = typer.Option(&quot;default&quot;, help=&quot;Session ID to inspect&quot;),
+    depth: int = typer.Option(2, help=&quot;Traversal depth&quot;),
+    json_output: bool = typer.Option(False, &quot;--json&quot;, help=&quot;Print machine-readable JSON&quot;),
+) -&gt; None:
+    &quot;&quot;&quot;Show causal successors for an entity.&quot;&quot;&quot;
+    import asyncio
+
+    async def _run() -&gt; list[dict[str, Any]]:
+        fabric = _memory_fabric()
+        await fabric.connect()
+        try:
+            return await fabric.query_causal_successors(
+                entity_name,
+                relation_type=relation_type,
+                depth=depth,
+                session_id=session_id,
+            )
+        finally:
+            await fabric.close()
+
+    results = asyncio.run(_run())
+    if json_output:
+        typer.echo(json.dumps({&quot;results&quot;: results}, indent=2, sort_keys=True))
+    else:
+        for result in results:
+            typer.echo(
+                f&quot;{result[&#x27;source&#x27;][&#x27;name&#x27;]} -[{result[&#x27;relation_type&#x27;]}]-&gt; &quot;
+                f&quot;{result[&#x27;target&#x27;][&#x27;name&#x27;]} confidence={result[&#x27;confidence&#x27;]} &quot;
+                f&quot;status={result[&#x27;review_status&#x27;]}/{result[&#x27;authority_status&#x27;]}&quot;
+            )
+
+
+@memory_consolidation_app.command(&quot;propose&quot;)
+def memory_consolidation_propose(
+    candidate_type: str = typer.Option(..., help=&quot;episode, claim, or procedure&quot;),
+    title: str = typer.Option(..., help=&quot;Candidate title&quot;),
+    summary: str = typer.Option(..., help=&quot;Candidate summary&quot;),
+    source_event: list[str] = typer.Option(
+        [],
+        &quot;--source-event&quot;,
+        help=&quot;Source event citation as seq:hash; repeat for multiple events&quot;,
+    ),
+    confidence: float = typer.Option(0.7, help=&quot;0..1 confidence&quot;),
+    method: str = typer.Option(&quot;manual_cli_v1&quot;, help=&quot;Consolidation method&quot;),
+    purpose: str | None = typer.Option(None, help=&quot;Optional purpose profile&quot;),
+    session_id: str = typer.Option(&quot;default&quot;, help=&quot;Session ID&quot;),
+    actor: str = typer.Option(&quot;zaxy-consolidation&quot;, help=&quot;Event actor&quot;),
+    json_output: bool = typer.Option(False, &quot;--json&quot;, help=&quot;Print machine-readable JSON&quot;),
+) -&gt; None:
+    &quot;&quot;&quot;Create a cited consolidation candidate.&quot;&quot;&quot;
+    import asyncio
+    from zaxy.consolidation import build_consolidation_candidate_event
+
+    sources = [_parse_source_event(value) for value in source_event]
+    event_spec = build_consolidation_candidate_event(
+        actor=actor,
+        session_id=session_id,
+        candidate_type=candidate_type,
+        title=title,
+        summary=summary,
+        source_events=sources,
+        confidence=confidence,
+        method=method,
+        purpose=purpose,
+    )
+
+    async def _append() -&gt; dict[str, Any]:
+        fabric = _memory_fabric()
+        await fabric.connect()
+        try:
+            event = await fabric.append(event_spec[&quot;event_type&quot;], actor=actor, payload=event_spec[&quot;payload&quot;], session_id=session_id)
+            return event.to_dict()
+        finally:
+            await fabric.close()
+
+    payload = asyncio.run(_append())
+    typer.echo(json.dumps(payload, indent=2, sort_keys=True) if json_output else payload[&quot;type&quot;])
+
+
+def _parse_source_event(value: str) -&gt; dict[str, Any]:
+    seq_text, separator, hash_text = value.partition(&quot;:&quot;)
+    if not separator:
+        raise typer.BadParameter(&quot;source event must use seq:hash&quot;)
+    return {&quot;seq&quot;: int(seq_text), &quot;hash&quot;: hash_text}</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 4: Run CLI tests</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_cli.py::test_memory_causal_successors_command_is_registered tests/test_cli.py::test_memory_consolidation_propose_command_is_registered -q</code></pre>
+      <p>Expected: PASS.</p>
+      <ul>
+        <li>[ ] <strong>Step 5: Commit</strong></li>
+      </ul>
+      <pre><code class="language-bash">git add src/zaxy/__main__.py tests/test_cli.py
+git commit -m &quot;feat: add causal and consolidation cli commands&quot;</code></pre>
+      <p>---</p>
+      <h3 id="task-9-add-mcp-tools">Task 9: Add MCP Tools</h3>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Modify: <code>src/zaxy/mcp_server.py</code></li>
+        <li>Test: <code>tests/test_mcp.py</code></li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 1: Write failing MCP schema tests</strong></li>
+      </ul>
+      <p>Append to <code>tests/test_mcp.py</code>:</p>
+      <pre><code class="language-python">def test_causal_and_consolidation_tools_are_registered() -&gt; None:
+    tool_names = {tool.name for tool in TOOLS}
+
+    assert &quot;memory_causal_successors&quot; in tool_names
+    assert &quot;memory_causal_predecessors&quot; in tool_names
+    assert &quot;memory_consolidation_candidate&quot; in tool_names
+    assert &quot;memory_consolidation_review&quot; in tool_names</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run test to verify it fails</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_mcp.py::test_causal_and_consolidation_tools_are_registered -q</code></pre>
+      <p>Expected: FAIL because tools are not registered.</p>
+      <ul>
+        <li>[ ] <strong>Step 3: Add tool schemas</strong></li>
+      </ul>
+      <p>In <code>src/zaxy/mcp_server.py</code>, append to <code>TOOLS</code>:</p>
+      <pre><code class="language-python">    Tool(
+        name=&quot;memory_causal_successors&quot;,
+        description=&quot;Query causal successors for an entity from the causal memory projection.&quot;,
+        inputSchema={
+            &quot;type&quot;: &quot;object&quot;,
+            &quot;required&quot;: [&quot;entity_name&quot;],
+            &quot;properties&quot;: {
+                &quot;entity_name&quot;: {&quot;type&quot;: &quot;string&quot;},
+                &quot;relation_type&quot;: {&quot;type&quot;: &quot;string&quot;},
+                &quot;depth&quot;: {&quot;type&quot;: &quot;integer&quot;, &quot;default&quot;: 2},
+                &quot;session_id&quot;: {&quot;type&quot;: &quot;string&quot;},
+            },
+            &quot;additionalProperties&quot;: False,
+        },
+    ),
+    Tool(
+        name=&quot;memory_causal_predecessors&quot;,
+        description=&quot;Query causal predecessors for an entity from the causal memory projection.&quot;,
+        inputSchema={
+            &quot;type&quot;: &quot;object&quot;,
+            &quot;required&quot;: [&quot;entity_name&quot;],
+            &quot;properties&quot;: {
+                &quot;entity_name&quot;: {&quot;type&quot;: &quot;string&quot;},
+                &quot;relation_type&quot;: {&quot;type&quot;: &quot;string&quot;},
+                &quot;depth&quot;: {&quot;type&quot;: &quot;integer&quot;, &quot;default&quot;: 2},
+                &quot;session_id&quot;: {&quot;type&quot;: &quot;string&quot;},
+            },
+            &quot;additionalProperties&quot;: False,
+        },
+    ),
+    Tool(
+        name=&quot;memory_consolidation_candidate&quot;,
+        description=&quot;Create a cited, review-pending consolidation candidate.&quot;,
+        inputSchema={
+            &quot;type&quot;: &quot;object&quot;,
+            &quot;required&quot;: [&quot;candidate_type&quot;, &quot;title&quot;, &quot;summary&quot;, &quot;source_events&quot;, &quot;confidence&quot;, &quot;method&quot;],
+            &quot;properties&quot;: {
+                &quot;candidate_type&quot;: {&quot;type&quot;: &quot;string&quot;, &quot;enum&quot;: [&quot;episode&quot;, &quot;claim&quot;, &quot;procedure&quot;]},
+                &quot;title&quot;: {&quot;type&quot;: &quot;string&quot;},
+                &quot;summary&quot;: {&quot;type&quot;: &quot;string&quot;},
+                &quot;source_events&quot;: {&quot;type&quot;: &quot;array&quot;, &quot;items&quot;: {&quot;type&quot;: &quot;object&quot;}},
+                &quot;confidence&quot;: {&quot;type&quot;: &quot;number&quot;},
+                &quot;method&quot;: {&quot;type&quot;: &quot;string&quot;},
+                &quot;purpose&quot;: {&quot;type&quot;: &quot;string&quot;},
+                &quot;session_id&quot;: {&quot;type&quot;: &quot;string&quot;},
+                &quot;actor&quot;: {&quot;type&quot;: &quot;string&quot;, &quot;default&quot;: &quot;zaxy-consolidation&quot;},
+            },
+            &quot;additionalProperties&quot;: False,
+        },
+    ),
+    Tool(
+        name=&quot;memory_consolidation_review&quot;,
+        description=&quot;Review a consolidation candidate without automatically promoting authority.&quot;,
+        inputSchema={
+            &quot;type&quot;: &quot;object&quot;,
+            &quot;required&quot;: [&quot;candidate_id&quot;, &quot;status&quot;, &quot;rationale&quot;],
+            &quot;properties&quot;: {
+                &quot;candidate_id&quot;: {&quot;type&quot;: &quot;string&quot;},
+                &quot;status&quot;: {&quot;type&quot;: &quot;string&quot;, &quot;enum&quot;: [&quot;accepted&quot;, &quot;rejected&quot;, &quot;deferred&quot;, &quot;conflicted&quot;]},
+                &quot;rationale&quot;: {&quot;type&quot;: &quot;string&quot;},
+                &quot;session_id&quot;: {&quot;type&quot;: &quot;string&quot;},
+                &quot;actor&quot;: {&quot;type&quot;: &quot;string&quot;, &quot;default&quot;: &quot;zaxy-reviewer&quot;},
+            },
+            &quot;additionalProperties&quot;: False,
+        },
+    ),</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 4: Add tool handlers</strong></li>
+      </ul>
+      <p>Find the MCP request handler that dispatches by tool name. Add branches matching the local style:</p>
+      <pre><code class="language-python">    if name == &quot;memory_causal_successors&quot;:
+        entity_name = validate_query(str(arguments[&quot;entity_name&quot;]))
+        relation_type = arguments.get(&quot;relation_type&quot;)
+        session_id = validate_session_id(str(arguments.get(&quot;session_id&quot;) or &quot;default&quot;))
+        depth = int(arguments.get(&quot;depth&quot;) or 2)
+        fabric = _build_fabric()
+        await fabric.connect()
+        try:
+            results = await fabric.query_causal_successors(
+                entity_name,
+                relation_type=str(relation_type) if relation_type else None,
+                depth=depth,
+                session_id=session_id,
+            )
+        finally:
+            await fabric.close()
+        return [TextContent(type=&quot;text&quot;, text=json.dumps({&quot;results&quot;: results}, sort_keys=True))]
+
+    if name == &quot;memory_causal_predecessors&quot;:
+        entity_name = validate_query(str(arguments[&quot;entity_name&quot;]))
+        relation_type = arguments.get(&quot;relation_type&quot;)
+        session_id = validate_session_id(str(arguments.get(&quot;session_id&quot;) or &quot;default&quot;))
+        depth = int(arguments.get(&quot;depth&quot;) or 2)
+        fabric = _build_fabric()
+        await fabric.connect()
+        try:
+            results = await fabric.query_causal_predecessors(
+                entity_name,
+                relation_type=str(relation_type) if relation_type else None,
+                depth=depth,
+                session_id=session_id,
+            )
+        finally:
+            await fabric.close()
+        return [TextContent(type=&quot;text&quot;, text=json.dumps({&quot;results&quot;: results}, sort_keys=True))]</code></pre>
+      <p>For consolidation handlers, use existing append-event helper patterns if present. Otherwise:</p>
+      <pre><code class="language-python">    if name == &quot;memory_consolidation_candidate&quot;:
+        from zaxy.consolidation import build_consolidation_candidate_event
+
+        session_id = validate_session_id(str(arguments.get(&quot;session_id&quot;) or &quot;default&quot;))
+        actor = validate_event_text(str(arguments.get(&quot;actor&quot;) or &quot;zaxy-consolidation&quot;))
+        event_spec = build_consolidation_candidate_event(
+            actor=actor,
+            session_id=session_id,
+            candidate_type=str(arguments[&quot;candidate_type&quot;]),
+            title=str(arguments[&quot;title&quot;]),
+            summary=str(arguments[&quot;summary&quot;]),
+            source_events=list(arguments[&quot;source_events&quot;]),
+            confidence=float(arguments[&quot;confidence&quot;]),
+            method=str(arguments[&quot;method&quot;]),
+            purpose=str(arguments[&quot;purpose&quot;]) if arguments.get(&quot;purpose&quot;) else None,
+        )
+        event = await event_log.append(event_spec[&quot;event_type&quot;], actor=actor, payload=event_spec[&quot;payload&quot;], thread=session_id)
+        return [TextContent(type=&quot;text&quot;, text=json.dumps(event.to_dict(), sort_keys=True))]
+
+    if name == &quot;memory_consolidation_review&quot;:
+        from zaxy.consolidation import build_consolidation_review_event
+
+        session_id = validate_session_id(str(arguments.get(&quot;session_id&quot;) or &quot;default&quot;))
+        actor = validate_event_text(str(arguments.get(&quot;actor&quot;) or &quot;zaxy-reviewer&quot;))
+        event_spec = build_consolidation_review_event(
+            actor=actor,
+            session_id=session_id,
+            candidate_id=str(arguments[&quot;candidate_id&quot;]),
+            status=str(arguments[&quot;status&quot;]),
+            rationale=str(arguments[&quot;rationale&quot;]),
+        )
+        event = await event_log.append(event_spec[&quot;event_type&quot;], actor=actor, payload=event_spec[&quot;payload&quot;], thread=session_id)
+        return [TextContent(type=&quot;text&quot;, text=json.dumps(event.to_dict(), sort_keys=True))]</code></pre>
+      <p>Add these as methods on <code>ZaxyMCPServer</code>, following <code>handle_memory_append</code> for session and projection behavior. Consolidation handlers must append to <code>self.session_manager.get(session_id).eventlog</code>, immediately project through <code>extract(event)</code>, call <code>await self.graph.upsert_extraction(...)</code>, and return a JSON <code>TextContent</code> payload with <code>seq</code> and <code>hash</code>.</p>
+      <p>Register the new handlers in <code>_dispatch_tool_call</code>:</p>
+      <pre><code class="language-python">    if name == &quot;memory_causal_successors&quot;:
+        return await active_server.handle_memory_causal_successors(arguments)
+    if name == &quot;memory_causal_predecessors&quot;:
+        return await active_server.handle_memory_causal_predecessors(arguments)
+    if name == &quot;memory_consolidation_candidate&quot;:
+        return await active_server.handle_memory_consolidation_candidate(arguments)
+    if name == &quot;memory_consolidation_review&quot;:
+        return await active_server.handle_memory_consolidation_review(arguments)</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 5: Run MCP tests</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_mcp.py::test_causal_and_consolidation_tools_are_registered -q</code></pre>
+      <p>Expected: PASS.</p>
+      <ul>
+        <li>[ ] <strong>Step 6: Commit</strong></li>
+      </ul>
+      <pre><code class="language-bash">git add src/zaxy/mcp_server.py tests/test_mcp.py
+git commit -m &quot;feat: expose causal memory mcp tools&quot;</code></pre>
+      <p>---</p>
+      <h3 id="task-10-add-alpha1-benchmark-lane">Task 10: Add Alpha.1 Benchmark Lane</h3>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Create: <code>src/zaxy/causal_benchmark.py</code></li>
+        <li>Test: <code>tests/test_causal_benchmark.py</code></li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 1: Write failing benchmark tests</strong></li>
+      </ul>
+      <p>Add <code>tests/test_causal_benchmark.py</code>:</p>
+      <pre><code class="language-python">from __future__ import annotations
+
+from zaxy.causal_benchmark import CausalBenchmarkCase, evaluate_causal_results, summarize_causal_benchmark
+
+
+def test_evaluate_causal_results_rewards_correct_cited_non_authoritative_edge() -&gt; None:
+    case = CausalBenchmarkCase(
+        case_id=&quot;cause-1&quot;,
+        query_type=&quot;successor&quot;,
+        start_entity=&quot;command:pytest&quot;,
+        expected_target=&quot;test failure&quot;,
+        expected_relation_type=&quot;caused&quot;,
+    )
+    score = evaluate_causal_results(
+        case,
+        [
+            {
+                &quot;target&quot;: {&quot;name&quot;: &quot;test failure&quot;, &quot;entity_type&quot;: &quot;outcome&quot;},
+                &quot;relation_type&quot;: &quot;caused&quot;,
+                &quot;citation&quot;: &quot;eventloom://agent-1/events/42#aaaaaaaaaaaa&quot;,
+                &quot;authority_status&quot;: &quot;non_authoritative&quot;,
+            }
+        ],
+    )
+
+    assert score == {
+        &quot;case_id&quot;: &quot;cause-1&quot;,
+        &quot;hit&quot;: 1.0,
+        &quot;relation_match&quot;: 1.0,
+        &quot;citation&quot;: 1.0,
+        &quot;authority_boundary&quot;: 1.0,
+        &quot;score&quot;: 1.0,
+    }
+
+
+def test_summarize_causal_benchmark_reports_mean() -&gt; None:
+    summary = summarize_causal_benchmark(
+        [
+            {&quot;score&quot;: 1.0, &quot;hit&quot;: 1.0, &quot;citation&quot;: 1.0, &quot;authority_boundary&quot;: 1.0},
+            {&quot;score&quot;: 0.5, &quot;hit&quot;: 1.0, &quot;citation&quot;: 0.0, &quot;authority_boundary&quot;: 1.0},
+        ]
+    )
+
+    assert summary == {
+        &quot;case_count&quot;: 2,
+        &quot;mean&quot;: 0.75,
+        &quot;hit_rate&quot;: 1.0,
+        &quot;citation_coverage&quot;: 0.5,
+        &quot;authority_boundary&quot;: 1.0,
+    }</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run tests to verify they fail</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_causal_benchmark.py -q</code></pre>
+      <p>Expected: FAIL with <code>ModuleNotFoundError</code>.</p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement benchmark helpers</strong></li>
+      </ul>
+      <p>Create <code>src/zaxy/causal_benchmark.py</code>:</p>
+      <pre><code class="language-python">&quot;&quot;&quot;Small alpha.1 benchmark lane for causal and consolidation memory.&quot;&quot;&quot;
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+
+@dataclass(frozen=True)
+class CausalBenchmarkCase:
+    case_id: str
+    query_type: str
+    start_entity: str
+    expected_target: str
+    expected_relation_type: str
+
+
+def evaluate_causal_results(case: CausalBenchmarkCase, results: list[dict[str, Any]]) -&gt; dict[str, float | str]:
+    &quot;&quot;&quot;Score one causal benchmark case.&quot;&quot;&quot;
+    matching = [
+        result for result in results
+        if result.get(&quot;target&quot;, {}).get(&quot;name&quot;) == case.expected_target
+    ]
+    hit = 1.0 if matching else 0.0
+    best = matching[0] if matching else {}
+    relation_match = 1.0 if best.get(&quot;relation_type&quot;) == case.expected_relation_type else 0.0
+    citation = 1.0 if best.get(&quot;citation&quot;) else 0.0
+    authority_boundary = 1.0 if best.get(&quot;authority_status&quot;) == &quot;non_authoritative&quot; else 0.0
+    score = round((hit + relation_match + citation + authority_boundary) / 4, 3)
+    return {
+        &quot;case_id&quot;: case.case_id,
+        &quot;hit&quot;: hit,
+        &quot;relation_match&quot;: relation_match,
+        &quot;citation&quot;: citation,
+        &quot;authority_boundary&quot;: authority_boundary,
+        &quot;score&quot;: score,
+    }
+
+
+def summarize_causal_benchmark(rows: list[dict[str, Any]]) -&gt; dict[str, float | int]:
+    &quot;&quot;&quot;Summarize causal benchmark rows.&quot;&quot;&quot;
+    count = len(rows)
+    if count == 0:
+        return {
+            &quot;case_count&quot;: 0,
+            &quot;mean&quot;: 0.0,
+            &quot;hit_rate&quot;: 0.0,
+            &quot;citation_coverage&quot;: 0.0,
+            &quot;authority_boundary&quot;: 0.0,
+        }
+    return {
+        &quot;case_count&quot;: count,
+        &quot;mean&quot;: round(sum(float(row[&quot;score&quot;]) for row in rows) / count, 3),
+        &quot;hit_rate&quot;: round(sum(float(row[&quot;hit&quot;]) for row in rows) / count, 3),
+        &quot;citation_coverage&quot;: round(sum(float(row[&quot;citation&quot;]) for row in rows) / count, 3),
+        &quot;authority_boundary&quot;: round(sum(float(row[&quot;authority_boundary&quot;]) for row in rows) / count, 3),
+    }</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 4: Run tests</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_causal_benchmark.py -q</code></pre>
+      <p>Expected: PASS.</p>
+      <ul>
+        <li>[ ] <strong>Step 5: Commit</strong></li>
+      </ul>
+      <pre><code class="language-bash">git add src/zaxy/causal_benchmark.py tests/test_causal_benchmark.py
+git commit -m &quot;feat: add causal alpha benchmark lane&quot;</code></pre>
+      <p>---</p>
+      <h3 id="task-11-documentation-updates">Task 11: Documentation Updates</h3>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Modify: <code>docs/graph-schema.md</code></li>
+        <li>Modify: <code>docs/mcp.md</code></li>
+        <li>Modify: <code>docs/benchmarks.md</code></li>
+        <li>Test: docs validation script</li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 1: Update graph schema docs</strong></li>
+      </ul>
+      <p>Add to <code>docs/graph-schema.md</code> after the inferred-edge section:</p>
+      <pre><code class="language-markdown">## Causal Projection
+
+Zaxy 2.0 alpha.1 adds explicit causal projection through
+`causal.edge.generated` events. These events are Eventloom records, not hidden
+retrieval heuristics. Each causal edge carries a source entity, target entity,
+taxonomy relation (`caused`, `enabled`, `blocked`, `prevented`, `regressed`,
+`fixed`, or `explained`), confidence, causal method, review status, authority
+status, and cited source Eventloom evidence.
+
+The graph relation stored on `RELATES` is prefixed with `causal_`, such as
+`causal_caused` or `causal_fixed`. Causal edges are projected as inferred edges
+because they explain relationships beyond a deterministic typed event. They
+remain non-authoritative until review and authority gates promote derived
+memory through the normal Zaxy path.</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Update MCP docs</strong></li>
+      </ul>
+      <p>Add to <code>docs/mcp.md</code> near the memory tool list:</p>
+      <pre><code class="language-markdown">### Causal and Consolidation Tools
+
+`memory_causal_successors(entity_name, relation_type?, depth?, session_id?)`
+returns cited causal effects from the causal projection.
+
+`memory_causal_predecessors(entity_name, relation_type?, depth?, session_id?)`
+returns cited causal causes from the causal projection.
+
+`memory_consolidation_candidate(candidate_type, title, summary, source_events,
+confidence, method, purpose?, session_id?, actor?)` creates a cited,
+review-pending consolidation candidate. Candidates are non-authoritative in
+2.0 alpha.1.
+
+`memory_consolidation_review(candidate_id, status, rationale, session_id?,
+actor?)` records review disposition without automatically promoting authority.
+
+Memory Checkout exposes causal and consolidation diagnostics separately from
+accepted state so models can use them as explanatory or summarizing context
+without treating them as trusted facts.</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 3: Update benchmark docs</strong></li>
+      </ul>
+      <p>Add to <code>docs/benchmarks.md</code> in the project-defined benchmark section:</p>
+      <pre><code class="language-markdown">## Zaxy 2.0 Alpha Causal Lane
+
+The causal alpha lane is project-defined and not external validation. It checks
+causal predecessor/successor retrieval, relation matching, Eventloom citation
+coverage, and authority-boundary preservation for non-authoritative causal and
+consolidation context. It exists to prevent 2.0 features from weakening Zaxy&#x27;s
+core trust contract while new causal and consolidation capabilities mature.</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 4: Run docs validation</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">scripts/validate-docs.sh --root .</code></pre>
+      <p>Expected: PASS.</p>
+      <ul>
+        <li>[ ] <strong>Step 5: Commit</strong></li>
+      </ul>
+      <pre><code class="language-bash">git add docs/graph-schema.md docs/mcp.md docs/benchmarks.md
+git commit -m &quot;docs: document causal alpha memory contract&quot;</code></pre>
+      <p>---</p>
+      <h3 id="task-12-regression-gate-and-final-verification">Task 12: Regression Gate and Final Verification</h3>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>No source files unless tests expose a real class issue.</li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 1: Run focused feature tests</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest \
+  tests/test_causal.py \
+  tests/test_consolidation.py \
+  tests/test_causal_checkout.py \
+  tests/test_causal_benchmark.py \
+  tests/test_extract.py -k &quot;causal_edge or consolidation_candidate or inferred_edge&quot; \
+  tests/test_mcp.py::test_causal_and_consolidation_tools_are_registered \
+  -q</code></pre>
+      <p>Expected: PASS.</p>
+      <ul>
+        <li>[ ] <strong>Step 2: Run core checkout and graph regression tests</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_checkout.py tests/test_graph.py tests/test_mcp.py --no-cov -q</code></pre>
+      <p>Expected: PASS.</p>
+      <ul>
+        <li>[ ] <strong>Step 3: Run docs validation</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">scripts/validate-docs.sh --root .</code></pre>
+      <p>Expected: PASS.</p>
+      <ul>
+        <li>[ ] <strong>Step 4: Run benchmark guardrail on cached published artifact if available</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">python -m zaxy benchmark-guardrail reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.json</code></pre>
+      <p>Expected: PASS or a clear message that the cached artifact path is unavailable. Do not change implementation to satisfy a missing local artifact.</p>
+      <ul>
+        <li>[ ] <strong>Step 5: Optional full 500-question run only after tests are green</strong></li>
+      </ul>
+      <p>Run only if the environment has the frozen dataset, no lock conflicts, and enough time:</p>
+      <pre><code class="language-bash">EMBEDDED_GRAPH_PATH=reports/benchmarks/zaxy-2-alpha1-500-regression/embedded.kuzu \
+python -m zaxy benchmark \
+  --output-dir reports/benchmarks/zaxy-2-alpha1-500-regression \
+  --embedding-provider hash \
+  --workload longmemeval \
+  --dataset .cache/zaxy/benchmarks/longmemeval_oracle.json \
+  --runs 1 \
+  --limit 5 \
+  --baseline-backends bm25 \
+  --projection-backend embedded \
+  --zaxy-backend checkout \
+  --reset-graph \
+  --progress</code></pre>
+      <p>Expected: no regression against the published 1.x floor for Recall@5 and citation coverage, and no material regression in mean/Answer@5/latency. If the score regresses, diagnose by class of issue only; do not tailor code to individual benchmark questions.</p>
+      <ul>
+        <li>[ ] <strong>Step 6: Commit any verification-only docs/report updates</strong></li>
+      </ul>
+      <p>If Task 12 generated a report intended for the branch, commit only that report and any doc pointer:</p>
+      <pre><code class="language-bash">git add reports/benchmarks/zaxy-2-alpha1-500-regression docs/benchmarks.md
+git commit -m &quot;docs: add zaxy 2 alpha regression evidence&quot;</code></pre>
+      <p>Skip this commit if the full run was not executed or if artifacts are too large/noisy for the branch.</p>
+      <p>---</p>
+      <h2 id="self-review-notes">Self-Review Notes</h2>
+      <p>Spec coverage:</p>
+      <ul>
+        <li>Causal projection from Eventloom: Tasks 1-4.</li>
+        <li>Typed causal edge schema with provenance/confidence/method: Tasks 1-3.</li>
+        <li>Causal read APIs: Task 4.</li>
+        <li>Memory Checkout causal diagnostics: Task 7.</li>
+        <li>Consolidation candidate objects: Task 5.</li>
+        <li>Review-gated promotion path with no automatic authority promotion: Tasks 5-6 and Task 9.</li>
+        <li>Benchmark and regression gates: Tasks 10 and 12.</li>
+        <li>Docs: Task 11.</li>
+      </ul>
+      <p>Known execution risk:</p>
+      <ul>
+        <li>The current checkout has unrelated dirty source/report files. Use an isolated worktree before implementation.</li>
+        <li>MCP handlers must be implemented as <code>ZaxyMCPServer.handle_*</code> methods and routed through <code>_dispatch_tool_call</code>; do not create a parallel event-log construction path.</li>
+        <li><code>query_causal_predecessors</code> is intentionally conservative in alpha.1. If reverse traversal is required for correctness, add backend-specific reverse traversal as a separate follow-up task rather than weakening this plan.</li>
+      </ul>
+      <p>No benchmark tailoring:</p>
+      <ul>
+        <li>All implementation tasks add general causal/consolidation capabilities.</li>
+        <li>Benchmark work measures capability and regression only.</li>
+        <li>Any regression fix must address a class of behavior, not individual benchmark items.</li>
+      </ul>
+    </article>
+  </main>
+</body>
+</html>

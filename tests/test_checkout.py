@@ -46,6 +46,36 @@ def test_answer_candidate_merge_prioritizes_specific_state_operations() -> None:
     assert candidates[0]["answer"] == "32"
 
 
+def test_answer_candidate_merge_drops_fully_excluded_support() -> None:
+    """Candidates with no admissible cited support should not become primary answers."""
+    candidates = _merge_answer_candidates(
+        [
+            {
+                "rank": 1,
+                "type": "date_interval",
+                "confidence": 0.83,
+                "answer_key": "date_interval_answer",
+                "answer": "7 days. 8 days (including the last day) is also acceptable.",
+                "support_source_ids": ["source-a", "source-b"],
+                "excluded_source_ids": ["source-a", "source-b", "query-temporal-anchor"],
+            },
+            {
+                "rank": 2,
+                "type": "date_interval",
+                "confidence": 0.81,
+                "answer_key": "date_interval_answer",
+                "answer": "21 days. 22 days (including the last day) is also acceptable.",
+                "support_source_ids": ["source-a", "source-b"],
+                "excluded_source_ids": [],
+            },
+        ]
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0]["rank"] == 1
+    assert candidates[0]["answer"].startswith("21 days")
+
+
 def test_checkout_policy_handles_uncited_current_fact_once_for_core_and_mcp() -> None:
     """Shared policy should drive degraded-state answerability for every interface."""
     current_facts = [
@@ -1482,6 +1512,185 @@ def test_checkout_guides_absence_checks_without_overclaiming() -> None:
     assert "Query requires absence checking against cited memory." in quality["reasons"]
     assert guidance["synthesis"]["mode"] == "absence_check"
     assert "Do not treat a missing search hit as proof" in prompt
+
+
+def test_checkout_reports_metacognition_as_non_authoritative_diagnostics() -> None:
+    """Metacognitive state should be visible without becoming fact authority."""
+    current_facts = [
+        {
+            "content": "Which backend caused the latency spike?",
+            "entity_name": "metacognition:unknown:" + "1" * 24,
+            "entity_type": "known_unknown",
+            "source": "graph",
+            "citation": "eventloom://agent-1/events/11#aaaaaaaaaaaa",
+            "metadata": {
+                "event_type": "metacognition.unknown.recorded",
+                "status": "open",
+                "authority_status": "non_authoritative",
+            },
+        },
+        {
+            "content": "Projection stale caused failure",
+            "entity_name": "metacognition:confidence:" + "2" * 24,
+            "entity_type": "confidence_assessment",
+            "source": "graph",
+            "citation": "eventloom://agent-1/events/12#bbbbbbbbbbbb",
+            "metadata": {
+                "event_type": "metacognition.confidence.assessed",
+                "claim": "Projection stale caused failure",
+                "confidence": 0.42,
+                "conflict_count": 1,
+                "requires_reverify": True,
+                "authority_status": "non_authoritative",
+            },
+        },
+        {
+            "content": "Projection stale caused failure",
+            "entity_name": "metacognition:conflict:" + "3" * 24,
+            "entity_type": "conflict_cluster",
+            "source": "graph",
+            "citation": "eventloom://agent-1/events/13#cccccccccccc",
+            "metadata": {
+                "event_type": "metacognition.conflict.clustered",
+                "resolution_status": "unresolved",
+                "authority_status": "non_authoritative",
+            },
+        },
+        {
+            "content": "Re-check projection latency cause",
+            "entity_name": "metacognition:reverify:" + "4" * 24,
+            "entity_type": "reverify_request",
+            "source": "graph",
+            "citation": "eventloom://agent-1/events/14#dddddddddddd",
+            "metadata": {
+                "event_type": "metacognition.reverify.requested",
+                "status": "open",
+                "priority": "high",
+                "authority_status": "non_authoritative",
+            },
+        },
+    ]
+
+    diagnostics = build_checkout_diagnostics(
+        query="Why did projection latency spike?",
+        source_lanes={"graph": 4},
+        current_facts=current_facts,
+        evidence=current_facts,
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        warnings=[],
+    )
+    guidance = build_checkout_guidance(
+        query="Why did projection latency spike?",
+        current_facts=current_facts,
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        evidence=current_facts,
+    )
+    prompt = format_memory_checkout_prompt(
+        query="Why did projection latency spike?",
+        assembly_prompt="# Active Memory Working Set",
+        current_facts=current_facts,
+        evidence=current_facts,
+        quality={"answerability": "answer_from_memory", "confidence": 0.75},
+        guidance=guidance,
+        diagnostics=diagnostics,
+    )
+
+    assert diagnostics["metacognition"] == {
+        "context_count": 4,
+        "unknown_count": 1,
+        "open_unknown_count": 1,
+        "confidence_assessment_count": 1,
+        "low_confidence_count": 1,
+        "conflict_cluster_count": 1,
+        "unresolved_conflict_count": 1,
+        "reverify_needed_count": 4,
+        "authority_status": "non_authoritative",
+    }
+    assert any("known unknowns require re-verification" in item for item in guidance["trust"])
+    assert any("confidence assessments as trajectory evidence, not truth" in item for item in guidance["ignore"])
+    assert "Metacognition: contexts=4" in prompt
+    assert "authority=non_authoritative" in prompt
+
+
+def test_checkout_reports_procedural_memory_planning_diagnostics() -> None:
+    """Procedural memory should expose planning buckets and avoid/review signals."""
+    current_facts = [
+        {
+            "content": "Procedure: validate release",
+            "entity_type": "skill_version",
+            "source": "skill_memory",
+            "citation": "eventloom://agent-1/events/1#aaaaaaaaaaaa",
+            "metadata": {
+                "status": "validated",
+                "procedure": ["Run release tests."],
+                "authority_status": "non_authoritative",
+            },
+        },
+        {
+            "content": "Procedure: pending validation",
+            "entity_type": "skill_version",
+            "source": "skill_memory",
+            "citation": "eventloom://agent-1/events/2#bbbbbbbbbbbb",
+            "metadata": {"status": "pending", "procedure": ["Wait for review."]},
+        },
+        {
+            "content": "Procedure: old rollback candidate",
+            "entity_type": "skill_version",
+            "source": "skill_memory",
+            "citation": "eventloom://agent-1/events/3#cccccccccccc",
+            "metadata": {
+                "status": "contradicted",
+                "procedure": ["Use stale workaround."],
+                "rollback": "Return to v1 procedure.",
+                "contradiction_reason": "Failed release validation.",
+            },
+        },
+        {
+            "content": "Procedure: uncited instruction",
+            "entity_type": "skill_version",
+            "source": "skill_memory",
+            "metadata": {"status": "accepted", "procedure": ["Do not use without citation."]},
+        },
+    ]
+
+    diagnostics = build_checkout_diagnostics(
+        query="Plan the release validation",
+        source_lanes={"skill": 4},
+        current_facts=current_facts,
+        evidence=current_facts[:3],
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        warnings=[],
+    )
+    guidance = build_checkout_guidance(
+        query="Plan the release validation",
+        current_facts=current_facts,
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        evidence=current_facts[:3],
+    )
+    prompt = format_memory_checkout_prompt(
+        query="Plan the release validation",
+        assembly_prompt="# Active Memory Working Set",
+        current_facts=current_facts,
+        evidence=current_facts[:3],
+        quality={"answerability": "answer_from_memory", "confidence": 0.82},
+        guidance=guidance,
+        diagnostics=diagnostics,
+    )
+
+    assert diagnostics["procedural_memory"] == {
+        "context_count": 4,
+        "applicable_count": 1,
+        "diagnostic_count": 1,
+        "excluded_count": 2,
+        "rollback_candidate_count": 1,
+        "contradiction_count": 1,
+        "excluded_reasons": {"contradicted_status": 1, "missing_citation": 1},
+        "authority_status": "non_authoritative",
+    }
+    assert any("procedures as planning guidance" in item for item in guidance["trust"])
+    assert any("rollback or contradiction" in item for item in guidance["ignore"])
+    assert "Procedural memory: contexts=4" in prompt
+    assert "excluded_reasons=contradicted_status=1, missing_citation=1" in prompt
 
 
 def test_compact_synthesis_summary_preserves_absence_answer_guidance() -> None:

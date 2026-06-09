@@ -34,7 +34,8 @@ mypy src
 pytest tests/test_packet_memory_e2e.py --no-cov -q
 zaxy doctor --beta-readiness
 scripts/beta-uat.sh
-scripts/release-check.sh --root .</code></pre>
+scripts/release-check.sh --root .
+zaxy benchmark-freeze --json</code></pre>
       <p>The default pytest command includes coverage reporting and <code>--cov-fail-under=92</code> from <code>pyproject.toml</code>. CI and <code>scripts/release-check.sh</code> also run <code>scripts/check-coverage.py</code> against the generated XML report. The ratchet floor lives in <code>[tool.zaxy.coverage]</code>, is based on the canonical CI Python 3.13 measurement, and can be intentionally raised after coverage improvements. Integration-only runs use <code>--no-cov</code> because the project-level coverage gate is intended for the full suite. Before running integration tests, start the Neo4j services:</p>
       <pre><code class="language-bash">./scripts/generate-certs.sh .certs
 docker compose --profile integration up -d neo4j-test neo4j-tls</code></pre>
@@ -65,7 +66,11 @@ scripts/integration-check.sh --skip-if-unavailable</code></pre>
         <li>the Harvey LAB external legal-agent memory-ablation report.</li>
       </ul>
       <p>Older benchmark suites, backend shootouts, StateRecoveryBench, PurposeBench, LongMemBench adapter artifacts, debug runs, and partial LongMemEval iterations are archived development history. Use those artifacts for engineering investigation only, not as current public benchmark claims.</p>
+      <p>The <code>2.0.0-rc.1</code> StateRecoveryBench, CoordinationBench, and PurposeBench artifacts under <code>reports/benchmarks/</code> are active RC release guardrails, but remain project-defined internal evidence unless a future release publishes a separate external validation boundary for them.</p>
       <p>When staging the next full 500-question run, write it to a new report directory under <code>reports/benchmarks/</code>, update <a href="benchmarks.html">benchmarks.md</a> to select one headline report, and move the superseded headline into <code>reports/archive/</code>.</p>
+      <p>For the 2.0 RC.1 release candidate, run:</p>
+      <pre><code class="language-bash">zaxy benchmark-freeze --json</code></pre>
+      <p>This validates the frozen headline LongMemEval-compatible 500 report, Harvey LAB external-anchor artifacts, StateRecoveryBench, CoordinationBench, PurposeBench, and project-defined 2.0 internal lanes. It is a release evidence and claim-boundary gate; it must not be used to tune answers or mix internal guardrail lanes into public benchmark claims.</p>
       <p>For consolidation safety checks, use the identity-collapse workload. It creates near-duplicate source records with distinct durable identifiers and adds an identity-recall metric to the report. The <code>centroid</code> baseline intentionally models semantic consolidation that keeps one representative text, so it can look topically relevant while losing exact source identities:</p>
       <pre><code class="language-bash">scripts/live-benchmark.sh --workload consolidation --documents 100 --runs 1 --reset-graph</code></pre>
       <p>Use this lane to detect whether a compaction strategy preserves exact event, document, transcript, or entity identity under retrieval, not just broad topic coverage.</p>

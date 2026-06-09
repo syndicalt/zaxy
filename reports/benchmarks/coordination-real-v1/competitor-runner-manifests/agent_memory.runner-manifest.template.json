@@ -1,0 +1,20 @@
+{
+  "adapter_contract": "coordinationbench-v1",
+  "adapter_version": "replace-with-pinned-version",
+  "capability_status": "template",
+  "dataset_contract": "coordinationbench-v1 workload JSON; runner receives --workload <path>",
+  "display_name": "Agent Memory",
+  "install_command": "replace-with-reproducible-install-command",
+  "name": "agent_memory",
+  "result_export_schema": "schemas/result.schema.json; runner must write --output <path>",
+  "result_file": "agent_memory-coordination-result.json",
+  "run_command": [
+    "__REPLACE_WITH_PINNED_RUNNER_ARGV__"
+  ],
+  "source_ref": "replace-with-pinned-source-ref",
+  "source_url": "replace-with-adapter-source-url",
+  "template": true,
+  "unsupported_reason": "",
+  "workload_file": "coordination-workload.json",
+  "workload_fingerprint": "b63e156150b92c9aa7d8895604741484f85f4c231d4c7d2097a2467fdaf14bd0"
+}

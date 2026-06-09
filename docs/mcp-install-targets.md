@@ -35,7 +35,7 @@ Installer helpers must follow these constraints:
 | Claude Code hooks | `.claude/settings.local.json`, `.claude/settings.json`, and `~/.claude/settings.json` | top-level `hooks` | Local project settings are safe for personal observer hooks. Shared project settings should require an explicit shared flag. |
 | Cursor | Project `.cursor/mcp.json`; global `~/.cursor/mcp.json` | top-level `mcpServers` | Project-local `.cursor/mcp.json` is safe. Global config should require an explicit global flag. |
 | VS Code | Workspace `.vscode/mcp.json`; user-profile `mcp.json` opened by command | top-level `servers` | Workspace `.vscode/mcp.json` is safe. User profile writes should prefer VS Code commands or an explicit global flag. |
-| Codex | User `~/.codex/config.toml`; trusted project `.codex/config.toml` | TOML tables under `[mcp_servers.<name>]` | CLI-assisted through `codex mcp add` by default. Direct TOML merge is available only for explicit user or trusted project scope. |
+| Codex | User `~/.codex/config.toml`; trusted project `.codex/config.toml` | TOML tables under `[mcp_servers.<name>]` | `zaxy init --codex-mcp-install auto` may merge user config when the write is non-destructive; command rendering and explicit user/project scopes remain available. |
 | Hermes Agent | Global `~/.hermes/config.yaml` or `HERMES_HOME/config.yaml` | YAML mapping under `mcp_servers.<name>` | Global YAML merge is explicit through `zaxy ide-config hermes --install`; the generated server is workspace-neutral and does not pin repo-local Eventloom/session values. |
 
 ## Client Notes
@@ -66,15 +66,20 @@ JSON fragment.
 Codex supports MCP in the CLI and IDE extension. The documented config file is
 `~/.codex/config.toml`, with trusted projects allowed to use
 `.codex/config.toml`. Codex also exposes `codex mcp add`, so Zaxy supports Codex
-by rendering a workspace-neutral `codex mcp add zaxy -- zaxy serve` command
-unless a direct config scope is requested. The rendered config may include
-process-local defaults such as empty secret-file overrides, but it does not
-write graph-backend variables or repo-specific Eventloom/session/domain
-environment into Codex config; `zaxy serve` derives the active workspace and
-projection backend at startup. Direct TOML support requires either user scope or
-project scope with an explicit trusted project acknowledgement. The TOML merge
-preserves unrelated server entries, rejects malformed TOML, and refuses to
-replace an existing `zaxy` entry unless `--force` is passed.
+both by rendering a workspace-neutral `codex mcp add zaxy -- zaxy serve` command
+and by merging TOML config in verified scopes. `zaxy init --codex-mcp-install
+auto` uses user-level TOML only when the merge is non-destructive: no existing
+`zaxy` entry, or an existing entry that already matches the workspace-neutral
+server Zaxy would install. If no safe config target exists, it prints the
+command path. If an existing `zaxy` entry differs, it asks for review before
+replacement because `codex mcp add zaxy ...` can replace servers with the same
+name. The rendered config may include process-local defaults such as empty
+secret-file overrides, but it does not write graph-backend variables or repo-specific
+Eventloom/session/domain environment into Codex config; `zaxy serve` derives the
+active workspace and projection backend at startup. Project TOML support still
+requires an explicit trusted project acknowledgement. The TOML merge preserves
+unrelated server entries, rejects malformed TOML, and refuses to replace an
+existing mismatched `zaxy` entry unless `--force` is passed.
 
 Hermes Agent documents MCP servers in the global YAML config at
 `~/.hermes/config.yaml`, under the top-level `mcp_servers` mapping. Zaxy treats

@@ -96,7 +96,7 @@ def test_preference_projection_deduplicates_repeated_profile_evidence() -> None:
     candidate = projection.answer_candidates[0]
     assert candidate["support_source_ids"] == ["paper-1"]
     assert candidate["excluded_source_ids"] == ["paper-2"]
-    assert any(row["exclude_reason"] == "duplicate_identity" for row in projection.ledger_rows)
+    assert any(row.get("exclude_reason") == "duplicate_identity" for row in projection.ledger_rows)
     assert "deep learning for medical image analysis" in str(candidate["answer"])
 
 
@@ -117,6 +117,80 @@ def test_preference_projection_falls_back_to_focus_when_no_surface_template_matc
     assert "gardening recommendations" in answer
     assert "native plants" in answer
     assert "generic, vague, unrelated" in answer
+
+
+def test_preference_projection_reads_numbered_user_transcript_turns() -> None:
+    """Transcript-style numbered user turns should contribute preference facets."""
+    projection = evidence_candidates.preference_candidate_projection(
+        "I've been sneezing quite a bit lately. Do you think it might be my living room?",
+        [
+            (
+                "longmemeval_session_id=allergy "
+                "1. user: I'm having some issues with my TV flickering lately. "
+                "2. assistant: Check the cables and firmware. "
+                "3. user: What are some simple ways to keep my living room dust-free, "
+                "especially with my cat Luna that sheds a lot? "
+                "4. user: I deep cleaned the living room yesterday and may have stirred up dust."
+            ),
+        ],
+    )
+
+    answer = str(projection.answer_candidates[0]["answer"])
+    assert "Luna" in answer
+    assert "deep clean" in answer
+    assert "TV flickering" not in answer
+
+
+def test_preference_projection_preserves_multiple_relevant_facets_from_one_transcript() -> None:
+    """Long preference sessions should not collapse to a single relevant cue."""
+    projection = evidence_candidates.preference_candidate_projection(
+        "I've been feeling stuck with my paintings lately. Do you have ideas for inspiration?",
+        [
+            (
+                "source_id=painting-session "
+                "1. user: I'm looking for recommendations for acrylic brushes. "
+                "2. assistant: Here are general brush options. "
+                "3. user: I've been looking at flower paintings on Instagram and want tips "
+                "for painting realistic flowers. "
+                "4. assistant: Study flowers and use reference images. "
+                "5. user: I'm trying to incorporate more texture into my paintings and want "
+                "palette knife techniques from online tutorials. "
+                "6. user: I recently started a 30-day painting challenge to stay motivated."
+            ),
+        ],
+    )
+
+    answer = str(projection.answer_candidates[0]["answer"])
+    assert "Instagram" in answer
+    assert "online tutorials" in answer
+    assert "flowers" in answer
+    assert "30-day painting challenge" in answer
+    assert "acrylic brushes" not in answer
+
+
+def test_preference_projection_does_not_apply_unrelated_domain_surface() -> None:
+    """A retrieved distractor profile should not override the query-supported domain."""
+    projection = evidence_candidates.preference_candidate_projection(
+        "I am planning another theme park weekend; do you have any suggestions?",
+        [
+            (
+                "source_id=evening user: I prefer evening activities before 9:30 pm "
+                "that avoid my phone and TV because they affect my sleep quality."
+            ),
+            (
+                "source_id=parks user: I'm looking for upcoming theme park events after "
+                "visiting Disneyland, Knott's Berry Farm, Six Flags Magic Mountain, and "
+                "Universal Studios Hollywood. I like thrill rides, special events, "
+                "unique food experiences, and nighttime shows."
+            ),
+        ],
+    )
+
+    answer = str(projection.answer_candidates[0]["answer"])
+    assert "theme park suggestions" in answer
+    assert "thrill rides and special events" in answer
+    assert "unique food experiences and nighttime shows" in answer
+    assert "before 9:30 pm" not in answer
 
 
 def test_preference_projection_uses_domain_surface_templates() -> None:
@@ -303,6 +377,52 @@ def test_retrieval_intent_allocates_event_slots_for_age_at_wedding() -> None:
     assert "event_slot_question" in intent.reasons
 
 
+def test_preference_profile_evidence_plan_is_first_class_source_synthesis() -> None:
+    """Preference-profile questions need cited user evidence, not direct-fact fallback."""
+    plan = retrieval_plan.build_evidence_plan(
+        "What hotel recommendations would I prefer?",
+        limit=10,
+    )
+    slot_plan = retrieval_plan.build_slot_plan(
+        "What hotel recommendations would I prefer?",
+        limit=10,
+    )
+
+    assert plan.mode == "preference_profile"
+    assert plan.needs_source_lane is True
+    assert plan.required_source_groups == 1
+    assert plan.source_lane_slots >= 3
+    assert plan.promote_cited_sources is True
+    assert "preference_profile" in plan.reasons
+    assert slot_plan.to_dict()["required_slots"] == ["source"]
+
+
+def test_preference_profile_source_synthesis_emits_answer_candidate() -> None:
+    """Preference-profile source evidence should become an answer-ready checkout candidate."""
+    result = retrieval_plan.source_synthesis_bundle_result(
+        query="Can you suggest a hotel for my upcoming trip to Miami?",
+        source_results=[
+            (
+                "source_id=hotel-1 citation=eventloom://agent/events/1#aa "
+                "user: Besides great views, I also like hotels with unique features, "
+                "such as a rooftop pool or a hot tub on the balcony."
+            ),
+            (
+                "source_id=hotel-2 citation=eventloom://agent/events/2#bb "
+                "user: I want my Miami hotel suggestions to include ocean or city skyline views."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert result is not None
+    assert "candidate_type=preference" in result.content
+    assert "preference_answer=" in result.content
+    assert "hotels in Miami" in result.content
+    assert result.packet["answer_candidates"][0]["type"] == "preference"
+    assert set(result.packet["answer_candidates"][0]["support_source_ids"]) == {"hotel-1", "hotel-2"}
+
+
 def test_source_synthesis_bundle_result_preserves_string_api_and_typed_packet(monkeypatch) -> None:
     """Typed bundle results should preserve exact legacy content while carrying packet data."""
     typed_candidate = {
@@ -388,7 +508,9 @@ def test_source_synthesis_bundle_result_includes_operation_result_metadata() -> 
                 "kind": "currency",
                 "required": True,
                 "min_source_groups": 2,
+                "min_rows": 0,
                 "source_groups": ["answer-1", "answer-2", "answer-3"],
+                "row_count": 3,
                 "missing": False,
             }
         ],
@@ -426,6 +548,217 @@ def test_aggregate_candidate_projection_exposes_typed_answer_candidates() -> Non
     )
 
 
+def test_count_projection_applies_before_event_temporal_boundary() -> None:
+    """Count synthesis should exclude the target event and later dated events."""
+    projection = evidence_candidates.aggregate_candidate_projection(
+        "How many workshops did I attend before the annual conference?",
+        [
+            (
+                "session_id=workshop-1 longmemeval_session_date=2024/01/05 (Fri) "
+                "user: I attended the planning workshop on January 5th."
+            ),
+            (
+                "session_id=workshop-2 longmemeval_session_date=2024/01/20 (Sat) "
+                "user: I attended the advanced workshop on January 20th."
+            ),
+            (
+                "session_id=conference longmemeval_session_date=2024/02/01 (Thu) "
+                "user: I attended the annual conference on February 1st."
+            ),
+            (
+                "session_id=workshop-3 longmemeval_session_date=2024/02/10 (Sat) "
+                "user: I attended the follow-up workshop on February 10th."
+            ),
+        ],
+    )
+
+    assert projection.result is not None
+    assert "count_answer=2" in projection.lines
+    excluded = {
+        row["source_group"]: row["exclude_reason"]
+        for row in projection.ledger_rows
+        if row.get("exclude_reason")
+    }
+    assert excluded["conference"] == "temporal_count_target"
+    assert excluded["workshop-3"] == "temporal_count_outside_window"
+    program = projection.operations[0]["program"]
+    assert program["version"] == "temporal_evidence_program_v1"
+    assert program["operator"] == "count_before"
+    assert program["boundary"] == {
+        "event_id": "count:2:0",
+        "source_group": "conference",
+        "event_date": "2024-02-01",
+    }
+    assert program["coverage"]["included_count"] == 2
+
+
+def test_count_projection_applies_after_event_temporal_boundary() -> None:
+    """Count synthesis should support after-event temporal windows symmetrically."""
+    projection = evidence_candidates.aggregate_candidate_projection(
+        "How many check-ins did I attend after the kickoff meeting?",
+        [
+            (
+                "session_id=precheck longmemeval_session_date=2024/03/01 (Fri) "
+                "user: I attended a preparation check-in on March 1st."
+            ),
+            (
+                "session_id=kickoff longmemeval_session_date=2024/03/05 (Tue) "
+                "user: I attended the kickoff meeting on March 5th."
+            ),
+            (
+                "session_id=check-1 longmemeval_session_date=2024/03/08 (Fri) "
+                "user: I attended the first check-in on March 8th."
+            ),
+            (
+                "session_id=check-2 longmemeval_session_date=2024/03/15 (Fri) "
+                "user: I attended the second check-in on March 15th."
+            ),
+        ],
+    )
+
+    assert projection.result is not None
+    assert "count_answer=2" in projection.lines
+    excluded = {
+        row["source_group"]: row["exclude_reason"]
+        for row in projection.ledger_rows
+        if row.get("exclude_reason")
+    }
+    assert excluded["precheck"] == "temporal_count_outside_window"
+    assert excluded["kickoff"] == "temporal_count_target"
+    program = projection.operations[0]["program"]
+    assert program["version"] == "temporal_evidence_program_v1"
+    assert program["operator"] == "count_after"
+    assert program["coverage"]["included_count"] == 2
+
+
+def test_temporal_count_program_uses_month_only_dates_before_boundary() -> None:
+    """Month-only event mentions should be ordered before exact boundary events."""
+    projection = evidence_candidates.aggregate_candidate_projection(
+        "How many fundraising events did I participate in before the community relief run?",
+        [
+            (
+                "session_id=spring-benefit session_date=2026/12/01 "
+                'user: I participated in the "Spring Benefit" event in May, '
+                "where we raised funds for the community kitchen."
+            ),
+            (
+                "session_id=river-cleanup session_date=2026/12/01 "
+                "user: I volunteered at the River Cleanup event in June, "
+                "where the team raised awareness and funds for restoration."
+            ),
+            (
+                "session_id=relief-run session_date=2026/12/01 "
+                'user: I participated in the "Community Relief Run" on October 15th.'
+            ),
+            (
+                "session_id=winter-ride session_date=2026/12/01 "
+                'user: I participated in the "Winter Ride" fundraising event in November.'
+            ),
+        ],
+    )
+
+    assert projection.result is not None
+    assert "count_answer=2" in projection.lines
+    program = projection.operations[0]["program"]
+    assert program["version"] == "temporal_evidence_program_v1"
+    assert program["operator"] == "count_before"
+    assert program["coverage"]["included_count"] == 2
+    excluded = {
+        row["source_group"]: row["exclude_reason"]
+        for row in projection.ledger_rows
+        if row.get("exclude_reason")
+    }
+    assert excluded["relief-run"] == "temporal_count_target"
+    assert excluded["winter-ride"] == "temporal_count_outside_window"
+
+
+def test_temporal_count_program_rejects_planned_future_participation() -> None:
+    """Planning to participate should not count as a completed dated event."""
+    projection = evidence_candidates.aggregate_candidate_projection(
+        "How many charity events did I participate in before the annual benefit run?",
+        [
+            (
+                "session_id=actual session_date=2026/12/01 "
+                'user: I participated in the "Food Pantry Walk" on March 2nd, '
+                "where I raised donations for the pantry."
+            ),
+            (
+                "session_id=planned session_date=2026/12/01 "
+                "user: I've also been considering participating in a charity swim event in May."
+            ),
+            (
+                "session_id=boundary session_date=2026/12/01 "
+                'user: I participated in the "Annual Benefit Run" on June 1st.'
+            ),
+        ],
+    )
+
+    assert projection.result is not None
+    assert "count_answer=1" in projection.lines
+    assert "planned" not in projection.operations[0]["support_source_ids"]
+
+
+def test_generic_count_projection_splits_action_object_events() -> None:
+    """Generic count synthesis should count concrete action-object event mentions."""
+    projection = evidence_candidates.aggregate_candidate_projection(
+        "How many pieces of furniture did I buy, assemble, sell, or fix recently?",
+        [
+            "session_id=coffee user: I bought a coffee table last month.",
+            "session_id=shelf user: I finally assembled that IKEA bookshelf for my home office.",
+            "session_id=kitchen user: I fixed the wobbly leg on my kitchen table last weekend.",
+            "session_id=mattress user: I ordered a new mattress from Casper.",
+        ],
+    )
+
+    assert projection.result is not None
+    assert "count_answer=4" in projection.lines
+    assert projection.answer_candidates[0]["answer"] == "There are four pieces of furniture."
+    assert set(projection.answer_candidates[0]["support_source_ids"]) == {
+        "coffee",
+        "shelf",
+        "kitchen",
+        "mattress",
+    }
+
+
+def test_source_synthesis_bundle_preserves_count_projection_answer() -> None:
+    """Source synthesis should not drop valid deterministic count programs."""
+    result = retrieval_plan.source_synthesis_bundle_result(
+        query="How many kitchen items did I replace or fix?",
+        source_results=[
+            "longmemeval_session_id=answer-1 content=I just replaced my old kitchen faucet with a new Moen one last Sunday.",
+            "longmemeval_session_id=answer-2 content=my kitchen has been feeling so much more functional lately, especially with my new kitchen mat in front of the sink.",
+            "longmemeval_session_id=answer-3 content=I just got rid of the old toaster and replaced it with a toaster oven that can do so much more.",
+            "longmemeval_session_id=answer-4 content=I donated my old coffee maker to Goodwill and I'm really enjoying the upgrade.",
+            "longmemeval_session_id=answer-5 content=I finally fixed the kitchen shelves last weekend.",
+        ],
+        limit=5,
+    )
+
+    assert result is not None
+    assert "count_answer=5" in result.content
+    assert (
+        "count_answer_text=I replaced or fixed five items: "
+        "the kitchen faucet, the kitchen mat, the toaster, the coffee maker, and the kitchen shelves."
+    ) in result.content
+    assert result.packet["result"]["answer_key"] == "count_answer_text"
+
+
+def test_generic_count_projection_splits_pickup_and_return_items() -> None:
+    """Pickup/return task counts should split distinct clothing obligations."""
+    projection = evidence_candidates.aggregate_candidate_projection(
+        "How many items of clothing do I need to pick up or return from a store?",
+        [
+            "session_id=blazer user: I still need to pick up my dry cleaning for the navy blue blazer.",
+            "session_id=boots user: I need to return some boots to Zara and pick up the larger pair.",
+        ],
+    )
+
+    assert projection.result is not None
+    assert "count_answer=3" in projection.lines
+    assert projection.answer_candidates[0]["answer"] == "There are three items of clothing."
+
+
 def test_aggregate_candidate_projection_reranks_specific_temporal_candidates() -> None:
     """Aggregate synthesis should rank specific temporal arithmetic above duration distractors."""
     projection = evidence_candidates.aggregate_candidate_projection(
@@ -445,12 +778,378 @@ def test_aggregate_candidate_projection_reranks_specific_temporal_candidates() -
     )
 
     assert projection.lines[0] == "candidate_rank=1 candidate_type=date_interval"
+    assert "candidate_type=duration" not in projection.lines
     assert projection.answer_candidates[0]["type"] == "date_interval"
     assert projection.result is not None
     assert projection.result["answer_key"] == "date_interval_answer"
     assert projection.result["answer"] == "14 days. 15 days (including the last day) is also acceptable."
     assert projection.result["support_source_ids"] == ["answer-1", "answer-2"]
     assert projection.result["excluded_source_ids"] == []
+
+
+def test_interval_source_queries_expand_endpoint_evidence_terms() -> None:
+    """Temporal interval retrieval should search source-side endpoint wording."""
+    queries = retrieval_plan.aggregation_event_source_queries(
+        "How many days did it take for me to find a house I loved after starting to work with Rachel?"
+    )
+
+    expanded = " ".join(queries).casefold()
+    assert "started began since" in expanded
+    assert "found saw loved" in expanded
+    assert "january february march" in expanded
+
+
+def test_temporal_interval_queries_overfetch_source_candidates() -> None:
+    """Calendar interval synthesis needs enough source rows to cover both operands."""
+    assert retrieval_plan.source_lane_candidate_limit(
+        "How many days had passed between the Hindu festival of Holi and the Sunday mass?",
+        limit=5,
+    ) > 5
+
+
+def test_date_interval_prefers_rows_covering_query_operands() -> None:
+    """Date interval synthesis should select the pair that covers both endpoint events."""
+    projection = evidence_candidates.aggregate_candidate_projection(
+        "How many days had passed between the Hindu festival of Holi and the Sunday mass?",
+        [
+            (
+                "longmemeval_session_id=holi longmemeval_session_date=2023/03/26 (Sun) "
+                "user: I attended the Hindu festival of Holi at my local temple on February 26th. "
+                "A calendar in the same note also listed January 2nd and January 4th."
+            ),
+            (
+                "longmemeval_session_id=mass longmemeval_session_date=2023/03/26 (Sun) "
+                "user: I just got back from Sunday mass at St. Mary's Church on March 19th."
+            ),
+            (
+                "longmemeval_session_id=distractor longmemeval_session_date=2023/03/26 (Sun) "
+                "user: I was planning another church fundraiser on March 5th."
+            ),
+        ],
+    )
+
+    assert projection.result is not None
+    assert projection.answer_candidates[0]["type"] == "date_interval"
+    assert projection.answer_candidates[0]["answer"] == (
+        "21 days. 22 days (including the last day) is also acceptable."
+    )
+    assert projection.answer_candidates[0]["support_source_ids"] == ["holi", "mass"]
+
+
+def test_date_interval_ignores_fraction_settings_and_uses_relative_session_anchor() -> None:
+    """Fractional settings and unrelated explicit dates should not displace event dates."""
+    projection = evidence_candidates.aggregate_candidate_projection(
+        "How many days passed between the day I received feedback about my car's suspension "
+        "and the day I tested my new suspension setup?",
+        [
+            (
+                "longmemeval_session_id=feedback longmemeval_session_date=2023/03/17 (Fri) "
+                "user: I received feedback about my car's suspension settings. "
+                "The advice mentioned toe at 1/4° and 1/8° for different track conditions."
+            ),
+            (
+                "longmemeval_session_id=test longmemeval_session_date=2023/04/23 (Sun) "
+                "user: I'm preparing for an open track day tomorrow, where I'll be testing "
+                "my car's new suspension setup. A checklist also mentions an unrelated May 15th deadline."
+            ),
+        ],
+    )
+
+    assert projection.result is not None
+    assert projection.answer_candidates[0]["type"] == "date_interval"
+    assert projection.answer_candidates[0]["answer"] == (
+        "38 days. 39 days (including the last day) is also acceptable."
+    )
+    assert "raw_span=1/4" not in " ".join(projection.lines)
+    assert projection.answer_candidates[0]["support_source_ids"] == ["feedback", "test"]
+
+
+def test_calendar_interval_query_does_not_answer_from_incidental_duration() -> None:
+    """Calendar event intervals should not fall back to unrelated duration sums."""
+    projection = evidence_candidates.aggregate_candidate_projection(
+        "How many days did it take after starting to work with Rachel?",
+        [
+            (
+                "longmemeval_session_id=advice longmemeval_session_date=2022/03/02 (Wed) "
+                "user: I've been working with Rachel, and I asked for neighborhoods "
+                "within a 30-minute drive from my office."
+            )
+        ],
+    )
+
+    assert projection.answer_candidates == ()
+    assert "duration_total_answer=0.5 hours" not in projection.lines
+
+
+def test_date_interval_candidate_uses_week_answer_for_week_query() -> None:
+    """Week-granular interval candidates should expose the requested unit answer."""
+    projection = evidence_candidates.aggregate_candidate_projection(
+        "How many weeks had passed between the workshop and the orientation?",
+        [
+            (
+                "session_id=workshop longmemeval_session_date=2024/03/20 "
+                "user: I attended the workshop on March 1st."
+            ),
+            (
+                "session_id=orientation longmemeval_session_date=2024/03/20 "
+                "user: I started orientation on March 8th."
+            ),
+        ],
+    )
+
+    assert projection.result is not None
+    assert "date_interval_week_answer=One week" in projection.lines
+    assert projection.answer_candidates[0]["answer_key"] == "date_interval_week_answer"
+    assert projection.answer_candidates[0]["answer"] == "One week"
+
+
+def test_date_interval_does_not_hijack_how_many_times_count_query() -> None:
+    """Date intervals should not answer frequency count questions with temporal modifiers."""
+    projection = evidence_candidates.aggregate_candidate_projection(
+        "How many times did I bake something in the past two weeks?",
+        [
+            (
+                "session_id=cake longmemeval_session_date=2024/04/20 "
+                "user: I baked a chocolate cake last Saturday."
+            ),
+            (
+                "session_id=cookies longmemeval_session_date=2024/04/20 "
+                "user: I baked a batch of cookies on Tuesday."
+            ),
+        ],
+    )
+
+    assert projection.result is not None
+    assert projection.answer_candidates[0]["type"] == "count"
+    assert "count_answer=2" in projection.lines
+    assert "candidate_type=date_interval" not in projection.lines
+
+
+def test_specific_action_object_count_excludes_other_objects() -> None:
+    """Action-compatible events should not count when the requested object is absent."""
+    result = retrieval_plan.source_synthesis_bundle_result(
+        query="How many times did I bake egg tarts in the past two weeks?",
+        source_results=[
+            "session_id=cake user: I baked a chocolate cake last Saturday.",
+            "session_id=cookies user: I used the convection setting to bake cookies on Tuesday.",
+            "session_id=bread user: I baked rustic Italian bread this weekend.",
+        ],
+        limit=5,
+    )
+
+    assert result is None
+
+
+def test_absence_check_handles_missing_action_object_count_target() -> None:
+    """Missing count targets should surface cited absence, not temporal-window numerics."""
+    absence = retrieval_plan.absence_check_bundle(
+        query="How many times did I bake egg tarts in the past two weeks?",
+        source_results=[
+            "session_id=cake user: I baked a chocolate cake last Saturday.",
+            "session_id=cookies user: I used the convection setting to bake cookies on Tuesday.",
+            "session_id=bread user: I baked rustic Italian bread this weekend.",
+        ],
+        limit=5,
+    )
+
+    assert absence is not None
+    assert "zaxy_absence_check=true" in absence
+    assert "not_mentioned_candidate=baking egg tarts" in absence
+    assert "You did not mention baking egg tarts" in absence
+
+
+def test_verb_alternative_category_count_does_not_trigger_action_object_absence() -> None:
+    """Category counts with alternative verbs should synthesize present items, not absence."""
+    query = "How many kitchen items did I replace or fix?"
+    source_results = [
+        "session_id=faucet user: I replaced my old kitchen faucet with a new Moen one.",
+        "session_id=mat user: I replaced the worn-out kitchen mat with a washable one.",
+        "session_id=toaster user: I got rid of the old toaster and replaced it with a toaster oven.",
+        "session_id=coffee user: I donated my old coffee maker after upgrading.",
+        "session_id=shelves user: I finally fixed the kitchen shelves last weekend.",
+    ]
+
+    assert retrieval_plan.absence_check_bundle(
+        query=query,
+        source_results=source_results,
+        limit=5,
+    ) is None
+    result = retrieval_plan.source_synthesis_bundle_result(
+        query=query,
+        source_results=source_results,
+        limit=5,
+    )
+
+    assert result is not None
+    assert "count_answer=5" in result.content
+
+
+def test_specific_action_object_count_keeps_matching_object() -> None:
+    """Specific action-object count filters should still count matching targets."""
+    projection = evidence_candidates.aggregate_candidate_projection(
+        "How many times did I bake egg tarts in the past two weeks?",
+        [
+            "session_id=first user: I baked egg tarts last Saturday.",
+            "session_id=second user: I baked another tray of egg tarts on Tuesday.",
+            "session_id=cake user: I baked a chocolate cake on Thursday.",
+        ],
+    )
+
+    assert projection.result is not None
+    assert "count_answer=2" in projection.lines
+    assert projection.answer_candidates[0]["support_source_ids"] == ["first", "second"]
+    assert projection.answer_candidates[0]["excluded_source_ids"] == ["cake"]
+
+
+def test_typed_event_count_keeps_distinct_ride_labels_from_query_object_filter() -> None:
+    """Typed event classes should count evidence labels rather than require them in the query."""
+    projection = evidence_candidates.aggregate_candidate_projection(
+        "How many times did I ride rollercoasters across all the events I attended from July to October?",
+        [
+            (
+                "session_id=july user: I rode the Mako, Kraken, and Manta rollercoasters "
+                "all in one night at SeaWorld San Diego in July."
+            ),
+            (
+                "session_id=september user: I rode Space Mountain: Ghost Galaxy three times "
+                "at Disneyland on September 24th during Mickey's Halloween Party."
+            ),
+            "session_id=october user: I rode the Xcelerator rollercoaster at Knott's Berry Farm on October 8th.",
+            (
+                "session_id=universal user: I rode the Revenge of the Mummy rollercoaster "
+                "three times in a row at Universal Studios Hollywood on October 15th."
+            ),
+        ],
+    )
+
+    assert projection.result is not None
+    assert "count_answer=10" in projection.lines
+    assert projection.answer_candidates[0]["answer"] == "I rode rollercoasters 10 times."
+    assert projection.answer_candidates[0]["support_source_ids"] == [
+        "july",
+        "september",
+        "october",
+        "universal",
+    ]
+
+
+def test_date_interval_does_not_hijack_direct_hour_total_query() -> None:
+    """Date intervals should not answer direct duration-total questions."""
+    projection = evidence_candidates.aggregate_candidate_projection(
+        "How many hours of jogging and yoga did I do last week?",
+        [
+            (
+                "session_id=jog longmemeval_session_date=2024/04/20 "
+                "user: I jogged for 15 minutes last Monday."
+            ),
+            (
+                "session_id=yoga longmemeval_session_date=2024/04/20 "
+                "user: I did yoga for 15 minutes last Wednesday."
+            ),
+        ],
+    )
+
+    assert projection.result is not None
+    assert projection.answer_candidates[0]["type"] == "duration"
+    assert "duration_total_answer=0.5 hours" in projection.lines
+    assert "candidate_type=date_interval" not in projection.lines
+
+
+def test_duration_total_understands_unit_first_half_phrases() -> None:
+    """Duration synthesis should parse common 'week and a half' wording."""
+    projection = evidence_candidates.aggregate_candidate_projection(
+        "How many weeks did it take me to watch the sci-fi saga and superhero movies?",
+        [
+            "session_id=saga user: I watched the whole sci-fi saga in a week and a half.",
+            "session_id=heroes user: I finished the superhero movie run in two weeks.",
+        ],
+    )
+
+    assert projection.result is not None
+    assert projection.answer_candidates[0]["type"] == "duration"
+    assert "duration_values=1.5 weeks,2 weeks" in projection.lines
+    assert "duration_total_answer=3.5 weeks" in projection.lines
+
+
+def test_travel_duration_total_deduplicates_repeated_destination_mentions() -> None:
+    """Repeated mentions of the same trip destination should not be summed twice."""
+    projection = evidence_candidates.aggregate_candidate_projection(
+        "How many hours in total did I spend driving to my three road trip destinations combined?",
+        [
+            (
+                "session_id=coast user: My recent trip to Outer Banks in North Carolina "
+                "only took me four hours to drive there from my place."
+            ),
+            (
+                "session_id=coast user: My last trip to Outer Banks only took about "
+                "four hours, so I can handle another drive."
+            ),
+            "session_id=capital user: I drove for six hours to Washington D.C. recently.",
+            (
+                "session_id=mountains user: On my recent trip to the mountains in Tennessee, "
+                "I drove for five hours to get there."
+            ),
+        ],
+    )
+
+    assert projection.result is not None
+    assert projection.answer_candidates[0]["type"] == "duration"
+    assert "duration_values=4 hours,6 hours,5 hours" in projection.lines
+    assert "duration_total_answer=15 hours" in projection.lines
+    excluded = projection.answer_candidates[0]["excluded_source_ids"]
+    assert excluded == []
+    assert any(row.get("exclude_reason") == "duplicate_identity" for row in projection.ledger_rows)
+
+
+def test_activity_duration_total_excludes_relative_time_setup_anchor() -> None:
+    """Activity duration totals should not sum elapsed-time setup anchors."""
+    projection = evidence_candidates.aggregate_candidate_projection(
+        "How many hours of jogging and yoga did I do last week?",
+        [
+            "session_id=window user: I started jogging two weeks ago.",
+            (
+                "session_id=jog longmemeval_session_date=2024/04/20 "
+                "user: I jogged for 15 minutes last Monday."
+            ),
+            (
+                "session_id=yoga longmemeval_session_date=2024/04/20 "
+                "user: I did yoga for 15 minutes last Wednesday."
+            ),
+        ],
+    )
+
+    assert projection.result is not None
+    assert projection.answer_candidates[0]["type"] == "duration"
+    assert "duration_total_answer=0.5 hours" in projection.lines
+    assert "duration_excluded_source_ids=window" in projection.lines
+    assert "336" not in "\n".join(projection.lines)
+
+
+def test_activity_duration_total_excludes_recurring_cadence_spans() -> None:
+    """Activity duration totals should not treat cadence windows as performed duration."""
+    projection = evidence_candidates.aggregate_candidate_projection(
+        "How many hours of jogging and yoga did I do last week?",
+        [
+            (
+                "session_id=history user: I used to practice yoga three times a week, "
+                "each time for 2 hours, but I have been slacking off this month."
+            ),
+            (
+                "session_id=plan user: I am hoping to get back into yoga this week, "
+                "maybe by starting with just one or two sessions a week."
+            ),
+            (
+                "session_id=actual user: Last Tuesday I went jogging for 15 minutes "
+                "and then did yoga for 15 minutes."
+            ),
+        ],
+    )
+
+    assert projection.result is not None
+    assert projection.answer_candidates[0]["type"] == "duration"
+    assert "duration_total_answer=0.5 hours" in projection.lines
+    assert projection.answer_candidates[0]["excluded_source_ids"] == ["history", "plan"]
+    assert "336" not in "\n".join(projection.lines)
 
 
 def test_aggregate_candidate_projection_derives_unit_price_from_total_and_count() -> None:
@@ -587,6 +1286,69 @@ def test_source_synthesis_bundle_prefers_derived_unit_price_over_unrelated_unit_
     assert result.packet["answer_candidates"][0]["answer_key"] == "currency_unit_price_answer"
     assert result.packet["answer_candidates"][0]["answer"] == "$12"
     assert "currency_unit_price_answer=$12" in result.content
+
+
+def test_quantity_ledger_sums_feed_weight_and_excludes_advice() -> None:
+    """Generic unit-quantity totals should sum user-owned quantities, not advice."""
+    ledger = synthesis.build_quantity_ledger(
+        "What is the total weight of the new feed I purchased in the past two months?",
+        [
+            "longmemeval_session_id=layer user: I got a 50-pound batch of layer feed.",
+            "longmemeval_session_id=scratch user: I also bought 20 pounds of organic scratch grains recently.",
+            (
+                "longmemeval_session_id=advice assistant: Provide 1-1.5 pounds of layer feed "
+                "per hen per day, divided into meals."
+            ),
+        ],
+    )
+    result = synthesis.render_quantity_result(ledger, rank=1)
+
+    assert "quantity_total_answer=70 pounds" in result.lines
+    assert result.answer_candidate is not None
+    assert result.answer_candidate["support_source_ids"] == ["layer", "scratch"]
+    excluded = ledger.excluded(kind="quantity")
+    assert [row.source_group for row in excluded] == ["advice"]
+    assert excluded[0].exclude_reason == "not_personal_memory"
+
+
+def test_quantity_ledger_dedupes_projection_echoes_but_keeps_distinct_sources() -> None:
+    """Generic quantities should dedupe lane copies without collapsing distinct observations."""
+    ledger = synthesis.build_quantity_ledger(
+        "What is the total weight of the new feed I purchased?",
+        [
+            (
+                "longmemeval_session_id=layer role=user I bought a 25-pound bag of layer feed."
+            ),
+            (
+                "longmemeval/feeds/layer/chunk-0001.md:1-6 (document) -- "
+                "summary=longmemeval_session_id=layer role=user I bought a 25-pound bag of layer feed."
+            ),
+            "longmemeval_session_id=scratch role=user I bought a 25-pound bag of scratch grains.",
+        ],
+    )
+    result = synthesis.render_quantity_result(ledger, rank=1)
+
+    assert "quantity_total_answer=50 pounds" in result.lines
+    assert result.answer_candidate is not None
+    assert result.answer_candidate["support_source_ids"] == ["layer", "scratch"]
+    assert any(row.exclude_reason == "duplicate_identity" for row in ledger.excluded(kind="quantity"))
+
+
+def test_aggregate_candidate_projection_emits_quantity_candidate_for_unit_totals() -> None:
+    """Checkout synthesis should expose generic unit totals as answer candidates."""
+    projection = evidence_candidates.aggregate_candidate_projection(
+        "What is the total weight of the new feed I purchased in the past two months?",
+        [
+            "longmemeval_session_id=layer user: I got a 50-pound batch of layer feed.",
+            "longmemeval_session_id=scratch user: I bought 20 pounds of organic scratch grains for my chickens.",
+        ],
+    )
+
+    assert projection.result is not None
+    assert projection.answer_candidates[0]["type"] == "quantity"
+    assert projection.answer_candidates[0]["answer"] == "70 pounds"
+    assert "quantity_total_answer=70 pounds" in projection.lines
+    assert projection.operations[0]["kind"] == "quantity"
 
 
 def test_source_synthesis_bundle_itemizes_quoted_work_duration_intervals() -> None:
@@ -865,6 +1627,8 @@ def test_social_media_break_bundle_emits_break_specific_ledger_rows() -> None:
     break_rows = [row for row in rows if row.get("include_reason") == "social_media_break_duration"]
 
     assert "social_media_break_total=17 days" in bundle
+    assert "social_media_break_total_answer=17 days" in bundle
+    assert "candidate_type=social_media_break" in bundle
     assert [(row["source_group"], row["value"], row["unit"]) for row in break_rows] == [
         ("answer_a4204937_1", "7", "days"),
         ("answer_a4204937_2", "10", "days"),
@@ -884,6 +1648,11 @@ def test_road_trip_drive_bundle_emits_drive_specific_ledger_rows() -> None:
                 "longmemeval_session_id=answer_526354c8_1 "
                 "my recent trip to Outer Banks in North Carolina - "
                 "it only took me four hours to drive there from my place."
+            ),
+            (
+                "longmemeval_session_id=answer_526354c8_1 "
+                "my last trip to Outer Banks only took about four hours, "
+                "so I can handle another drive."
             ),
             (
                 "longmemeval_session_id=answer_526354c8_2 "
@@ -912,7 +1681,12 @@ def test_road_trip_drive_bundle_emits_drive_specific_ledger_rows() -> None:
     drive_rows = [row for row in rows if row.get("include_reason") == "road_trip_destination_drive_duration"]
 
     assert "road_trip_drive_total=15 hours" in bundle
+    assert (
+        "road_trip_drive_total_answer=15 hours for getting to the three destinations "
+        "(or 30 hours for the round trip)"
+    ) in bundle
     assert "road_trip_drive_total_round_trip=30 hours" in bundle
+    assert "candidate_type=road_trip_drive" in bundle
     assert [(row["source_group"], row["value"], row["unit"]) for row in drive_rows] == [
         ("answer_526354c8_1", "4", "hours"),
         ("answer_526354c8_3", "5", "hours"),
@@ -1073,6 +1847,45 @@ def test_career_prior_duration_bundle_emits_operation_ledger_rows() -> None:
     assert [(row["source_group"], row["value"], row["unit"], row["include_reason"]) for row in career_rows] == [
         ("answer_1", "108", "months", "total_career_duration"),
         ("answer_2", "51", "months", "current_role_duration"),
+    ]
+
+
+def test_current_role_tenure_derives_from_company_tenure_and_promotion_timing() -> None:
+    """Current-role duration should subtract time-to-role from total company tenure."""
+    bundle = retrieval_plan.source_synthesis_bundle(
+        query="How long have I been working in my current role?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#abc "
+                "longmemeval_session_id=answer_1 "
+                "As a Senior Marketing Specialist, I've been thinking about my "
+                "3 years and 9 months experience in the company."
+            ),
+            (
+                "citation=eventloom://benchmark/events/2#def "
+                "longmemeval_session_id=answer_2 "
+                "I started as a Marketing Coordinator and worked my way up to "
+                "Senior Marketing Specialist after 2 years and 4 months."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    rows = [
+        json.loads(line.removeprefix("ledger_row="))
+        for line in bundle.splitlines()
+        if line.startswith("ledger_row=")
+    ]
+    role_rows = [row for row in rows if row.get("fact_id", "").startswith("current_role_tenure:")]
+
+    assert "current_role_total_company_months=45" in bundle
+    assert "current_role_prior_months=28" in bundle
+    assert "current_role_tenure_operation=45-28" in bundle
+    assert "current_role_tenure_answer=1 year and 5 months" in bundle
+    assert [(row["source_group"], row["value"], row["unit"], row["include_reason"]) for row in role_rows] == [
+        ("answer_1", "45", "months", "total_company_tenure"),
+        ("answer_2", "28", "months", "time_to_current_role"),
     ]
 
 
@@ -1327,12 +2140,14 @@ def test_categorical_temporal_bundle_emits_choice_ledger_rows() -> None:
     ]
 
     for query, source_results, answer_line, include_reason, expected in cases:
-        bundle = retrieval_plan.source_synthesis_bundle(
+        result = retrieval_plan.source_synthesis_bundle_result(
             query=query,
             source_results=source_results,
             limit=5,
         )
 
+        assert result is not None
+        bundle = result.content
         assert bundle is not None
         rows = [
             json.loads(line.removeprefix("ledger_row="))
@@ -1343,6 +2158,90 @@ def test_categorical_temporal_bundle_emits_choice_ledger_rows() -> None:
 
         assert answer_line in bundle
         assert [(row["source_group"], row["candidate"]) for row in choice_rows] == expected
+        if include_reason == "recency_candidate":
+            assert result.packet["answer_candidates"][0]["type"] == "recency"
+            assert result.packet["answer_candidates"][0]["answer"] == "Disney+"
+            assert result.packet["answer_candidates"][0]["support_source_ids"] == ["answer_2"]
+
+
+def test_temporal_order_bundle_prefers_quoted_query_choices_over_event_headers() -> None:
+    """LongMemEval temporal-order synthesis should render the human event label."""
+    bundle = retrieval_plan.source_synthesis_bundle(
+        query=(
+            "Which event did I attend first, the 'Effective Time Management' "
+            "workshop or the 'Data Analysis using Python' webinar?"
+        ),
+        source_results=[
+            (
+                "# Event 31 citation=eventloom://benchmark/events/31#abc "
+                "content=longmemeval_session_id=answer_1 "
+                "longmemeval_session_date=2023/05/28 (Sun) 07:17 "
+                "3. user: I participated in a webinar on "
+                "\"Data Analysis using Python\" two months ago."
+            ),
+            (
+                "# Event 22 citation=eventloom://benchmark/events/22#def "
+                "content=longmemeval_session_id=answer_2 "
+                "longmemeval_session_date=2023/05/28 (Sun) 21:04 "
+                "11. user: I attended the workshop on "
+                "\"Effective Time Management\" last week."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "temporal_order_answer=Data Analysis using Python" in bundle
+    assert "candidate=# Event" not in bundle
+
+
+def test_temporal_order_bundle_compares_unquoted_alternatives_with_explicit_dates() -> None:
+    """Temporal-order synthesis should parse common unquoted alternatives generically."""
+    result = retrieval_plan.source_synthesis_bundle_result(
+        query="Which device did I set up first, the smart thermostat or the new router?",
+        source_results=[
+            (
+                "longmemeval_session_id=router longmemeval_session_date=2024/02/20 "
+                "user: I planned the smart thermostat install for March 15. "
+                "I set up the new router on February 10 after it arrived."
+            ),
+            (
+                "longmemeval_session_id=thermostat longmemeval_session_date=2024/03/20 "
+                "user: I set up the smart thermostat on March 12. "
+                "The router manual also mentioned March 1 as a firmware date."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert result is not None
+    assert "candidate_type=temporal_order" in result.content
+    assert "temporal_order_answer=new router" in result.content
+    assert result.packet["answer_candidates"][0]["answer"] == "new router"
+    assert result.packet["answer_candidates"][0]["support_source_ids"] == ["router"]
+
+
+def test_temporal_order_bundle_prefers_action_date_over_planning_distractor() -> None:
+    """Action-specific dates should beat planning or ordering dates for event order."""
+    result = retrieval_plan.source_synthesis_bundle_result(
+        query="Which event happened first, the road trip to the coast or the arrival of the new prime lens?",
+        source_results=[
+            (
+                "longmemeval_session_id=trip longmemeval_session_date=2024/05/20 "
+                "user: I took the road trip to the coast on May 12, after planning it in April."
+            ),
+            (
+                "longmemeval_session_id=lens longmemeval_session_date=2024/05/01 "
+                "user: I ordered the new prime lens on April 10, and the new prime lens arrived on April 28."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert result is not None
+    assert "temporal_order_answer=new prime lens" in result.content
+    assert result.packet["answer_candidates"][0]["answer"] == "new prime lens"
+    assert result.packet["answer_candidates"][0]["support_source_ids"] == ["lens"]
 
 
 def test_temporal_sequence_bundle_emits_ordered_candidate_packet() -> None:
@@ -1369,9 +2268,9 @@ def test_temporal_sequence_bundle_emits_ordered_candidate_packet() -> None:
     assert result is not None
     bundle = result.content
     assert (
-        "temporal_sequence_answer=First, day hike to Muir Woods. "
-        "Then, road trip with friends to Big Sur and Monterey. "
-        "Lastly, solo camping trip to Yosemite National Park."
+        "temporal_sequence_answer=First, I went on a day hike to Muir Woods. "
+        "Then, I got back from a road trip with friends to Big Sur and Monterey. "
+        "Lastly, I got back from a solo camping trip to Yosemite National Park."
     ) in bundle
     assert result.packet["answer_candidates"][0]["type"] == "temporal_sequence"
     assert result.packet["operations"][0]["name"] == "temporal_sequence"
@@ -1382,10 +2281,288 @@ def test_temporal_sequence_bundle_emits_ordered_candidate_packet() -> None:
         if row.get("include_reason") == "relative_time_anchor"
     ]
     assert [(row["source_group"], row["label"]) for row in sequence_rows] == [
-        ("answer-trip-1", "day hike to Muir Woods"),
-        ("answer-trip-2", "road trip with friends to Big Sur and Monterey"),
-        ("answer-trip-3", "solo camping trip to Yosemite National Park"),
+        ("answer-trip-1", "went on a day hike to Muir Woods"),
+        ("answer-trip-2", "got back from a road trip with friends to Big Sur and Monterey"),
+        ("answer-trip-3", "got back from a solo camping trip to Yosemite National Park"),
     ]
+
+
+def test_temporal_sequence_binds_strongest_local_event_in_multi_event_sentence() -> None:
+    """One memory can mention multiple events; sequence extraction should bind the local dated event."""
+    result = retrieval_plan.source_synthesis_bundle_result(
+        query="What is the order of the three trips I took in the past three months, from earliest to latest?",
+        source_results=[
+            (
+                "longmemeval_session_id=answer-trip-1 longmemeval_session_date=2023/03/10 (Fri) "
+                "user: I went on a day hike to Muir Woods National Monument with my family about two months ago."
+            ),
+            (
+                "longmemeval_session_id=answer-trip-2 longmemeval_session_date=2023/04/20 (Thu) "
+                "user: I recently got back from a solo camping trip to Yosemite and realized I need to upgrade some gear. "
+                "By the way, I just got back from a road trip with friends to Big Sur and Monterey today, and it was amazing!"
+            ),
+            (
+                "longmemeval_session_id=answer-trip-3 longmemeval_session_date=2023/05/15 (Mon) "
+                "user: I just got back from a solo camping trip to Yosemite National Park today."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert result is not None
+    assert (
+        "temporal_sequence_answer=First, I went on a day hike to Muir Woods National Monument with my family. "
+        "Then, I got back from a road trip with friends to Big Sur and Monterey. "
+        "Lastly, I got back from a solo camping trip to Yosemite National Park."
+    ) in result.content
+    sequence_rows = [
+        row
+        for row in result.packet["ledger_rows"]
+        if row.get("include_reason") in {"session_date_anchor", "relative_session_date_anchor"}
+        and not row.get("exclude_reason")
+    ]
+    assert [(row["source_group"], row["label"]) for row in sequence_rows] == [
+        ("answer-trip-1", "went on a day hike to Muir Woods National Monument with my family"),
+        ("answer-trip-2", "got back from a road trip with friends to Big Sur and Monterey"),
+        ("answer-trip-3", "got back from a solo camping trip to Yosemite National Park"),
+    ]
+
+
+def test_temporal_sequence_extracts_multiple_events_from_one_cited_memory() -> None:
+    """A salient memory can contain multiple ordered user events and should not be under-counted."""
+    result = retrieval_plan.source_synthesis_bundle_result(
+        query="What is the order of the three trips I took in the past three months, from earliest to latest?",
+        source_results=[
+            (
+                "longmemeval_session_id=answer-trip-1 longmemeval_session_date=2023/03/10 (Fri) "
+                "user: I went on a day hike to Muir Woods National Monument with my family about two months ago."
+            ),
+            (
+                "longmemeval_session_id=answer-trip-2 longmemeval_session_date=2023/05/15 (Mon) "
+                "user: I'm planning a trip to Yosemite National Park soon. "
+                "By the way, I just got back from a road trip with friends to Big Sur and Monterey last month. "
+                "I started my solo camping trip to Yosemite National Park today."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert result is not None
+    assert (
+        "temporal_sequence_answer=First, I went on a day hike to Muir Woods National Monument with my family. "
+        "Then, I got back from a road trip with friends to Big Sur and Monterey. "
+        "Lastly, I started my solo camping trip to Yosemite National Park."
+    ) in result.content
+    assert result.packet["operations"][0]["program"]["complete"] is True
+    included = [row for row in result.packet["ledger_rows"] if not row.get("exclude_reason")]
+    assert [(row["source_group"], row["label"]) for row in included] == [
+        ("answer-trip-1", "went on a day hike to Muir Woods National Monument with my family"),
+        ("answer-trip-2", "got back from a road trip with friends to Big Sur and Monterey"),
+        ("answer-trip-2", "started my solo camping trip to Yosemite National Park"),
+    ]
+
+
+def test_temporal_sequence_orders_watched_sports_events_from_session_dates() -> None:
+    """Watched sports sequences should extract event labels instead of incidental durations."""
+    result = retrieval_plan.source_synthesis_bundle_result(
+        query="What is the order of the sports events I watched in January?",
+        source_results=[
+            (
+                "longmemeval_session_id=nba longmemeval_session_date=2023/01/05 (Thu) "
+                "user: I just went to a NBA game at the Staples Center with my coworkers today."
+            ),
+            (
+                "longmemeval_session_id=college longmemeval_session_date=2023/01/15 (Sun) "
+                "user: I'm still riding high from the College Football National Championship game "
+                "I watched with my family at home yesterday."
+            ),
+            (
+                "longmemeval_session_id=nfl longmemeval_session_date=2023/01/22 (Sun) "
+                "user: I'm still on a high from watching the Kansas City Chiefs defeat the Buffalo Bills "
+                "in the Divisional Round of the NFL playoffs last weekend at my friend Mike's place."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert result is not None
+    assert "temporal_sequence_answer=" in result.content
+    assert "First, I watched a NBA game at the Staples Center." in result.content
+    assert "NBA game at the Staples Center" in result.content
+    assert "College Football National Championship game" in result.content
+    assert "NFL playoffs" in result.content
+    assert "candidate=watched with my family at home" not in result.content
+    assert "week_values=" not in result.content
+
+
+def test_temporal_sequence_excludes_unanchored_sports_distractors_when_anchored_events_exist() -> None:
+    """Event-order synthesis should not sort undated planning mentions ahead of dated events."""
+    result = retrieval_plan.source_synthesis_bundle_result(
+        query="What is the order of the sports events I watched in January?",
+        source_results=[
+            (
+                "longmemeval_session_id=nba longmemeval_session_date=2023/01/05 (Thu) "
+                "user: I just went to a NBA game at the Staples Center with my coworkers today."
+            ),
+            (
+                "longmemeval_session_id=college longmemeval_session_date=2023/01/15 (Sun) "
+                "user: I'm still riding high from the College Football National Championship game "
+                "I watched with my family at home yesterday."
+            ),
+            (
+                "longmemeval_session_id=nfl longmemeval_session_date=2023/01/22 (Sun) "
+                "user: I'm thinking of ordering some food for the next game. By the way, I'm still "
+                "on a high from watching the Kansas City Chiefs defeat the Buffalo Bills in the "
+                "Divisional Round of the NFL playoffs last weekend at my friend Mike's place. "
+                "user: We had a bunch of wings while watching the Chiefs game, and now I'm craving more."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert result is not None
+    assert "temporal_sequence_rank=1" in result.content
+    assert "candidate=Chiefs game" not in result.content
+    assert "exclude_reason=provenance_order_anchor" not in result.content
+    sequence_rows = [
+        row
+        for row in result.packet["ledger_rows"]
+        if row.get("kind") == "temporal_event" and not row.get("exclude_reason")
+    ]
+    assert [row["source_group"] for row in sequence_rows] == ["nba", "college", "nfl"]
+
+
+def test_temporal_sequence_orders_participated_sports_events_from_session_dates() -> None:
+    """Participated sports sequences should bind race and tournament names."""
+    result = retrieval_plan.source_synthesis_bundle_result(
+        query="What is the order of the three sports events I participated in during the past month, from earliest to latest?",
+        source_results=[
+            (
+                "longmemeval_session_id=triathlon longmemeval_session_date=2023/06/02 (Fri) "
+                "user: I just completed the Spring Sprint Triathlon today, which included a 20K bike ride."
+            ),
+            (
+                "longmemeval_session_id=run longmemeval_session_date=2023/06/10 (Sat) "
+                "user: I just finished a 5K run with a personal best time of 27 minutes and 42 seconds "
+                "at the Midsummer 5K Run."
+            ),
+            (
+                "longmemeval_session_id=soccer longmemeval_session_date=2023/06/17 (Sat) "
+                "user: I participate in the company's annual charity soccer tournament today, "
+                "and I want to make sure I'm taking care of myself."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert result is not None
+    assert "temporal_sequence_answer=" in result.content
+    assert "First, I completed Spring Sprint Triathlon." in result.content
+    assert "Then, I completed Midsummer 5K Run." in result.content
+    assert "Lastly, I participated in company's annual charity soccer tournament." in result.content
+    assert "Spring Sprint Triathlon" in result.content
+    assert "Midsummer 5K Run" in result.content
+    assert "company's annual charity soccer tournament" in result.content
+    assert "minute_values=" not in result.content
+
+
+def test_temporal_sequence_orders_named_graduation_events() -> None:
+    """Ordinal actor-event questions should synthesize named event order from cited dates."""
+    result = retrieval_plan.source_synthesis_bundle_result(
+        query="Who graduated first, second and third among Emma, Rachel and Alex?",
+        source_results=[
+            (
+                "longmemeval_session_id=emma longmemeval_session_date=2022/05/28 (Sat) "
+                "user: My niece Emma just graduated yesterday, and I want gift ideas."
+            ),
+            (
+                "longmemeval_session_id=rachel longmemeval_session_date=2022/06/22 (Wed) "
+                "user: I just got back from my friend Rachel's master's degree graduation "
+                "ceremony yesterday."
+            ),
+            (
+                "longmemeval_session_id=alex longmemeval_session_date=2022/07/15 (Fri) "
+                "user: I'm looking for gift ideas for my cousin Alex, who graduated with "
+                "a degree in engineering from college about two weeks ago."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert result is not None
+    assert "candidate_type=temporal_sequence" in result.content
+    assert "temporal_sequence_answer=Emma graduated first, followed by Rachel and then Alex." in result.content
+    assert result.packet["answer_candidates"][0]["type"] == "temporal_sequence"
+    assert result.packet["answer_candidates"][0]["answer"] == (
+        "Emma graduated first, followed by Rachel and then Alex."
+    )
+    included = [row for row in result.packet["ledger_rows"] if not row.get("exclude_reason")]
+    assert [(row["source_group"], row["label"]) for row in included] == [
+        ("emma", "Emma graduated"),
+        ("rachel", "Rachel graduated"),
+        ("alex", "Alex graduated"),
+    ]
+
+
+def test_temporal_sequence_requires_explicit_event_count_before_answering() -> None:
+    """Explicit order-of-N queries should not emit confident partial sequences."""
+    result = retrieval_plan.source_synthesis_bundle_result(
+        query="What is the order of the three trips I took in the past three months, from earliest to latest?",
+        source_results=[
+            (
+                "longmemeval_session_id=answer-trip-1 longmemeval_session_date=2023/03/10 (Fri) "
+                "user: I went on a day hike to Muir Woods National Monument with my family about two months ago."
+            ),
+            (
+                "longmemeval_session_id=answer-trip-2 longmemeval_session_date=2023/05/15 (Mon) "
+                "user: I started my solo camping trip to Yosemite National Park today."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert result is not None
+    assert "temporal_sequence_answer=" not in result.content
+    assert not any(
+        candidate.get("type") == "temporal_sequence"
+        for candidate in result.packet["answer_candidates"]
+    )
+
+
+def test_temporal_sequence_ignores_generated_synthesis_packets_as_evidence() -> None:
+    """Synthesis should not recursively extract ordered events from its own diagnostics."""
+    result = retrieval_plan.source_synthesis_bundle_result(
+        query="What is the order of the three trips I took in the past three months, from earliest to latest?",
+        source_results=[
+            (
+                "checkout_synthesis=true\n"
+                "zaxy_absence_check=true\n"
+                "query=What is the order of the three trips I took in the past three months, from earliest to latest?\n"
+                "answer_guidance=The information provided is not enough."
+            ),
+            (
+                "longmemeval_session_id=answer-trip-1 longmemeval_session_date=2023/03/10 (Fri) "
+                "user: I went on a day hike to Muir Woods National Monument with my family about two months ago."
+            ),
+            (
+                "longmemeval_session_id=answer-trip-2 longmemeval_session_date=2023/04/20 (Thu) "
+                "user: I just got back from a road trip with friends to Big Sur and Monterey today."
+            ),
+            (
+                "longmemeval_session_id=answer-trip-3 longmemeval_session_date=2023/05/15 (Mon) "
+                "user: I started my solo camping trip to Yosemite National Park today."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert result is not None
+    assert "candidate=in the past three months" not in result.content
+    assert (
+        "temporal_sequence_answer=First, I went on a day hike to Muir Woods National Monument with my family. "
+        "Then, I got back from a road trip with friends to Big Sur and Monterey. "
+        "Lastly, I started my solo camping trip to Yosemite National Park."
+    ) in result.content
 
 
 def test_temporal_sequence_intent_overfetches_source_candidates() -> None:
@@ -1397,6 +2574,27 @@ def test_temporal_sequence_intent_overfetches_source_candidates() -> None:
 
     assert "temporal_sequence" in intent.reasons
     assert retrieval_plan.source_synthesis_candidate_limit(intent, limit=10) == 64
+
+
+def test_temporal_sequence_trip_queries_expand_source_side_event_verbs() -> None:
+    """Generic order-of-trips queries need source-side event wording beyond the abstract question."""
+    queries = retrieval_plan.source_lane_queries(
+        "What is the order of the three trips I took in the past three months, from earliest to latest?",
+        [],
+    )
+
+    expansion = " ".join(queries[1:]).casefold()
+    assert "road trip" in expansion
+    assert "camping" in expansion
+    assert "day hike" in expansion
+    assert "got back" in expansion
+
+
+def test_temporal_count_program_queries_overfetch_source_candidates() -> None:
+    """Dated count programs need enough source candidates to avoid evidence under-coverage."""
+    assert retrieval_plan._temporal_count_program_query(
+        "How many workshops did I attend before the annual conference?"
+    )
 
 
 def test_temporal_sequence_museum_queries_expand_source_side_visit_actions() -> None:
@@ -1552,6 +2750,95 @@ def test_percentage_comparison_bundle_answers_negative_lower_question() -> None:
     assert result.packet["answer_candidates"][0]["answer"] == "No"
 
 
+def test_percentage_bundle_answers_currency_ratio_question() -> None:
+    """Percentage-of questions should divide cited numerator and denominator currency operands."""
+    result = retrieval_plan.source_synthesis_bundle_result(
+        query=(
+            "What percentage of the countryside property's price is the cost of the "
+            "renovations I plan to do on my current house?"
+        ),
+        source_results=[
+            (
+                "longmemeval_session_id=property user: I'm considering buying a rural "
+                "property in the countryside. It is listed at $200,000."
+            ),
+            (
+                "longmemeval_session_id=renovation user: My renovations will cost around "
+                "$20,000 and include adding a deck and patio."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert result is not None
+    assert "candidate_type=percentage" in result.content
+    assert "percentage_operation=currency_numerator_divided_by_denominator" in result.content
+    assert "percentage_denominator=$200,000" in result.content
+    assert "percentage_numerator=$20,000" in result.content
+    assert "percentage_answer=10%" in result.content
+    assert result.packet["answer_candidates"][0]["type"] == "percentage"
+    assert result.packet["answer_candidates"][0]["answer_key"] == "percentage_answer"
+    assert result.packet["answer_candidates"][0]["answer"] == "10%"
+    assert result.packet["answer_candidates"][0]["support_source_ids"] == [
+        "property",
+        "renovation",
+    ]
+
+
+def test_percentage_bundle_outranks_generic_latest_state_candidate() -> None:
+    """Query-bound arithmetic should be preferred over unrelated scalar-state spans."""
+    result = retrieval_plan.source_synthesis_bundle_result(
+        query=(
+            "What percentage of the rural property's price is the cost of the "
+            "renovations I plan to do?"
+        ),
+        source_results=[
+            (
+                "longmemeval_session_id=status user: I want to know how my property tax "
+                "assessment is determined."
+            ),
+            "longmemeval_session_id=property user: The rural property is listed at $400,000.",
+            "longmemeval_session_id=renovation user: The renovations will cost $40,000.",
+        ],
+        limit=5,
+    )
+
+    assert result is not None
+    assert result.packet["answer_candidates"][0]["type"] == "percentage"
+    assert result.packet["answer_candidates"][0]["answer"] == "10%"
+
+
+def test_percentage_bundle_answers_count_ratio_question() -> None:
+    """Percentage-of questions should divide cited numerator and denominator counts."""
+    result = retrieval_plan.source_synthesis_bundle_result(
+        query="What percentage of leadership positions do women hold in my company?",
+        source_results=[
+            (
+                "longmemeval_session_id=leadership_total "
+                "user: We have a total of 100 leadership positions across the company."
+            ),
+            (
+                "longmemeval_session_id=women_leaders "
+                "user: Women occupy 20 of the leadership positions in our company."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert result is not None
+    assert "candidate_type=percentage" in result.content
+    assert "percentage_operation=count_numerator_divided_by_denominator" in result.content
+    assert "percentage_denominator=100" in result.content
+    assert "percentage_numerator=20" in result.content
+    assert "percentage_answer=20%" in result.content
+    assert result.packet["answer_candidates"][0]["type"] == "percentage"
+    assert result.packet["answer_candidates"][0]["answer"] == "20%"
+    assert result.packet["answer_candidates"][0]["support_source_ids"] == [
+        "leadership_total",
+        "women_leaders",
+    ]
+
+
 def test_direct_boolean_evidence_bundle_answers_same_method_question() -> None:
     """Direct yes/no synthesis should require explicit cited equivalence evidence."""
     result = retrieval_plan.source_synthesis_bundle_result(
@@ -1686,6 +2973,59 @@ def test_query_bound_direct_answer_projects_current_record() -> None:
     assert result.packet["answer_candidates"][0]["support_source_ids"] == ["league_2"]
 
 
+def test_latest_state_projects_generic_current_scalar_update() -> None:
+    """Current scalar-state questions should resolve cited mutable facts generically."""
+    result = retrieval_plan.source_synthesis_bundle_result(
+        query="What is my current membership tier?",
+        source_results=[
+            "longmemeval_session_id=membership_1 user: My membership tier was Silver when I joined.",
+            "longmemeval_session_id=membership_2 user: I updated my membership tier from Silver to Gold.",
+        ],
+        limit=5,
+    )
+
+    assert result is not None
+    assert "candidate_type=latest_state" in result.content
+    assert "latest_state_answer=Gold" in result.content
+    assert result.packet["answer_candidates"][0]["answer"] == "Gold"
+    assert result.packet["answer_candidates"][0]["support_source_ids"] == ["membership_2"]
+
+
+def test_latest_state_projects_generic_previous_scalar_update() -> None:
+    """Previous scalar-state questions should select the superseded side of an update."""
+    result = retrieval_plan.source_synthesis_bundle_result(
+        query="What was my previous membership tier?",
+        source_results=[
+            "longmemeval_session_id=membership_1 user: My membership tier was Silver when I joined.",
+            "longmemeval_session_id=membership_2 user: I updated my membership tier from Silver to Gold.",
+        ],
+        limit=5,
+    )
+
+    assert result is not None
+    assert "candidate_type=latest_state" in result.content
+    assert "latest_state_answer=Silver" in result.content
+    assert result.packet["answer_candidates"][0]["answer"] == "Silver"
+    assert result.packet["answer_candidates"][0]["support_source_ids"] == ["membership_2"]
+
+
+def test_latest_state_projects_generic_assignment_with_current_marker() -> None:
+    """Current scalar assignment sentences should not require domain templates."""
+    result = retrieval_plan.source_synthesis_bundle_result(
+        query="Which tool is my current project tracker?",
+        source_results=[
+            "longmemeval_session_id=tracker_1 user: My old project tracker was Trello.",
+            "longmemeval_session_id=tracker_2 user: My current project tracker is Linear.",
+        ],
+        limit=5,
+    )
+
+    assert result is not None
+    assert "latest_state_answer=Linear" in result.content
+    assert result.packet["answer_candidates"][0]["answer"] == "Linear"
+    assert result.packet["answer_candidates"][0]["support_source_ids"] == ["tracker_2"]
+
+
 def test_query_bound_direct_answer_projects_stated_weight_loss() -> None:
     """Direct stated quantity answers should bind to the requested activity terms."""
     result = retrieval_plan.source_synthesis_bundle_result(
@@ -1806,6 +3146,41 @@ def test_query_bound_difference_answers_marathon_target_overrun() -> None:
     assert result.packet["answer_candidates"][0]["answer"] == "12"
 
 
+def test_query_bound_arithmetic_sums_routine_ready_and_commute_time() -> None:
+    """Routine time totals should bind requested activity slots and ignore advice durations."""
+    result = retrieval_plan.source_synthesis_bundle_result(
+        query="What is the total time it takes me to get ready and commute to work?",
+        source_results=[
+            (
+                "longmemeval_session_id=ready user: I wake up at 6:30 AM and it takes me "
+                "about an hour to get ready, including meditation, workout, and breakfast. "
+                "assistant: Try a 10-minute energizing meditation."
+            ),
+            (
+                "longmemeval_session_id=commute user: My daily commute to work takes about "
+                "30 minutes, so I listen to podcasts."
+            ),
+            (
+                "longmemeval_session_id=advice assistant: The Daily podcast runs 20-30 minutes "
+                "and audiobooks can be good during your morning commute."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert result is not None
+    assert "candidate_type=routine_time_total" in result.content
+    assert "routine_time_total_minutes=90" in result.content
+    assert "routine_time_total_answer=an hour and a half" in result.content
+    assert "routine_time_total_values=60,30" in result.content
+    assert result.packet["answer_candidates"][0]["type"] == "routine_time_total"
+    assert result.packet["answer_candidates"][0]["answer"] == "an hour and a half"
+    assert result.packet["answer_candidates"][0]["support_source_ids"] == [
+        "ready",
+        "commute",
+    ]
+
+
 def test_total_duration_query_keeps_aggregate_before_latest_state() -> None:
     """Total-duration questions should not be answered by one latest state value."""
     result = retrieval_plan.source_synthesis_bundle_result(
@@ -1820,6 +3195,11 @@ def test_total_duration_query_keeps_aggregate_before_latest_state() -> None:
                 "user: I spent around 30 hours playing The Last of Us Part II."
             ),
             (
+                "longmemeval_session_id=game_2 "
+                "user: By the way, I realized that I spent around 30 hours playing "
+                "The Last of Us Part II on hard difficulty."
+            ),
+            (
                 "longmemeval_session_id=game_3 "
                 "user: I also logged 40 hours in Stardew Valley."
             ),
@@ -1831,6 +3211,198 @@ def test_total_duration_query_keeps_aggregate_before_latest_state() -> None:
     assert "duration_total_answer=140 hours" in result.content
     assert "latest_state_answer=30 hours" not in result.content
     assert result.packet["answer_candidates"][0]["answer"] == "140 hours"
+
+
+def test_total_duration_query_dedupes_projection_copies_without_collapsing_distinct_operands() -> None:
+    """Duration totals should dedupe lane copies while preserving distinct same-sentence work."""
+    result = retrieval_plan.source_synthesis_bundle_result(
+        query="How many hours have I spent playing games in total?",
+        source_results=[
+            (
+                "longmemeval_session_id=game_1 role=user "
+                "I spent around 70 hours playing Elden Ring last month."
+            ),
+            (
+                "longmemeval/28dc39ac/game_1/chunk-0001.md:1-6 (document) -- "
+                "summary=longmemeval_session_id=game_1 role=user "
+                "I spent around 70 hours playing Elden Ring last month."
+            ),
+            (
+                "longmemeval_session_id=game_2 role=user "
+                "I spent around 30 hours playing The Last of Us Part II."
+            ),
+            (
+                "longmemeval/28dc39ac/game_2/chunk-0001.md:1-6 (document) -- "
+                "summary=longmemeval_session_id=game_2 role=user "
+                "I spent around 30 hours playing The Last of Us Part II."
+            ),
+            (
+                "longmemeval_session_id=short_practice role=user "
+                "Last Tuesday I went jogging for 15 minutes and then did yoga for 15 minutes."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert result is not None
+    assert "duration_total_answer=100 hours" in result.content
+    assert "duration_values=70 hours,30 hours" in result.content
+    assert result.packet["answer_candidates"][0]["support_source_ids"] == [
+        "game_1",
+        "game_2",
+    ]
+    short_practice_rows = [
+        row
+        for row in result.packet["ledger_rows"]
+        if row.get("source_group") == "short_practice"
+    ]
+    assert [row["exclude_reason"] for row in short_practice_rows] == [
+        "query_focus_mismatch",
+        "query_focus_mismatch",
+    ]
+    assert [row["normalized_identity"].split("|occurrence=", 1)[1][0] for row in short_practice_rows] == ["0", "1"]
+
+
+def test_month_duration_query_answers_in_months_with_duration_distractors() -> None:
+    """Month-granular duration questions should not collapse into hour totals."""
+    result = retrieval_plan.source_synthesis_bundle_result(
+        query="How many months ago did I reserve the cabin?",
+        source_results=[
+            (
+                "longmemeval_session_id=booking "
+                "user: I reserved the cabin three months before the retreat."
+            ),
+            (
+                "longmemeval_session_id=retreat "
+                "user: The retreat happened two months ago."
+            ),
+            (
+                "longmemeval_session_id=travel "
+                "user: The drive to the cabin took 2 hours and the whole trip lasted 5 days."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert result is not None
+    assert "duration_total_answer=Five months ago" in result.content
+    assert "duration_total_answer=3408 hours" not in result.content
+    assert result.packet["answer_candidates"][0]["answer"] == "Five months ago"
+
+
+def test_month_duration_candidate_suppresses_weaker_relative_anchor() -> None:
+    """Multi-source duration arithmetic should outrank single-source session-date anchors."""
+    result = retrieval_plan.source_synthesis_bundle_result(
+        query="How many months ago did I book the Airbnb in San Francisco?",
+        source_results=[
+            (
+                "query_temporal_anchor=true longmemeval_session_id=query "
+                "longmemeval_session_date=2023/05/27 (query) role=query"
+            ),
+            (
+                "longmemeval_session_id=booking longmemeval_session_date=2023/05/27 (Sat) "
+                "user: I stayed in Haight-Ashbury for my best friend's wedding and had to book "
+                "three months in advance."
+            ),
+            (
+                "longmemeval_session_id=visit longmemeval_session_date=2023/05/27 (Sat) "
+                "user: I've been to SF before, exactly two months ago, for the wedding trip."
+            ),
+            (
+                "longmemeval_session_id=next-month longmemeval_session_date=2023/04/27 (Thu) "
+                "user: I'm planning a trip to San Francisco for next month."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert result is not None
+    assert "duration_total_answer=Five months ago" in result.content
+    assert "relative_temporal_anchor_answer=1 month ago" not in result.content
+    assert result.packet["answer_candidates"][0]["answer"] == "Five months ago"
+
+
+def test_first_month_event_date_bundle_answers_earliest_explicit_event_date() -> None:
+    """Date lookup queries should return the first matching event date in the requested month."""
+    result = retrieval_plan.source_synthesis_bundle_result(
+        query="What was the date on which I attended the first BBQ event in June?",
+        source_results=[
+            (
+                "longmemeval_session_id=bbq_late longmemeval_session_date=2023/07/01 (Sat) "
+                "user: I recently used up my favorite BBQ sauce at my friend's place last Saturday, "
+                "which was on the 17th of June."
+            ),
+            (
+                "longmemeval_session_id=bbq_first longmemeval_session_date=2023/07/01 (Sat) "
+                "user: I attended a backyard BBQ party at my colleague's house on the 3rd of June."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert result is not None
+    assert "query_bound_direct_answer=June 3rd" in result.content
+    assert result.packet["answer_candidates"][0]["answer"] == "June 3rd"
+    rows = [
+        json.loads(line.removeprefix("ledger_row="))
+        for line in result.content.splitlines()
+        if line.startswith("ledger_row=")
+    ]
+    assert any(row.get("include_reason") == "first_month_event_date" for row in rows)
+
+
+def test_interval_source_synthesis_ignores_incidental_duration_totals() -> None:
+    """Calendar interval questions should not sum unrelated duration mentions."""
+    result = retrieval_plan.source_synthesis_bundle_result(
+        query="How many days did it take for me to find a house I loved after starting to work with Rachel?",
+        source_results=[
+            (
+                "longmemeval_session_id=house_search_1 longmemeval_session_date=2022/03/02 (Wed) "
+                "user: I started working with an agent, Rachel, on February 10th and want areas "
+                "within a 30-minute drive from my office."
+            ),
+            (
+                "longmemeval_session_id=house_search_2 longmemeval_session_date=2022/03/02 (Wed) "
+                "user: I found a house I loved on February 24th."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert result is not None
+    assert "date_interval_answer=14 days. 15 days" in result.content
+    assert "minute_values=" not in result.content
+    assert "minute_total_hours=" not in result.content
+    assert "duration_total_answer=" not in result.content
+
+
+def test_source_synthesis_bundle_allows_rich_days_passed_interval_query() -> None:
+    """Rich event names should still route to date interval synthesis."""
+    result = retrieval_plan.source_synthesis_bundle_result(
+        query=(
+            "How many days passed between my visit to the Museum of Modern Art (MoMA) "
+            "and the 'Ancient Civilizations' exhibit at the Metropolitan Museum of Art?"
+        ),
+        source_results=[
+            (
+                "longmemeval_session_id=moma longmemeval_session_date=2023/01/08 (Sun) "
+                "user: I just got back from a guided tour at the Museum of Modern Art "
+                "focused on 20th-century modern art movements."
+            ),
+            (
+                "longmemeval_session_id=met longmemeval_session_date=2023/01/15 (Sun) "
+                "user: I attended the Ancient Civilizations exhibit at the Metropolitan Museum of Art today."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert result is not None
+    assert "candidate_type=date_interval" in result.content
+    assert "date_interval_days=7" in result.content
+    assert "date_interval_answer=7 days. 8 days (including the last day) is also acceptable." in result.content
+    assert result.packet["answer_candidates"][0]["type"] == "date_interval"
+    assert result.packet["answer_candidates"][0]["answer_key"] == "date_interval_answer"
 
 
 def test_query_bound_scalar_total_sums_people_reached_across_platforms() -> None:
@@ -1902,6 +3474,34 @@ def test_query_bound_scalar_total_sums_video_views() -> None:
     assert result.packet["answer_candidates"][0]["answer"] == "1,998"
 
 
+def test_query_bound_scalar_total_sums_social_video_comment_counts() -> None:
+    """Engagement totals should bind comment counts to cited social/video events."""
+    result = retrieval_plan.source_synthesis_bundle_result(
+        query="What is the total number of comments on my Facebook Live session and YouTube video?",
+        source_results=[
+            (
+                "longmemeval_session_id=facebook "
+                "user: My recent Facebook Live session about cooking vegan recipes got 12 comments. "
+                "I also had 9 views on a different post."
+            ),
+            (
+                "longmemeval_session_id=youtube "
+                "user: My most popular video on social media analytics has 21 comments, "
+                "and I wish to do better than that."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert result is not None
+    assert "candidate_type=query_bound_scalar_total" in result.content
+    assert "query_bound_scalar_total_kind=engagement_comments" in result.content
+    assert "query_bound_scalar_total_values=12,21" in result.content
+    assert "query_bound_scalar_total_answer=33" in result.content
+    assert "query_bound_scalar_total_answer=42" not in result.content
+    assert result.packet["answer_candidates"][0]["answer"] == "33"
+
+
 def test_query_bound_scalar_total_sums_road_trip_miles() -> None:
     """Road-trip distance totals should sum cited covered-mile observations."""
     result = retrieval_plan.source_synthesis_bundle_result(
@@ -1955,6 +3555,194 @@ def test_missing_aggregation_target_uses_absence_bundle_before_generic_synthesis
     assert absence is not None
     assert "zaxy_absence_check=true" in absence
     assert "not_mentioned_candidate=ipad" in absence.casefold()
+    assert retrieval_plan.source_synthesis_bundle_result(
+        query=query,
+        source_results=source_results,
+        limit=5,
+    ) is None
+
+
+def test_missing_itemized_money_operand_overrides_sibling_currency_evidence() -> None:
+    """Itemized money questions should not replace a missing operand with nearby amounts."""
+    query = "How much more money did the taxi take compared to the bus?"
+    source_results = [
+        (
+            "longmemeval_session_id=taxi "
+            "user: The taxi to the airport cost $60 because traffic was terrible."
+        ),
+        (
+            "longmemeval_session_id=train "
+            "user: I bought a train ticket for $10 on the way back."
+        ),
+    ]
+
+    absence = retrieval_plan.absence_check_bundle(
+        query=query,
+        source_results=source_results,
+        limit=5,
+    )
+
+    assert absence is not None
+    assert "zaxy_absence_check=true" in absence
+    assert "not_mentioned_candidate=bus" in absence.casefold()
+    assert "You did not mention bus" in absence
+    assert "absence_missing_slot_answer=The information provided is not enough. You mentioned taxi, but did not mention bus." in absence
+    assert "absence_required_operand_answer=The information provided is not enough. You did not mention how much the bus cost." in absence
+    assert retrieval_plan.source_synthesis_bundle_result(
+        query=query,
+        source_results=source_results,
+        limit=5,
+    ) is None
+
+
+def test_missing_conjunctive_count_operand_overrides_sibling_count_evidence() -> None:
+    """Conjunctive count questions should be absence-first when one requested item is missing."""
+    query = "What is the total number of tomato and chili pepper plants I planted?"
+    source_results = [
+        (
+            "longmemeval_session_id=tomatoes "
+            "user: I planted five tomato plants in the raised bed this spring."
+        ),
+        (
+            "longmemeval_session_id=cucumbers "
+            "user: I also planted a cucumber vine and some basil nearby."
+        ),
+    ]
+
+    absence = retrieval_plan.absence_check_bundle(
+        query=query,
+        source_results=source_results,
+        limit=5,
+    )
+
+    assert absence is not None
+    assert "zaxy_absence_check=true" in absence
+    assert "not_mentioned_candidate=chili pepper plants" in absence.casefold()
+    assert "You did not mention chili pepper plants" in absence
+    assert (
+        "absence_missing_slot_answer=The information provided is not enough. "
+        "You mentioned planting five tomato plants, but did not mention chili pepper plants."
+    ) in absence
+    assert retrieval_plan.source_synthesis_bundle_result(
+        query=query,
+        source_results=source_results,
+        limit=5,
+    ) is None
+
+
+def test_missing_conjunctive_count_operand_handles_prepositional_scope_noise() -> None:
+    """Conjunctive count operands should bind item names after scope prepositions."""
+    query = "How many plants did I initially plant for tomatoes and chili peppers?"
+    source_results = [
+        (
+            "longmemeval_session_id=tomatoes "
+            "user: I planted 5 tomato plants initially, and they have been producing well. "
+            "assistant: Try red pepper flakes or chili powder in tomato sauce."
+        ),
+        (
+            "longmemeval_session_id=cucumbers "
+            "user: I have been growing cucumbers nearby and making garden salsa."
+        ),
+    ]
+
+    absence = retrieval_plan.absence_check_bundle(
+        query=query,
+        source_results=source_results,
+        limit=5,
+    )
+
+    assert absence is not None
+    assert "not_mentioned_candidate=chili peppers" in absence.casefold()
+    assert (
+        "absence_missing_slot_answer=The information provided is not enough. "
+        "You mentioned planting 5 tomato plants, but did not mention chili peppers."
+    ) in absence
+    assert retrieval_plan.source_synthesis_bundle_result(
+        query=query,
+        source_results=source_results,
+        limit=5,
+    ) is None
+
+
+def test_checkout_candidate_projection_promotes_absence_over_partial_count() -> None:
+    """Checkout answer candidates should prefer missing-slot answers over partial counts."""
+    query = "How many plants did I initially plant for tomatoes and chili peppers?"
+    absence = "\n".join(
+        [
+            "zaxy_absence_check=true",
+            "synthesis_mode=absence_check",
+            f"query={query}",
+            "not_mentioned_candidate=chili peppers",
+            "support_source_ids=tomatoes,cucumbers",
+            (
+                "absence_missing_slot_answer=The information provided is not enough. "
+                "You mentioned planting 5 tomato plants, but did not mention chili peppers."
+            ),
+        ]
+    )
+    projection = evidence_candidates.checkout_candidate_projection(
+        query,
+        [
+            absence,
+            (
+                "longmemeval_session_id=tomatoes "
+                "user: I planted 5 tomato plants initially, and they have been producing well."
+            ),
+        ],
+    )
+
+    assert projection.answer_candidates
+    assert projection.answer_candidates[0]["type"] == "absence"
+    assert projection.answer_candidates[0]["answer"] == (
+        "The information provided is not enough. "
+        "You mentioned planting 5 tomato plants, but did not mention chili peppers."
+    )
+
+
+def test_contrastive_activity_absence_mentions_present_sibling_evidence() -> None:
+    """Missing activity/object targets should contrast cited sibling memories."""
+    absence = retrieval_plan.absence_check_bundle(
+        query="How much time do I dedicate to practicing violin every day?",
+        source_results=[
+            (
+                "longmemeval_session_id=guitar "
+                "user: I've been practicing guitar for 30 minutes daily, and it has helped me progress."
+            )
+        ],
+        limit=5,
+    )
+
+    assert absence is not None
+    assert "not_mentioned_candidate=violin" in absence
+    assert (
+        "absence_missing_slot_answer=The information provided is not enough. "
+        "You mentioned practicing guitar, but did not mention violin."
+    ) in absence
+
+
+def test_contrastive_collection_absence_suppresses_numeric_sibling_synthesis() -> None:
+    """Collection counts should not answer from a sibling collectible category."""
+    query = "How many autographed football have I added to my collection in the first three months of collection?"
+    source_results = [
+        (
+            "longmemeval_session_id=baseball1 "
+            "user: I just got a signed baseball of his last week, and that's 15 "
+            "autographed baseballs since I started collecting three months ago."
+        ),
+        (
+            "longmemeval_session_id=baseball2 "
+            "user: I've added 20 autographed baseballs to my collection in the past few months."
+        ),
+    ]
+
+    absence = retrieval_plan.absence_check_bundle(query=query, source_results=source_results, limit=5)
+
+    assert absence is not None
+    assert "not_mentioned_candidate=autographed football" in absence
+    assert (
+        "absence_missing_slot_answer=The information provided is not enough. "
+        "You mentioned collecting autographed baseball, but did not mention autographed football."
+    ) in absence
     assert retrieval_plan.source_synthesis_bundle_result(
         query=query,
         source_results=source_results,
