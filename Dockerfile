@@ -25,6 +25,8 @@ FROM python:3.13-slim
 
 WORKDIR /app
 
+ENV ZAXY_ENV=production
+
 # Create non-root user
 RUN groupadd -r zaxy && useradd -r -g zaxy zaxy
 

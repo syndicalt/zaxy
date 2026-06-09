@@ -2430,7 +2430,11 @@ class ZaxyMCPServer:
         max_recent_events: int,
         as_of_seq: int | None = None,
     ) -> dict[str, Any]:
-        replay = self.session_manager.replay(session_id, from_seq=replay_from_seq)
+        replay = self.session_manager.replay(
+            session_id,
+            from_seq=replay_from_seq,
+            verify_integrity=False,
+        )
         events = list(replay.events)
         if as_of_seq is not None:
             events = [event for event in events if event.seq <= as_of_seq]
@@ -2485,7 +2489,10 @@ class ZaxyMCPServer:
 
     def _require_admin(self, arguments: dict[str, Any]) -> None:
         """Require an admin token for destructive or bulk-read tools when configured."""
-        if self._admin_token and arguments.get("admin_token") != self._admin_token:
+        if not self._admin_token:
+            return
+        supplied = str(arguments.get("admin_token") or "")
+        if not hmac.compare_digest(supplied, self._admin_token):
             raise PermissionError("admin_token is required for this tool")
 
     def _session_id_from_arguments(
@@ -2524,11 +2531,9 @@ class ZaxyMCPServer:
         if ref is None:
             return None
         if ref == "HEAD":
-            replay = self.session_manager.replay(session_id, from_seq=1)
-            events = list(replay.events)
-            if not events:
+            latest = self.session_manager.get(session_id).eventlog.last_event()
+            if latest is None:
                 return None
-            latest = events[-1]
             return MemoryRef(
                 name="HEAD",
                 session_id=session_id,

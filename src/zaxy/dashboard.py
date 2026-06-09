@@ -9,7 +9,7 @@ from datetime import date, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import import_module
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any, Mapping, Protocol, cast
 from urllib.parse import parse_qs, urlparse
 
 from zaxy.core import MemoryFabric
@@ -65,6 +65,19 @@ class DashboardScope:
     embedded_graph_path: Path | None = None
     read_only: bool = True
     coordinate_review_enabled: bool = False
+
+
+def _dashboard_origin_allowed(scope: DashboardScope, headers: Mapping[str, str] | None) -> bool:
+    """Return whether a dashboard mutation request came from this dashboard origin."""
+    normalized = {key.lower(): value for key, value in (headers or {}).items()}
+    expected_host = f"{scope.host}:{scope.port}"
+    host = normalized.get("host", "")
+    if host and host != expected_host:
+        return False
+    origin = normalized.get("origin")
+    if origin is None:
+        return True
+    return origin in {f"http://{expected_host}", f"https://{expected_host}"}
 
 
 class DashboardGraphProvider(Protocol):
@@ -1232,9 +1245,13 @@ class DashboardApp:
         query: str,
         *,
         body: str | bytes | None = None,
+        request_headers: Mapping[str, str] | None = None,
     ) -> tuple[int, dict[str, str], dict[str, Any]]:
         """Return a JSON-compatible API response for a dashboard route."""
         headers = {"content-type": "application/json; charset=utf-8"}
+        if method.upper() == "POST" and path.startswith("/api/coordinate/"):
+            if not _dashboard_origin_allowed(self.scope, request_headers):
+                return 403, headers, {"error": "forbidden_origin"}
         if method.upper() == "POST" and path in {"/api/coordinate/review", "/api/coordinate/review-finding"}:
             params = parse_qs(query, keep_blank_values=False)
             return self._coordinate_review_body(params, headers, body=body)
@@ -2323,10 +2340,10 @@ def render_dashboard_html() -> str:
       document.getElementById("memory-activation-warning").textContent = status.memory_activation.status === "ok" ? "" : `${status.memory_activation.message}: ${(status.memory_activation.actions || []).join(" ")}`;
       document.getElementById("status-json").textContent = JSON.stringify(status, null, 2);
       document.getElementById("sessions-body").innerHTML = status.memory.sessions.map((session) => `
-        <tr><td><code>${session.session_id}</code></td><td>${session.event_count}</td><td>${session.latest_type || ""}</td><td>${session.integrity_ok ? "OK" : "FAILED"}</td></tr>
+        <tr><td><code>${escapeHtml(session.session_id)}</code></td><td>${session.event_count}</td><td>${escapeHtml(session.latest_type || "")}</td><td>${session.integrity_ok ? "OK" : "FAILED"}</td></tr>
       `).join("");
       document.getElementById("events-body").innerHTML = events.events.map((event) => `
-        <tr><td><code>${event.session_id}</code></td><td>${event.seq}</td><td>${event.type}</td><td>${event.actor}</td><td>${event.summary || ""}</td></tr>
+        <tr><td><code>${escapeHtml(event.session_id)}</code></td><td>${event.seq}</td><td>${escapeHtml(event.type)}</td><td>${escapeHtml(event.actor)}</td><td>${escapeHtml(event.summary || "")}</td></tr>
       `).join("");
     }
 
@@ -2628,6 +2645,7 @@ def create_dashboard_handler(dashboard_app: DashboardApp) -> type[BaseHTTPReques
                     parsed.path,
                     parsed.query,
                     body=body,
+                    request_headers=dict(self.headers.items()),
                 )
                 self._write_json(status, headers, response)
                 return

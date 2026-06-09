@@ -47,7 +47,7 @@ class SessionManager:
         safe_id = validate_session_id(session_id)
         if safe_id not in self._sessions:
             log_path = eventlog_path(self._base, safe_id)
-            self._sessions[session_id] = Session(
+            self._sessions[safe_id] = Session(
                 session_id=safe_id,
                 eventlog=EventLog(str(log_path)),
             )
@@ -62,7 +62,13 @@ class SessionManager:
         session = self.get(session_id)
         return session.eventlog.handoff_summary()
 
-    def replay(self, session_id: str, from_seq: int = 1) -> Any:
+    def replay(
+        self,
+        session_id: str,
+        from_seq: int = 1,
+        *,
+        verify_integrity: bool = True,
+    ) -> Any:
         """Replay events from a specific session."""
         session = self.get(session_id)
-        return session.eventlog.replay(from_seq=from_seq)
+        return session.eventlog.replay(from_seq=from_seq, verify_integrity=verify_integrity)

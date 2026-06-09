@@ -63,6 +63,13 @@ def test_pyproject_declares_typed_package_and_release_tools() -> None:
     assert "site" in pyproject["tool"]["hatch"]["build"]["targets"]["sdist"]["include"]
 
 
+def test_dockerfile_defaults_to_production_environment() -> None:
+    """Bare docker runs should use production safety checks unless explicitly overridden."""
+    dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
+
+    assert "ENV ZAXY_ENV=production" in dockerfile
+
+
 def test_core_install_includes_embedded_default_backend() -> None:
     """The embedded backend should be part of the core install, not duplicated in an extra."""
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))

@@ -134,6 +134,50 @@ def test_dashboard_status_and_events_use_resolved_eventloom(tmp_path: Path) -> N
     assert len(body["events"]) == 1
 
 
+def test_dashboard_session_and_event_templates_escape_untrusted_fields() -> None:
+    html = render_dashboard_html()
+
+    assert "${escapeHtml(session.session_id)}" in html
+    assert '${escapeHtml(session.latest_type || "")}' in html
+    assert "${escapeHtml(event.session_id)}" in html
+    assert "${escapeHtml(event.type)}" in html
+    assert "${escapeHtml(event.actor)}" in html
+    assert '${escapeHtml(event.summary || "")}' in html
+
+
+def test_dashboard_coordinate_post_rejects_cross_origin_request(tmp_path: Path) -> None:
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    app = DashboardApp(resolve_dashboard_scope(DashboardConfig(workspace=workspace)))
+
+    status, _headers, body = app.handle_api(
+        "POST",
+        "/api/coordinate/apply-approval",
+        "",
+        body=json.dumps({"mission_id": "m1", "decisions": []}),
+        request_headers={"host": "127.0.0.1:8765", "origin": "https://attacker.example"},
+    )
+
+    assert status == 403
+    assert body["error"] == "forbidden_origin"
+
+
+def test_dashboard_coordinate_post_allows_same_origin_request(tmp_path: Path) -> None:
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    app = DashboardApp(resolve_dashboard_scope(DashboardConfig(workspace=workspace)))
+
+    status, _headers, body = app.handle_api(
+        "POST",
+        "/api/coordinate/apply-approval",
+        "",
+        body=json.dumps({"mission_id": "missing", "decisions": []}),
+        request_headers={"host": "127.0.0.1:8765", "origin": "http://127.0.0.1:8765"},
+    )
+
+    assert body["error"] != "forbidden_origin"
+
+
 def test_dashboard_surfaces_memory_persistence_status(tmp_path: Path) -> None:
     workspace = tmp_path / "project"
     workspace.mkdir()
