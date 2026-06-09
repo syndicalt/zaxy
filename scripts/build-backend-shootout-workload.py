@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: E402
 """Materialize a LongMemEval dataset for backend shootout runs."""
 
 from __future__ import annotations
@@ -8,7 +9,9 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(_REPO_ROOT))
+sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 from zaxy_benchmarks.live_benchmark import build_longmemeval_workload
 

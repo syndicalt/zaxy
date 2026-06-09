@@ -32,7 +32,9 @@ try:
 except ImportError:  # pragma: no cover - resource is unavailable on some platforms.
     resource = None  # type: ignore[assignment]
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(_REPO_ROOT))
+sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 if TYPE_CHECKING:
     from zaxy.context import Context
