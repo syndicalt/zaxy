@@ -9,9 +9,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from typer.testing import CliRunner
-
-from zaxy.__main__ import app
-from zaxy.harvey_lab_benchmark import (
+from zaxy_benchmarks.harvey_lab_benchmark import (
     ARTICLE_FRAMEWORK_FIT,
     ARTICLE_TASKS,
     HARVEY_LAB_REPO_URL,
@@ -39,6 +37,8 @@ from zaxy.harvey_lab_benchmark import (
     validate_harvey_lab_report,
     write_harvey_lab_report,
 )
+
+from zaxy.__main__ import app
 
 
 def _zaxy_result(
@@ -6666,7 +6666,7 @@ def test_export_harvey_adapter_kit_writes_drop_in_memory_module(tmp_path: Path) 
     assert written["memory_module"] == str(tmp_path / "raw_rg_memory.py")
     assert "def search(manifest, query, limit=5):" in module
     assert "def read(manifest, item_id, context_lines=8):" in module
-    assert "zaxy.harvey_lab_benchmark" in module
+    assert "zaxy_benchmarks.harvey_lab_benchmark" in module
     assert "HARVEY_MEMORY_MANIFEST" in readme
     assert "zaxy harvey-lab-index" in readme
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from zaxy.rc_benchmark_freeze import (
+from zaxy_benchmarks.rc_benchmark_freeze import (
     build_rc1_benchmark_freeze_report,
     format_rc1_benchmark_freeze_report,
 )
@@ -243,22 +243,22 @@ def _write_rc1_manifest(root: Path) -> None:
                     {
                         "lane": "causal",
                         "claim_scope": "project_defined_internal",
-                        "module": "zaxy.causal_benchmark",
+                        "module": "zaxy_benchmarks.causal_benchmark",
                     },
                     {
                         "lane": "consolidation",
                         "claim_scope": "project_defined_internal",
-                        "module": "zaxy.consolidation_benchmark",
+                        "module": "zaxy_benchmarks.consolidation_benchmark",
                     },
                     {
                         "lane": "procedural",
                         "claim_scope": "project_defined_internal",
-                        "module": "zaxy.reasoning_benchmark",
+                        "module": "zaxy_benchmarks.reasoning_benchmark",
                     },
                     {
                         "lane": "metacognition",
                         "claim_scope": "project_defined_internal",
-                        "module": "zaxy.reasoning_benchmark",
+                        "module": "zaxy_benchmarks.reasoning_benchmark",
                     },
                 ],
                 "project_benchmarks": {

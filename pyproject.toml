@@ -1,6 +1,6 @@
 [project]
 name = "zaxy-memory"
-version = "2.0.0rc1"
+version = "2.0.0"
 description = "Coordinator memory for auditable multi-agent projects"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -119,6 +119,7 @@ include = [
     "scripts",
     "src",
     "tests",
+    "zaxy_benchmarks",
     "pyproject.toml",
     "docker-compose.yml",
     "docker-compose.prod.yml",
@@ -127,6 +128,7 @@ include = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 asyncio_mode = "auto"
 addopts = "-m 'not integration' --cov=zaxy --cov-report=term-missing --cov-fail-under=90"
 markers = [

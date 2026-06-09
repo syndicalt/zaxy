@@ -2,13 +2,13 @@ import json
 from pathlib import Path
 
 from typer.testing import CliRunner
-
-from zaxy.__main__ import app
-from zaxy.purpose_benchmark import (
+from zaxy_benchmarks.purpose_benchmark import (
     PURPOSE_BENCHMARK_LANES,
     purpose_holdout_fingerprint,
     run_purpose_benchmark,
 )
+
+from zaxy.__main__ import app
 
 HOLDOUT_PACK = Path("reports/benchmarks/purpose-v1/holdouts/public-derived-purpose-v1/holdout-pack.json")
 

@@ -7,6 +7,8 @@ returning a context window suitable for injection into an agent prompt.
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import json
 import math
 import re
@@ -146,6 +148,23 @@ class ContextChunk:
     metadata: dict[str, Any] | None = None
 
 
+async def _client_post(
+    client: Any,
+    url: str,
+    *,
+    headers: dict[str, str],
+    json: dict[str, object],
+) -> Any:
+    """Post without blocking the event loop for sync-compatible clients."""
+    post = client.post
+    if inspect.iscoroutinefunction(post):
+        return await post(url, headers=headers, json=json)
+    response = await asyncio.to_thread(post, url, headers=headers, json=json)
+    if inspect.isawaitable(response):
+        return await response
+    return response
+
+
 class LexicalReranker:
     """Deterministic local reranker based on query-token overlap."""
 
@@ -205,10 +224,11 @@ class HTTPReranker:
         self.endpoint = endpoint
         self.api_key = api_key
         self.weight = weight
-        self._client = client or httpx.Client(timeout=30.0)
+        self._client = client or httpx.AsyncClient(timeout=30.0)
 
     async def rerank(self, query: str, results: list[SearchResult], *, limit: int) -> list[SearchResult]:
-        response = self._client.post(
+        response = await _client_post(
+            self._client,
             self.endpoint,
             headers=_auth_headers(self.api_key),
             json={
@@ -251,10 +271,11 @@ class LateInteractionHTTPReranker:
         self.endpoint = endpoint
         self.api_key = api_key
         self.weight = weight
-        self._client = client or httpx.Client(timeout=30.0)
+        self._client = client or httpx.AsyncClient(timeout=30.0)
 
     async def rerank(self, query: str, results: list[SearchResult], *, limit: int) -> list[SearchResult]:
-        response = self._client.post(
+        response = await _client_post(
+            self._client,
             self.endpoint,
             headers=_auth_headers(self.api_key),
             json={
@@ -303,10 +324,11 @@ class OpenAICompatibleReranker:
         self.model = model
         self.base_url = base_url.rstrip("/")
         self.weight = weight
-        self._client = client or httpx.Client(timeout=30.0)
+        self._client = client or httpx.AsyncClient(timeout=30.0)
 
     async def rerank(self, query: str, results: list[SearchResult], *, limit: int) -> list[SearchResult]:
-        response = self._client.post(
+        response = await _client_post(
+            self._client,
             f"{self.base_url}/chat/completions",
             headers=_auth_headers(self.api_key),
             json={

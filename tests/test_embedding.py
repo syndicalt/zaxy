@@ -8,6 +8,7 @@ import types
 import httpx
 import pytest
 
+import zaxy.embedding as embedding_module
 from zaxy.config import Settings
 from zaxy.embedding import (
     HashEmbeddingProvider,
@@ -17,6 +18,7 @@ from zaxy.embedding import (
     _load_sentence_transformer,
     build_embedding_provider,
     embed_extraction,
+    embed_extraction_async,
     entity_embedding_text,
 )
 from zaxy.extract import ExtractedEntity, ExtractionResult
@@ -107,6 +109,32 @@ class TestExtractionEmbedding:
         embedded = embed_extraction(result, provider)
 
         assert embedded.entities[0].embedding == existing
+
+    async def test_embed_extraction_async_uses_async_provider(self) -> None:
+        class AsyncOnlyProvider:
+            def embed(self, text: str) -> list[float]:
+                raise AssertionError("sync embed should not run in async projection paths")
+
+            async def embed_async(self, text: str) -> list[float]:
+                assert text == "Ship MVP (goal) Get product to market"
+                return [0.4, 0.5, 0.6]
+
+        result = ExtractionResult(
+            entities=[
+                ExtractedEntity(
+                    name="Ship MVP",
+                    entity_type="goal",
+                    observed_at="2024-01-01T00:00:00Z",
+                    summary="Get product to market",
+                )
+            ],
+            edges=[],
+            source_event_seq=1,
+        )
+
+        embedded = await embed_extraction_async(result, AsyncOnlyProvider())
+
+        assert embedded.entities[0].embedding == [0.4, 0.5, 0.6]
 
 
 class TestEmbeddingProviderFactory:
@@ -369,6 +397,66 @@ class TestOpenAIEmbeddingProvider:
         assert provider.embed("Ship MVP") == [0.1, 0.2, 0.3]
         assert sleeps == [2.0]
 
+    async def test_embed_async_retries_with_async_sleep(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        calls = 0
+        async_sleeps: list[float] = []
+
+        def fail_sleep(_seconds: float) -> None:
+            raise AssertionError("time.sleep must not run in async provider paths")
+
+        async def fake_async_sleep(seconds: float) -> None:
+            async_sleeps.append(seconds)
+
+        class FakeResponse:
+            def __init__(self, status_code: int) -> None:
+                self.status_code = status_code
+                self.request = httpx.Request("POST", "https://api.openai.com/v1/embeddings")
+                self.headers = {"retry-after": "2"}
+
+            def raise_for_status(self) -> None:
+                if self.status_code >= 400:
+                    raise httpx.HTTPStatusError(
+                        "rate limited",
+                        request=self.request,
+                        response=httpx.Response(
+                            self.status_code,
+                            headers=self.headers,
+                            request=self.request,
+                        ),
+                    )
+
+            def json(self) -> dict[str, object]:
+                return {"data": [{"embedding": [0.1, 0.2, 0.3]}]}
+
+        class FakeAsyncClient:
+            async def post(
+                self,
+                url: str,
+                *,
+                headers: dict[str, str],
+                json: dict[str, object],
+            ) -> FakeResponse:
+                nonlocal calls
+                del url, headers, json
+                calls += 1
+                return FakeResponse(429 if calls == 1 else 200)
+
+        monkeypatch.setattr(embedding_module.time, "sleep", fail_sleep)
+        monkeypatch.setattr(embedding_module.asyncio, "sleep", fake_async_sleep)
+        provider = OpenAIEmbeddingProvider(
+            api_key="test-key",
+            dimension=3,
+            client=FakeAsyncClient(),
+            retry_backoff_seconds=0.1,
+        )
+
+        assert await provider.embed_async("Ship MVP") == [0.1, 0.2, 0.3]
+        assert calls == 2
+        assert async_sleeps == [2.0]
+
     def test_embed_uses_longer_default_rate_limit_backoff(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -485,6 +573,42 @@ class TestLocalHTTPEmbeddingProvider:
         )
 
         assert provider.embed("Ship MVP") == [0.1, 0.2, 0.3]
+
+    async def test_embed_async_posts_to_async_local_endpoint(self) -> None:
+        captured: dict[str, object] = {}
+
+        class FakeResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict[str, object]:
+                return {"embedding": [0.1, 0.2, 0.3]}
+
+        class FakeAsyncClient:
+            async def post(
+                self,
+                url: str,
+                *,
+                headers: dict[str, str],
+                json: dict[str, object],
+            ) -> FakeResponse:
+                captured["url"] = url
+                captured["headers"] = headers
+                captured["json"] = json
+                return FakeResponse()
+
+        provider = LocalHTTPEmbeddingProvider(
+            url="http://localhost:8080/embed",
+            model="bge-small",
+            dimension=3,
+            api_key="local-key",
+            client=FakeAsyncClient(),
+        )
+
+        assert await provider.embed_async("Ship MVP") == [0.1, 0.2, 0.3]
+        assert captured["url"] == "http://localhost:8080/embed"
+        assert captured["headers"] == {"Authorization": "Bearer local-key"}
+        assert captured["json"] == {"input": "Ship MVP", "model": "bge-small"}
 
 
 class TestSentenceTransformersEmbeddingProvider:

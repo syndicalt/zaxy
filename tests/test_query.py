@@ -2342,6 +2342,48 @@ class TestModelRerankers:
         assert body["model"] == "gpt-test"
         assert body["temperature"] == 0
 
+    async def test_openai_compatible_reranker_awaits_async_client(self) -> None:
+        """Hosted reranking should not require sync HTTP calls inside async paths."""
+        captured: dict[str, object] = {}
+
+        class FakeResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict[str, object]:
+                return {"choices": [{"message": {"content": '[{"index": 0, "score": 0.9}]'}}]}
+
+        class FakeAsyncClient:
+            async def post(
+                self,
+                url: str,
+                *,
+                headers: dict[str, str],
+                json: dict[str, object],
+            ) -> FakeResponse:
+                captured["url"] = url
+                captured["headers"] = headers
+                captured["json"] = json
+                return FakeResponse()
+
+        result = SearchResult(
+            entity=GraphEntity(
+                name="Auth decision",
+                entity_type="decision",
+                valid_from="2024-01-01T00:00:00Z",
+                valid_to=None,
+                properties={"summary": "Auth decision rationale"},
+            ),
+            score=0.7,
+            source="keyword",
+        )
+        reranker = OpenAICompatibleReranker(api_key="test-key", client=FakeAsyncClient())
+
+        reranked = await reranker.rerank("auth decision", [result], limit=1)
+
+        assert reranked[0].entity.name == "Auth decision"
+        assert captured["url"] == "https://api.openai.com/v1/chat/completions"
+
     async def test_http_reranker_promotes_scores_from_local_endpoint(self) -> None:
         """Local HTTP rerankers should accept endpoint scores without network in tests."""
         captured: dict[str, object] = {}
@@ -2403,6 +2445,48 @@ class TestModelRerankers:
         assert reranked[0].rerank_strategy == "cross_encoder"
         assert captured["url"] == "http://localhost:11434/rerank"
         assert captured["headers"] == {"Authorization": "Bearer local-key"}
+
+    async def test_http_reranker_awaits_async_client(self) -> None:
+        """Local HTTP reranking should support non-blocking async clients."""
+        captured: dict[str, object] = {}
+
+        class FakeResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict[str, object]:
+                return {"scores": [0.8]}
+
+        class FakeAsyncClient:
+            async def post(
+                self,
+                url: str,
+                *,
+                headers: dict[str, str],
+                json: dict[str, object],
+            ) -> FakeResponse:
+                captured["url"] = url
+                captured["headers"] = headers
+                captured["json"] = json
+                return FakeResponse()
+
+        result = SearchResult(
+            entity=GraphEntity(
+                name="Auth decision",
+                entity_type="decision",
+                valid_from="2024-01-01T00:00:00Z",
+                valid_to=None,
+                properties={},
+            ),
+            score=0.7,
+            source="keyword",
+        )
+        reranker = HTTPReranker(endpoint="http://localhost:11434/rerank", client=FakeAsyncClient())
+
+        reranked = await reranker.rerank("auth decision", [result], limit=1)
+
+        assert reranked[0].reranker == "http"
+        assert captured["url"] == "http://localhost:11434/rerank"
 
     async def test_late_interaction_http_reranker_sends_tokenized_candidates(self) -> None:
         """Late-interaction rerankers should expose token-alignment inputs and metadata."""

@@ -10,13 +10,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from typer.testing import CliRunner
-
-from zaxy.__main__ import _parse_benchmark_baselines, app
-from zaxy.benchmark import build_competitive_event_log, competitive_cases
-from zaxy.embedding import HashEmbeddingProvider
-from zaxy.event import EventLog
-from zaxy.graph import GraphEventProjectionStatus
-from zaxy.live_benchmark import (
+from zaxy_benchmarks.benchmark import build_competitive_event_log, competitive_cases
+from zaxy_benchmarks.live_benchmark import (
     CONSOLIDATION_WORKLOAD_VERSION,
     CONTEXT_COLLAPSE_WORKLOAD_VERSION,
     FROZEN_WORKLOAD_SUBJECTS,
@@ -73,6 +68,11 @@ from zaxy.live_benchmark import (
     workload_fingerprint,
     write_benchmark_report,
 )
+
+from zaxy.__main__ import _parse_benchmark_baselines, app
+from zaxy.embedding import HashEmbeddingProvider
+from zaxy.event import EventLog
+from zaxy.graph import GraphEventProjectionStatus
 from zaxy.projection_backends import ProjectionBackendConfig
 from zaxy.query import ContextChunk
 from zaxy.retrieval_intent import classify_retrieval_intent
@@ -1391,7 +1391,7 @@ async def test_build_live_zaxy_retriever_can_use_projection_backend_factory(tmp_
 
     store = FakeProjectionStore()
 
-    with patch("zaxy.live_benchmark.build_projection_store", return_value=store) as factory:
+    with patch("zaxy_benchmarks.live_benchmark.build_projection_store", return_value=store) as factory:
         retriever, returned_store = await build_live_zaxy_retriever(
             log,
             HashEmbeddingProvider(dimension=8),
@@ -1487,7 +1487,7 @@ async def test_build_live_zaxy_retriever_reuses_current_non_neo4j_projection(tmp
 
     store = FakeProjectionStore()
 
-    with patch("zaxy.live_benchmark.build_projection_store", return_value=store):
+    with patch("zaxy_benchmarks.live_benchmark.build_projection_store", return_value=store):
         _retriever, returned_store = await build_live_zaxy_retriever(
             log,
             HashEmbeddingProvider(dimension=8),
@@ -1582,7 +1582,7 @@ async def test_build_live_zaxy_retriever_reuses_non_neo4j_projection_with_regene
 
     store = FakeProjectionStore()
 
-    with patch("zaxy.live_benchmark.build_projection_store", return_value=store):
+    with patch("zaxy_benchmarks.live_benchmark.build_projection_store", return_value=store):
         await build_live_zaxy_retriever(
             log,
             HashEmbeddingProvider(dimension=8),
@@ -1656,7 +1656,7 @@ async def test_build_live_zaxy_retriever_marks_non_neo4j_projection_after_ingest
 
     store = FakeProjectionStore()
 
-    with patch("zaxy.live_benchmark.build_projection_store", return_value=store):
+    with patch("zaxy_benchmarks.live_benchmark.build_projection_store", return_value=store):
         await build_live_zaxy_retriever(
             log,
             HashEmbeddingProvider(dimension=8),
@@ -1752,7 +1752,7 @@ async def test_build_live_zaxy_retriever_refuses_to_overwrite_mismatched_reuse_p
 
     store = FakeProjectionStore()
 
-    with patch("zaxy.live_benchmark.build_projection_store", return_value=store):
+    with patch("zaxy_benchmarks.live_benchmark.build_projection_store", return_value=store):
         try:
             await build_live_zaxy_retriever(
                 log,
@@ -1827,7 +1827,7 @@ async def test_build_live_zaxy_retriever_can_reset_non_neo4j_projection_backend(
 
     store = FakeProjectionStore()
 
-    with patch("zaxy.live_benchmark.build_projection_store", return_value=store):
+    with patch("zaxy_benchmarks.live_benchmark.build_projection_store", return_value=store):
         _retriever, returned_store = await build_live_zaxy_retriever(
             log,
             HashEmbeddingProvider(dimension=8),

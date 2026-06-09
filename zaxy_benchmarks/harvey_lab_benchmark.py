@@ -208,7 +208,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from zaxy.harvey_lab_benchmark import (
+from zaxy_benchmarks.harvey_lab_benchmark import (
     build_harvey_zaxy_memory_index,
     harvey_memory_read,
     harvey_memory_search,

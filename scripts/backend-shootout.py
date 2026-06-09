@@ -32,7 +32,9 @@ try:
 except ImportError:  # pragma: no cover - resource is unavailable on some platforms.
     resource = None  # type: ignore[assignment]
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(_REPO_ROOT))
+sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 if TYPE_CHECKING:
     from zaxy.context import Context
@@ -882,7 +884,7 @@ def _terms(text: str) -> list[str]:
 
 
 def _expected_term_quality(text: str, expected_terms: tuple[str, ...]) -> float:
-    from zaxy.benchmark import BenchmarkCase, expected_terms_recall
+    from zaxy_benchmarks.benchmark import BenchmarkCase, expected_terms_recall
 
     if not expected_terms:
         return 1.0

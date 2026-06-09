@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
 from zaxy.event import EventLog
+from zaxy.event_context import event_context
 
 
 @dataclass(frozen=True)
@@ -501,24 +501,7 @@ def _parenthetical_acronym_present(term: str, haystack: str) -> bool:
 
 def _event_context(event: dict[str, object]) -> str:
     """Format an event as a compact flat-baseline context chunk."""
-    payload = event.get("payload")
-    payload_text = ""
-    if isinstance(payload, dict):
-        parts = [f"{key}={value}" for key, value in sorted(payload.items())]
-        if "key" in payload and "value" in payload:
-            parts.append(f"{payload['key']}={payload['value']}")
-        payload_text = " ".join(parts)
-    return " ".join(
-        part
-        for part in [
-            str(event.get("timestamp", "")),
-            str(event.get("type", "")),
-            str(event.get("actor", "")),
-            payload_text,
-            json.dumps(payload, sort_keys=True) if isinstance(payload, dict) else "",
-        ]
-        if part
-    )
+    return event_context(event)
 
 
 def _tokens(query: str) -> list[str]:

@@ -295,9 +295,7 @@ class EmbeddedGraphStore:
     async def upsert_extraction(self, result: ExtractionResult, session_id: str = "default") -> None:
         """Project an extracted Eventloom event."""
         conn = self._require_connection()
-        self._clear_read_caches(session_id)
-        if self._bulk_projection_open:
-            self._dirty_bulk_sessions.add(session_id)
+        projected_indexed_content = False
         conn.execute(
             """
             MERGE (ev:Event {event_key: $event_key})
@@ -344,6 +342,7 @@ class EmbeddedGraphStore:
             )
             if active_entity is not None and active_entity[1] == entity.summary and active_entity[2] == properties_json:
                 continue
+            projected_indexed_content = True
             if active_entity is not None:
                 conn.execute(
                     """
@@ -400,6 +399,7 @@ class EmbeddedGraphStore:
             target_key = self._active_node_key(session_id, target_type, edge.target)
             if source_key is None or target_key is None:
                 continue
+            projected_indexed_content = True
             conn.execute(
                 """
                 MATCH (source:Entity {node_key: $source_key}), (target:Entity {node_key: $target_key})
@@ -429,6 +429,10 @@ class EmbeddedGraphStore:
                     "evidence_json": json.dumps(edge.evidence, sort_keys=True),
                 },
             )
+        if projected_indexed_content:
+            self._clear_read_caches(session_id)
+            if self._bulk_projection_open:
+                self._dirty_bulk_sessions.add(session_id)
 
     async def search_exact(
         self,

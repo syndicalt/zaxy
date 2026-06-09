@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from zaxy.benchmark import BenchmarkCase, expected_terms_recall
+from zaxy_benchmarks.benchmark import BenchmarkCase, expected_terms_recall
+
 from zaxy.checkout import (
     _compact_synthesis_summary,
     _merge_answer_candidates,

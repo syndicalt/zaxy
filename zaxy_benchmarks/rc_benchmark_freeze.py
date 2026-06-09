@@ -586,25 +586,25 @@ def _internal_lanes(
             "lane": "causal",
             "claim_scope": INTERNAL_LANE_SCOPE,
             "evidence_kind": "contract_scorer",
-            "module": "zaxy.causal_benchmark",
+            "module": "zaxy_benchmarks.causal_benchmark",
         },
         "consolidation": {
             "lane": "consolidation",
             "claim_scope": INTERNAL_LANE_SCOPE,
             "evidence_kind": "contract_scorer",
-            "module": "zaxy.consolidation_benchmark",
+            "module": "zaxy_benchmarks.consolidation_benchmark",
         },
         "procedural": {
             "lane": "procedural",
             "claim_scope": INTERNAL_LANE_SCOPE,
             "evidence_kind": "contract_scorer",
-            "module": "zaxy.reasoning_benchmark",
+            "module": "zaxy_benchmarks.reasoning_benchmark",
         },
         "metacognition": {
             "lane": "metacognition",
             "claim_scope": INTERNAL_LANE_SCOPE,
             "evidence_kind": "contract_scorer",
-            "module": "zaxy.reasoning_benchmark",
+            "module": "zaxy_benchmarks.reasoning_benchmark",
         },
     }
     manifest_lanes = manifest.get("internal_lanes")

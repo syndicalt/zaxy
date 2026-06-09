@@ -61,6 +61,21 @@ class TestSessionManagerGet:
         s2 = mgr.get("agent-1")
         assert s1 is s2
 
+    def test_get_stores_session_under_validated_id(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_base: str
+    ) -> None:
+        """Session cache keys should use the validated ID, not the raw input."""
+        import zaxy.session as session_module
+
+        monkeypatch.setattr(session_module, "validate_session_id", lambda value: value.strip())
+        mgr = SessionManager(base_path=tmp_base)
+
+        session = mgr.get(" agent-1 ")
+
+        assert session.session_id == "agent-1"
+        assert mgr.get("agent-1") is session
+        assert mgr.list_sessions() == ["agent-1"]
+
     def test_isolates_sessions(self, tmp_base: str) -> None:
         """Different session IDs should get different EventLogs."""
         mgr = SessionManager(base_path=tmp_base)
@@ -130,3 +145,14 @@ class TestSessionManagerReplay:
         result = mgr.replay("agent-1", from_seq=2)
         assert len(result.events) == 1
         assert result.events[0].type == "task.proposed"
+
+    def test_replay_can_skip_integrity(self, tmp_base: str) -> None:
+        """Session replay should pass through EventLog integrity controls."""
+        mgr = SessionManager(base_path=tmp_base)
+        session = mgr.get("agent-1")
+        session.eventlog.append("goal.created", "user", {"title": "t1"})
+
+        result = mgr.replay("agent-1", from_seq=1, verify_integrity=False)
+
+        assert len(result.events) == 1
+        assert result.integrity is None

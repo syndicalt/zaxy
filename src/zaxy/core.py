@@ -2203,11 +2203,9 @@ class MemoryFabric:
         if ref is None:
             return None
         if ref == "HEAD":
-            replay = self.session_manager.replay(session_id, from_seq=1)
-            events = list(replay.events)
-            if not events:
+            latest = self.session_manager.get(session_id).eventlog.last_event()
+            if latest is None:
                 return None
-            latest = events[-1]
             return MemoryRef(
                 name="HEAD",
                 session_id=session_id,

@@ -245,6 +245,19 @@ class TestToolSchema:
             "coordination_proof_trace",
         }
 
+
+def test_mcp_admin_token_gate_accepts_exact_token(server: ZaxyMCPServer) -> None:
+    server._admin_token = "secret-admin-token"
+
+    server._require_admin({"admin_token": "secret-admin-token"})
+
+
+def test_mcp_admin_token_gate_rejects_wrong_token(server: ZaxyMCPServer) -> None:
+    server._admin_token = "secret-admin-token"
+
+    with pytest.raises(PermissionError, match="admin_token"):
+        server._require_admin({"admin_token": "wrong"})
+
     def test_v06_mcp_tool_contract_matches_snapshot(self) -> None:
         """The public MCP tool surface should stay protected by a canonical snapshot."""
         snapshot_path = Path("docs/examples/mcp-tool-contract.json")
@@ -3084,7 +3097,44 @@ class TestContextLifecycleTools:
 
         output = json_loads(result[0].text)
         assert output["session_id"] == "zaxy-default"
-        server.session_manager.replay.assert_called_with("zaxy-default", from_seq=1)
+        server.session_manager.replay.assert_called_with(
+            "zaxy-default",
+            from_seq=1,
+            verify_integrity=False,
+        )
+
+    async def test_memory_checkout_head_uses_tail_event(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """HEAD refs should resolve from the Eventloom tail instead of full replay."""
+        latest = MagicMock(
+            seq=7,
+            hash="b" * 64,
+            timestamp="2026-06-09T12:00:00Z",
+        )
+        server.session_manager.get.return_value.eventlog.last_event.return_value = latest
+        server.session_manager.replay.return_value = MagicMock(events=[])
+        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
+            router = AsyncMock()
+            router.query.return_value = []
+            mock_router_cls.return_value = router
+
+            result = await server.handle_memory_checkout({
+                "query": "current state",
+                "session_id": "agent-1",
+                "ref": "HEAD",
+            })
+
+        output = json_loads(result[0].text)
+        assert output["ref"]["name"] == "HEAD"
+        assert output["ref"]["target_seq"] == 7
+        server.session_manager.get.return_value.eventlog.last_event.assert_called_once_with()
+        server.session_manager.replay.assert_called_once_with(
+            "agent-1",
+            from_seq=1,
+            verify_integrity=False,
+        )
 
     async def test_context_after_turn_appends_and_assembles(self, server: ZaxyMCPServer) -> None:
         """context_after_turn should persist the latest turn before assembly."""

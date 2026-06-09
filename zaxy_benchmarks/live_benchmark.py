@@ -17,13 +17,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
-from zaxy.benchmark import (
-    BenchmarkCase,
-    RetrievalScore,
-    _event_context,
-    expected_terms_recall,
-    score_retrieval,
-)
 from zaxy.config import get_settings
 from zaxy.context import Context
 from zaxy.core import ContextAssembly, build_memory_checkout
@@ -53,6 +46,13 @@ from zaxy.retrieval_plan import (
     source_tokens,
 )
 from zaxy.synthesis import build_synthesis_plan, quantity_total_query
+from zaxy_benchmarks.benchmark import (
+    BenchmarkCase,
+    RetrievalScore,
+    _event_context,
+    expected_terms_recall,
+    score_retrieval,
+)
 
 FROZEN_WORKLOAD_VERSION = "statistical-v1"
 FROZEN_WORKLOAD_SUBJECTS = 100

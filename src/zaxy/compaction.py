@@ -11,9 +11,9 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from zaxy.benchmark import _event_context
 from zaxy.embedding import EmbeddingProvider, HashEmbeddingProvider
 from zaxy.event import Event, EventLog
+from zaxy.event_context import event_context
 from zaxy.purpose import PurposeProfile, purpose_profile
 
 _IDENTITY_RE = re.compile(r"\b(?:identity|doc|decision|task|user|goal)-code-\d{4}\b")
@@ -182,7 +182,7 @@ def audit_event_log(
     )
     citation_coverage = _citation_coverage(events)
     spread = _mean_within_cluster_distance(
-        [_event_context(event.model_dump()) for event in events],
+        [event_context(event.model_dump()) for event in events],
         provider,
     )
     unsafe_reasons = _unsafe_reasons(
@@ -435,7 +435,7 @@ def _projection_record(
         kind=kind,
         event_seq=event.seq,
         event_ref=_event_ref(event),
-        text=_event_context(event.model_dump()),
+        text=event_context(event.model_dump()),
         identities=identities,
         citations=tuple(identity for identity in identities if _is_source_citation(identity)),
         authority_scope=authority_scope,
@@ -613,7 +613,7 @@ def _select_medoid(events: list[Event], provider: EmbeddingProvider) -> Event | 
         return None
     if len(events) == 1:
         return events[0]
-    texts = [_event_context(event.model_dump()) for event in events]
+    texts = [event_context(event.model_dump()) for event in events]
     embeddings = [provider.embed(text) for text in texts]
     best_index = 0
     best_distance = float("inf")
@@ -644,14 +644,14 @@ def _select_exemplars(
         remaining.remove(medoid)
     while remaining and len(selected) < max_records:
         selected_embeddings = [
-            provider.embed(_event_context(event.model_dump()))
+            provider.embed(event_context(event.model_dump()))
             for event in selected
         ]
         best_event = max(
             remaining,
             key=lambda event: min(
                 1.0 - _cosine(
-                    provider.embed(_event_context(event.model_dump())),
+                    provider.embed(event_context(event.model_dump())),
                     selected_embedding,
                 )
                 for selected_embedding in selected_embeddings
@@ -682,7 +682,7 @@ def _representative_text(events: list[Event]) -> str:
     if not events:
         return ""
     event = events[0]
-    return "\n".join([_event_context(event.model_dump()), *_event_identities(event)])
+    return "\n".join([event_context(event.model_dump()), *_event_identities(event)])
 
 
 def _event_ref(event: Event) -> str:

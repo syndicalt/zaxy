@@ -809,6 +809,107 @@ async def test_embedded_store_warm_session_populates_read_indexes(tmp_path: Path
 
 
 @pytest.mark.asyncio
+async def test_upsert_extraction_preserves_read_caches_for_event_only_projection(tmp_path: Path) -> None:
+    """Event-only lifecycle projection should preserve entity/search read caches."""
+    store = EmbeddedGraphStore(tmp_path / "embedded.kuzu")
+    await store.connect()
+    await store.init_schema()
+
+    await store.upsert_extraction(
+        ExtractionResult(
+            entities=[],
+            edges=[],
+            source_event_seq=1,
+            source_event_hash="hash-1",
+            source_event_prev_hash=None,
+        ),
+        session_id="agent-1",
+    )
+    store._current_entity_index_cache["agent-1"] = []
+    store._current_entity_lookup_cache["agent-1"] = {}
+    store._keyword_index_cache["agent-1"] = embedded_graph_store._KeywordIndex([], [], {}, {}, [])
+    store._vector_index_cache[("agent-1", None)] = embedded_graph_store._VectorIndex([], [], {}, [])
+    store._traversal_index_cache["agent-1"] = embedded_graph_store._TraversalIndex({}, {})
+
+    await store.upsert_extraction(
+        ExtractionResult(
+            entities=[],
+            edges=[],
+            source_event_seq=2,
+            source_event_hash="hash-2",
+            source_event_prev_hash="hash-1",
+        ),
+        session_id="agent-1",
+    )
+
+    assert "agent-1" in store._current_entity_index_cache
+    assert "agent-1" in store._current_entity_lookup_cache
+    assert "agent-1" in store._keyword_index_cache
+    assert ("agent-1", None) in store._vector_index_cache
+    assert "agent-1" in store._traversal_index_cache
+    status = await store.inspect_event_projection_status(
+        "agent-1",
+        eventloom_latest_seq=2,
+        eventloom_latest_hash="hash-2",
+    )
+    assert status.event_count == 2
+    assert status.next_event_edges == 1
+    assert status.previous_event_edges == 1
+    await store.close()
+
+
+@pytest.mark.asyncio
+async def test_upsert_extraction_preserves_read_caches_for_noop_entity_projection(tmp_path: Path) -> None:
+    """Reasserting an unchanged entity should project the Event without cache churn."""
+    store = EmbeddedGraphStore(tmp_path / "embedded.kuzu")
+    await store.connect()
+    await store.init_schema()
+
+    entity = ExtractedEntity(
+        name="Stable Goal",
+        entity_type="goal",
+        observed_at="2026-05-20T01:00:00Z",
+        summary="unchanged",
+    )
+    await store.upsert_extraction(
+        ExtractionResult(
+            entities=[entity],
+            edges=[],
+            source_event_seq=1,
+            source_event_hash="hash-1",
+            source_event_prev_hash=None,
+        ),
+        session_id="agent-1",
+    )
+    await store.warm_session(session_id="agent-1")
+
+    await store.upsert_extraction(
+        ExtractionResult(
+            entities=[entity],
+            edges=[],
+            source_event_seq=2,
+            source_event_hash="hash-2",
+            source_event_prev_hash="hash-1",
+        ),
+        session_id="agent-1",
+    )
+
+    assert "agent-1" in store._current_entity_index_cache
+    assert "agent-1" in store._current_entity_lookup_cache
+    assert "agent-1" in store._keyword_index_cache
+    assert ("agent-1", None) in store._vector_index_cache
+    assert "agent-1" in store._traversal_index_cache
+    status = await store.inspect_event_projection_status(
+        "agent-1",
+        eventloom_latest_seq=2,
+        eventloom_latest_hash="hash-2",
+    )
+    assert status.event_count == 2
+    assert status.next_event_edges == 1
+    await store.close()
+
+
+@pytest.mark.asyncio
 async def test_embedded_store_has_traversal_edges_uses_warmed_index(
     tmp_path: Path,
     monkeypatch,
