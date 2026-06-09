@@ -29,7 +29,6 @@ import shlex
 import subprocess
 import tempfile
 import time
-import tomllib
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import asdict
@@ -3926,6 +3925,8 @@ def _codex_user_config_path_for_cli(codex_home: Path | None) -> Path:
 
 
 def _codex_user_config_has_zaxy_entry(config_path: Path) -> bool:
+    import tomllib
+
     try:
         document = tomllib.loads(config_path.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError):
@@ -3940,6 +3941,8 @@ def _codex_user_config_accepts_auto_install(
     zaxy_executable: str | None,
 ) -> bool:
     """Return whether auto mode can merge Zaxy into Codex config without overwrite."""
+    import tomllib
+
     try:
         document = tomllib.loads(config_path.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError):

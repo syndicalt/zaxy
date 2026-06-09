@@ -25,6 +25,7 @@ from zaxy.synthesis import (
     format_currency,
     source_tokens,
     synthesis_operation_for_plan,
+    temporal_sequence_first_person_phrase,
     temporal_sequence_query,
 )
 
@@ -1743,6 +1744,11 @@ def _ledger_row_payloads(ledger: EvidenceLedger) -> list[dict[str, Any]]:
 
 
 def _ledger_row_payload(row: EvidenceLedgerRow) -> dict[str, Any]:
+    label = row.label
+    if row.kind == "temporal_event":
+        phrase = temporal_sequence_first_person_phrase(row.label, row.context)
+        if phrase.startswith("I "):
+            label = phrase[2:]
     payload: dict[str, Any] = {
         "fact_id": row.fact_id,
         "source_group": row.source_group,
@@ -1750,7 +1756,7 @@ def _ledger_row_payload(row: EvidenceLedgerRow) -> dict[str, Any]:
         "kind": row.kind,
         "value": row.value,
         "unit": row.unit,
-        "label": row.label,
+        "label": label,
         "raw_span": row.raw_span,
         "normalized_identity": row.normalized_identity,
         "include_reason": row.include_reason,

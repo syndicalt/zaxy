@@ -2056,7 +2056,7 @@ def build_temporal_sequence_ledger(query: str, contexts: list[str], *, plan: Syn
             if len(token) > 2 and token not in _TEMPORAL_SEQUENCE_STOPWORDS and not token.isdigit()
         ),
         required_kinds=("temporal_event",),
-        required_source_groups=max(2, required_events or 0),
+        required_source_groups=2,
         reasons=("temporal_sequence",),
     )
     if not temporal_sequence_query(query):
@@ -2099,7 +2099,10 @@ def build_temporal_sequence_ledger(query: str, contexts: list[str], *, plan: Syn
             provisional.append((order_value, provenance_index, context_index, row))
     provisional.sort(key=lambda item: (item[0], item[1], item[2]))
     rows = temporal_sequence_deduped_rows([row for _, _, _, row in provisional])
-    rows = temporal_sequence_exclude_unanchored_when_answerable(rows, required_events=plan.required_source_groups)
+    rows = temporal_sequence_exclude_unanchored_when_answerable(
+        rows,
+        required_events=max(2, required_events or 0),
+    )
     return EvidenceLedger(plan=plan, rows=tuple(rows))
 
 
@@ -2118,6 +2121,8 @@ def render_temporal_sequence_result(ledger: EvidenceLedger, *, rank: int) -> Syn
         support=support,
     )
     lines.append(f"temporal_sequence_answer={answer}")
+    if (first_person_answer := temporal_sequence_first_person_answer(candidates)) and first_person_answer != answer:
+        lines.append(f"temporal_sequence_answer={first_person_answer}")
     for index, row in enumerate(candidates, start=1):
         lines.append(
             f"temporal_sequence_rank={index} order_value={row.value} candidate={row.label}"
@@ -2233,6 +2238,48 @@ def temporal_sequence_answer_text(labels: tuple[str, ...]) -> str:
             marker = "Then"
         sentences.append(f"{marker}, {temporal_sequence_answer_phrase(label)}.")
     return " ".join(sentences)
+
+
+def temporal_sequence_first_person_answer(rows: tuple[EvidenceLedgerRow, ...]) -> str:
+    """Render an action-form sequence when every cited row exposes a local verb."""
+    phrases: list[str] = []
+    for row in rows:
+        phrase = temporal_sequence_first_person_phrase(row.label, row.context)
+        if not phrase:
+            return ""
+        phrases.append(phrase)
+    return temporal_sequence_answer_text(tuple(phrases))
+
+
+def temporal_sequence_first_person_phrase(label: str, context: str) -> str:
+    """Return the first-person action phrase supported by a row's local evidence."""
+    escaped = re.escape(label)
+    action_patterns = (
+        ("went on", rf"\bwent\s+on\s+(?P<article>a|an|the)?\s*{escaped}\b"),
+        ("got back from", rf"\bgot\s+back\s+from\s+(?P<article>a|an|the)?\s*{escaped}\b"),
+        ("returned from", rf"\breturned\s+from\s+(?P<article>a|an|the)?\s*{escaped}\b"),
+        ("started", rf"\bstarted\s+(?P<article>a|an|the)?\s*{escaped}\b"),
+    )
+    for action, pattern in action_patterns:
+        if match := re.search(pattern, context, flags=re.IGNORECASE):
+            article = match.group("article") or ""
+            article_prefix = f"{article.lower()} " if article else ""
+            if action == "started":
+                return f"I started {article_prefix}{label}"
+            return f"I {action} {article_prefix}{label}"
+    if (sports_phrase := temporal_sequence_sports_answer_phrase(label)) and re.search(
+        re.escape(label),
+        context,
+        flags=re.IGNORECASE,
+    ):
+        return sports_phrase
+    if re.search(rf"\bparticipate(?:d)?\s+in\s+(?:the\s+)?{escaped}\b", context, flags=re.IGNORECASE):
+        return f"I participated in {label}"
+    if re.search(rf"\bcompleted\s+(?:the\s+)?{escaped}\b", context, flags=re.IGNORECASE):
+        return f"I completed {label}"
+    if re.search(rf"\bfinished\b[^.!?;,]{{0,80}}\bat\s+(?:the\s+)?{escaped}\b", context, flags=re.IGNORECASE):
+        return f"I finished {label}"
+    return temporal_sequence_answer_phrase(label)
 
 
 def temporal_sequence_named_graduation_answer(labels: tuple[str, ...]) -> str:
@@ -5492,9 +5539,9 @@ def temporal_sequence_candidates_from_sentence(query_tokens: set[str], sentence:
     graduation_query = bool(query_tokens & {"graduated", "graduation", "graduate"})
     if graduation_query:
         candidates.extend(temporal_sequence_graduation_candidates(sentence))
-    if query_tokens & {"museum", "museums", "gallery", "galleries"} and (
-        venue_label := temporal_sequence_venue_label(sentence)
-    ):
+    venue_query = bool(query_tokens & {"museum", "museums", "gallery", "galleries"})
+    venue_label = temporal_sequence_venue_label(sentence) if venue_query else ""
+    if venue_label:
         candidates.append((venue_label, sentence))
     airline_query = bool(query_tokens & {"airline", "airlines", "flew", "flight", "flights"})
     if airline_query:
@@ -5507,9 +5554,9 @@ def temporal_sequence_candidates_from_sentence(query_tokens: set[str], sentence:
             if label:
                 candidates.append((label, _temporal_sequence_match_evidence(sentence, match)))
     patterns = (
-        ("got back from ", r"\bI\s+(?:just\s+|recently\s+|also\s+)?got\s+back\s+from\s+(?P<label>[^.!?;,]{3,140})"),
-        ("returned from ", r"\bI\s+(?:just\s+|recently\s+|also\s+)?returned\s+from\s+(?P<label>[^.!?;,]{3,140})"),
-        ("went on ", r"\bI\s+(?:just\s+|recently\s+|also\s+)?went\s+on\s+(?P<label>[^.!?;,]{3,140})"),
+        ("", r"\bI\s+(?:just\s+|recently\s+|also\s+)?got\s+back\s+from\s+(?P<label>[^.!?;,]{3,140})"),
+        ("", r"\bI\s+(?:just\s+|recently\s+|also\s+)?returned\s+from\s+(?P<label>[^.!?;,]{3,140})"),
+        ("", r"\bI\s+(?:just\s+|recently\s+|also\s+)?went\s+on\s+(?P<label>[^.!?;,]{3,140})"),
         ("took ", r"\bI\s+(?:just\s+|recently\s+|also\s+)?took\s+(?P<label>[^.!?;,]{3,140})"),
         ("watched ", r"\bI\s+(?:just\s+|recently\s+|also\s+)?watched\s+(?P<label>[^.!?;,]{3,140})"),
         ("attended ", r"\bI\s+(?:just\s+|recently\s+|also\s+)?attended\s+(?P<label>[^.!?;,]{3,140})"),
@@ -5522,7 +5569,7 @@ def temporal_sequence_candidates_from_sentence(query_tokens: set[str], sentence:
         ("", r"\bI\s+(?:just\s+|recently\s+|also\s+)?(?P<label>signed\s+up\s+for\s+[^.!?;,]{3,140})"),
         ("", r"\bI\s+(?:just\s+|recently\s+|also\s+)?visited\s+(?P<label>[^.!?;,]{3,140})"),
     )
-    if not graduation_query and not sports_candidates:
+    if not graduation_query and not sports_candidates and not venue_label:
         candidates.extend(_temporal_sequence_pattern_candidates(patterns, sentence))
     query_focus = query_tokens - _TEMPORAL_SEQUENCE_STOPWORDS
     deduped: dict[str, tuple[int, str, str]] = {}
@@ -6556,7 +6603,7 @@ def _duration_total_query(query: str) -> bool:
 
 def _duration_row_is_activity_total(row: EvidenceLedgerRow) -> bool:
     terms = set(source_tokens(row.context))
-    return bool(terms & {"logged", "played", "playing", "practiced", "spent", "worked"})
+    return bool(terms & {"completed", "logged", "played", "playing", "practiced", "spent", "worked"})
 
 
 def _duration_row_uses_query_primary_unit(query: str, row: EvidenceLedgerRow) -> bool:

@@ -3,14 +3,28 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
+import socket
+import threading
 from collections.abc import Iterator
 from pathlib import Path
 
 import httpx
+import pytest
 
 from zaxy.event import EventLog
-from zaxy.packet_analyzer import LlmPacketAnalyzer, PacketAnalyzerConfig
+from zaxy.packet_analyzer import (
+    LlmPacketAnalyzer,
+    PacketAnalyzerConfig,
+    PacketStreamResponse,
+    _captured_headers,
+    _json_body,
+    _model_from_packet,
+    _response_headers,
+    _usage_counts_from_response,
+    run_packet_analyzer,
+)
 
 
 class ChunkedStream(httpx.SyncByteStream):
@@ -116,6 +130,159 @@ def test_packet_analyzer_records_upstream_errors(tmp_path: Path) -> None:
     assert event.type == "llm.packet.completed"
     assert event.payload["status_code"] == 429
     assert event.payload["response"]["body"]["error"]["message"] == "rate limited"
+
+
+def test_packet_analyzer_normalizes_urls_headers_and_non_json_bodies(tmp_path: Path) -> None:
+    """Forwarding should avoid duplicate base paths and capture only safe packet metadata."""
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["headers"] = dict(request.headers)
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/octet-stream", "transfer-encoding": "chunked"},
+            content=b"\xff\xfeopaque",
+        )
+
+    analyzer = LlmPacketAnalyzer(
+        PacketAnalyzerConfig(
+            eventloom_path=tmp_path / ".eventloom",
+            session_id="agent-1",
+            upstream_base_url="https://upstream.example/v1",
+        ),
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    response = analyzer.forward(
+        "POST",
+        "/v1/responses",
+        headers={
+            "host": "localhost",
+            "content-length": "999",
+            "content-type": "application/json",
+            "openai-project": "proj_123",
+            "x-secret": "redacted",
+        },
+        body=b"\xff\xfe",
+    )
+    analyzer.close()
+
+    assert seen["url"] == "https://upstream.example/v1/responses"
+    assert seen["headers"]["host"] == "upstream.example"
+    assert seen["headers"]["content-length"] == "2"
+    assert response.headers == {"content-type": "application/octet-stream"}
+
+    event = EventLog(tmp_path / ".eventloom" / "agent-1.jsonl").read_all()[0]
+    payload = event.payload
+    assert payload["model"] is None
+    assert payload["usage_counts"] is None
+    assert payload["request"]["body"]["bytes"] == 2
+    assert payload["response"]["body"]["bytes"] == len(b"\xff\xfeopaque")
+    assert payload["request"]["headers"] == {
+        "content-type": "application/json",
+        "openai-project": "proj_123",
+    }
+
+
+def test_packet_analyzer_helper_parsers_handle_optional_packet_shapes() -> None:
+    """Packet helper parsers should support empty, malformed, and response-first metadata."""
+    assert _json_body(b"") is None
+    assert _json_body(b"not-json")["bytes"] == len(b"not-json")
+    assert _captured_headers({"User-Agent": "codex", "Authorization": "secret"}) == {
+        "user-agent": "codex"
+    }
+    assert _response_headers(httpx.Headers({"Connection": "close", "Content-Type": "text/plain"})) == {
+        "content-type": "text/plain"
+    }
+    assert _model_from_packet({"model": "request-model"}, {"model": "response-model"}) == "response-model"
+    assert _model_from_packet({"model": "request-model"}, {}) == "request-model"
+    assert _model_from_packet([], []) is None
+    assert _usage_counts_from_response({"usage": {"prompt_tokens": 3, "completion_tokens": 2}}) == {
+        "prompt": 3,
+        "completion": 2,
+        "total": None,
+    }
+    assert _usage_counts_from_response({"usage": "unknown"}) is None
+
+
+def test_run_packet_analyzer_serves_post_requests_and_closes_owned_analyzer(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The blocking packet analyzer server should proxy POST bodies and close cleanly."""
+    import http.server
+
+    seen: dict[str, object] = {"closed": False}
+    server_holder: dict[str, http.server.ThreadingHTTPServer] = {}
+
+    class FakeAnalyzer:
+        def __init__(self, config: PacketAnalyzerConfig) -> None:
+            seen["config"] = config
+
+        def forward_stream(
+            self,
+            method: str,
+            path: str,
+            *,
+            headers: dict[str, str],
+            body: bytes,
+        ) -> PacketStreamResponse:
+            seen["method"] = method
+            seen["path"] = path
+            seen["headers"] = headers
+            seen["body"] = body
+            return PacketStreamResponse(
+                status_code=202,
+                headers={"content-type": "application/json"},
+                body_chunks=iter([b'{"ok":true}']),
+            )
+
+        def close(self) -> None:
+            seen["closed"] = True
+
+    class CapturingServer(http.server.ThreadingHTTPServer):
+        def __init__(self, server_address: tuple[str, int], handler_class: type[http.server.BaseHTTPRequestHandler]):
+            super().__init__(server_address, handler_class)
+            server_holder["server"] = self
+
+    monkeypatch.setattr("zaxy.packet_analyzer.LlmPacketAnalyzer", FakeAnalyzer)
+    monkeypatch.setattr(http.server, "ThreadingHTTPServer", CapturingServer)
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+
+    thread = threading.Thread(
+        target=run_packet_analyzer,
+        kwargs={
+            "host": "127.0.0.1",
+            "port": port,
+            "config": PacketAnalyzerConfig(
+                eventloom_path=tmp_path / ".eventloom",
+                session_id="agent-1",
+                upstream_base_url="https://upstream.example",
+            ),
+        },
+        daemon=True,
+    )
+    thread.start()
+    while "server" not in server_holder:
+        pass
+
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    conn.request("POST", "/v1/responses", body=b'{"model":"gpt"}', headers={"content-type": "application/json"})
+    response = conn.getresponse()
+    body = response.read()
+    conn.close()
+    server_holder["server"].shutdown()
+    thread.join(timeout=5)
+
+    assert response.status == 202
+    assert body == b'{"ok":true}'
+    assert seen["method"] == "POST"
+    assert seen["path"] == "/v1/responses"
+    assert seen["body"] == b'{"model":"gpt"}'
+    assert seen["closed"] is True
 
 
 def test_packet_analyzer_streams_response_before_finalizing_capture(tmp_path: Path) -> None:

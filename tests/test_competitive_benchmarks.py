@@ -11,6 +11,7 @@ from zaxy.benchmark import (
     FlatJsonlRetriever,
     build_competitive_event_log,
     competitive_cases,
+    expected_terms_recall,
     score_retrieval,
 )
 
@@ -255,6 +256,77 @@ def test_score_retrieval_accepts_parenthetical_acronym_surface_forms() -> None:
 
     assert score.score == 1.0
     assert score.expected_hits == ("University of California, Los Angeles (UCLA)",)
+
+
+def test_score_retrieval_reports_identity_and_source_recall() -> None:
+    """Benchmark scoring should expose separate identity and source recall diagnostics."""
+    case = BenchmarkCase(
+        name="source-recall",
+        query="Where did I save the migration plan?",
+        expected_terms=("migration plan",),
+        identity_terms=("MigrationPlan.md", "reviewer note"),
+        source_terms=("docs/roadmap.md", "reports/missing.json"),
+    )
+
+    score = score_retrieval(
+        case,
+        [
+            "MigrationPlan.md records the migration plan.",
+            "The cited source path is docs/roadmap.md.",
+        ],
+    )
+
+    assert score.score == 1.0
+    assert score.identity_recall == 0.5
+    assert score.identity_hits == ("MigrationPlan.md",)
+    assert score.missing_identities == ("reviewer note",)
+    assert score.source_recall == 0.5
+    assert score.source_hits == ("docs/roadmap.md",)
+    assert score.missing_sources == ("reports/missing.json",)
+
+
+def test_expected_terms_recall_handles_empty_and_partial_answers() -> None:
+    """Recall@k scoring should expose missing expected terms without applying forbidden penalties."""
+    empty_case = BenchmarkCase(name="empty", query="What changed?", expected_terms=())
+    partial_case = BenchmarkCase(
+        name="partial",
+        query="Which two cities did I visit?",
+        expected_terms=("Berlin", "Lisbon"),
+    )
+
+    assert expected_terms_recall(empty_case, ["anything"]) is None
+    assert expected_terms_recall(partial_case, ["I visited Lisbon in April."]) == 0.5
+
+
+def test_score_retrieval_rejects_unsupported_absence_answers() -> None:
+    """Answer scoring should not award unsupported abstentions."""
+    absence_case = BenchmarkCase(
+        name="unsupported-absence",
+        query="What was my bicycle brand?",
+        expected_terms=("You did not mention your bicycle brand.",),
+    )
+
+    absence = score_retrieval(absence_case, ["not_mentioned_candidate=skateboard"])
+
+    assert absence.score == 0.0
+    assert absence.missing_expected == absence_case.expected_terms
+
+
+def test_score_retrieval_accepts_numeric_week_interval_surfaces() -> None:
+    """Structured interval scoring should match numeric week evidence as well as worded answers."""
+    case = BenchmarkCase(
+        name="two-week-delay",
+        query="How long was the delay?",
+        expected_terms=("2 weeks",),
+    )
+
+    score = score_retrieval(
+        case,
+        ["date_interval_weeks=2 weeks\ncandidate_type=date_interval"],
+    )
+
+    assert score.score == 1.0
+    assert score.expected_hits == ("2 weeks",)
 
 
 def test_flat_jsonl_baseline_exposes_stale_context_limitation(tmp_path: Path) -> None:

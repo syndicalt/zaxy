@@ -16,7 +16,11 @@ from zaxy.evidence_candidates import (
     preference_candidate_projection,
 )
 from zaxy.retrieval_intent import RetrievalIntent, classify_retrieval_intent
-from zaxy.synthesis import build_count_ledger, build_synthesis_plan
+from zaxy.synthesis import (
+    build_count_ledger,
+    build_synthesis_plan,
+    temporal_sequence_requested_count,
+)
 from zaxy.synthesis_packet import synthesis_packet_from_items
 
 _FIRST_PERSON_CONTEXT_RE = re.compile(
@@ -1169,9 +1173,13 @@ def source_synthesis_bundle_result(
         return None
     aggregate_projection = (
         EvidenceProjection((), ())
-        if _direct_time_query(query) or _recency_comparison_query(query)
+        if _direct_time_query(query)
+        or _recency_comparison_query(query)
+        or _latest_state_should_suppress_aggregate(query)
         else aggregate_candidate_projection(query, grouped_sources)
     )
+    if _incomplete_explicit_temporal_sequence_projection(query, aggregate_projection):
+        aggregate_projection = EvidenceProjection((), ())
     preference_projection = preference_candidate_projection(query, grouped_sources, limit=group_limit)
     recency_projection = recency_candidate_projection(query, grouped_sources)
     derived_lines = [
@@ -1213,17 +1221,19 @@ def source_synthesis_bundle_result(
         return None
     if not derived_lines:
         return None
+    support_source_groups = tuple(
+        dict.fromkeys(
+            [
+                *aggregate_projection.source_groups,
+                *preference_projection.source_groups,
+                *recency_projection.source_groups,
+                *_source_groups_from_synthesis_lines(derived_lines),
+            ]
+        )
+    )
     support_sources = _supporting_synthesis_sources(
         grouped_sources,
-        source_groups=tuple(
-            dict.fromkeys(
-                [
-                    *aggregate_projection.source_groups,
-                    *preference_projection.source_groups,
-                    *recency_projection.source_groups,
-                ]
-            )
-        ),
+        source_groups=support_source_groups,
     )
     lines = [
         "zaxy_synthesis_bundle=true",
@@ -1340,6 +1350,46 @@ def _has_multi_source_answer_candidate_type(projection: EvidenceProjection, cand
         if isinstance(support, list | tuple) and len(support) >= 2:
             return True
     return False
+
+
+def _incomplete_explicit_temporal_sequence_projection(query: str, projection: EvidenceProjection) -> bool:
+    """Return true when source synthesis has fewer events than an explicit sequence asks for."""
+    requested = temporal_sequence_requested_count(query)
+    if not requested:
+        return False
+    tokens = set(source_tokens(query))
+    if tokens & {"museum", "museums", "gallery", "galleries"}:
+        return False
+    for candidate in projection.answer_candidates:
+        if str(candidate.get("type", "")).casefold() != "temporal_sequence":
+            continue
+        included_rows = [
+            row
+            for row in projection.ledger_rows
+            if row.get("kind") == "temporal_event" and not row.get("exclude_reason")
+        ]
+        if included_rows:
+            return len(included_rows) < requested
+        support = candidate.get("support_source_ids")
+        if isinstance(support, list | tuple):
+            return len(support) < requested
+    return False
+
+
+def _source_groups_from_synthesis_lines(lines: list[str]) -> tuple[str, ...]:
+    """Extract supporting source ids from deterministic synthesis diagnostics."""
+    groups: list[str] = []
+    for line in lines:
+        key, separator, value = line.partition("=")
+        if not separator or not key.endswith("_source_ids"):
+            continue
+        if key.endswith("_excluded_source_ids"):
+            continue
+        for group in value.split(","):
+            normalized = group.strip().casefold()
+            if normalized:
+                groups.append(normalized)
+    return tuple(dict.fromkeys(groups))
 
 
 def preferred_source_group_order(
@@ -1899,6 +1949,8 @@ def _should_defer_synthesis_to_absence(
     target = high_precision_missing_target(query, contexts)
     if not target or _target_terms_present_for_absence(query, target, contexts):
         return False
+    if _typed_projection_can_override_missing_target(query, contexts, target):
+        return False
     if _countable_category_evidence_present(query, contexts) and not _precise_missing_target_requires_absence(
         query,
         target,
@@ -1915,6 +1967,40 @@ def _should_defer_synthesis_to_absence(
         or _missing_alternative_target(query, contexts) == target
         or (_temporal_interval_query(query) and _missing_concrete_query_target(query, contexts) == target)
     )
+
+
+def _answerable_typed_projection(query: str, contexts: list[str]) -> bool:
+    """Return whether typed synthesis can answer before absence suppression."""
+    projection = aggregate_candidate_projection(query, contexts)
+    return bool(projection.answer_candidates and projection.source_groups)
+
+
+def _typed_projection_can_override_missing_target(query: str, contexts: list[str], target: str) -> bool:
+    """Return whether typed evidence answers despite an abstract missing phrase."""
+    if not _answerable_typed_projection(query, contexts):
+        return False
+    if _missing_contrastive_sibling_target(query, contexts) == target:
+        return False
+    if _missing_conjunct_aggregation_target(query, contexts) == target:
+        return False
+    if _missing_comparison_operand_target(query, contexts) == target:
+        target_terms = set(source_tokens(target))
+        abstract_metric_terms = {
+            "accommodation",
+            "accommodations",
+            "amount",
+            "cost",
+            "costs",
+            "lodging",
+            "money",
+            "night",
+            "on",
+            "per",
+            "price",
+            "spent",
+        }
+        return bool(target_terms and target_terms <= abstract_metric_terms)
+    return True
 
 
 def _precise_missing_target_requires_absence(query: str, target: str, contexts: list[str]) -> bool:
@@ -4498,11 +4584,12 @@ def _numeric_synthesis_lines(
         if latest_state_lines:
             return latest_state_lines
     numeric_contexts = [_numeric_context_text(context) for context in contexts]
-    lines: list[str] = list(aggregate_lines or [])
+    aggregate_lines = aggregate_lines or []
+    lines: list[str] = []
     lines.extend(_direct_numeric_value_synthesis_lines(query, numeric_contexts))
-    has_typed_duration = any(line.startswith("duration_values=") for line in lines)
-    has_typed_projection = any(line.startswith("candidate_rank=") for line in lines)
-    has_typed_age_average = any(line.startswith("age_average=") for line in lines)
+    has_typed_duration = any(line.startswith("duration_values=") for line in aggregate_lines)
+    has_typed_projection = any(line.startswith("candidate_rank=") for line in aggregate_lines)
+    has_typed_age_average = any(line.startswith("age_average=") for line in aggregate_lines)
     lines.extend(_age_at_event_synthesis_lines(query, numeric_contexts))
     lines.extend(_future_age_at_event_synthesis_lines(query, contexts))
     if not has_typed_age_average:
@@ -4617,6 +4704,18 @@ def _latest_state_query(query: str) -> bool:
     if tokens & {"hours", "hour"} and tokens & {"spent", "spend"}:
         return True
     return _generic_scalar_state_query(query)
+
+
+def _latest_state_should_suppress_aggregate(query: str) -> bool:
+    """Return true when current-state duration evidence should outrank stale totals."""
+    tokens = set(source_tokens(query))
+    if not _latest_state_query(query) or _aggregate_total_answer_query(query):
+        return False
+    if tokens & {"maximum", "max", "most", "highest", "largest"}:
+        return False
+    if "and" in tokens or tokens & {"combined", "together", "altogether"}:
+        return False
+    return bool(tokens & {"hours", "hour"} and tokens & {"spent", "spend"})
 
 
 def _latest_state_synthesis_lines(query: str, contexts: list[str]) -> list[str]:

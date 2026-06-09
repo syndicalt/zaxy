@@ -9,6 +9,7 @@ import subprocess
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
+import httpx
 import pytest
 from typer.testing import CliRunner
 
@@ -340,6 +341,69 @@ def test_bootstrap_reuses_checkout_and_copies_dataset(tmp_path: Path) -> None:
     actions = result["actions"]
     assert isinstance(actions, list)
     assert "copy-dataset" in actions
+
+
+def test_bootstrap_clones_downloads_dataset_and_checks_out_ref(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Official bootstrap should support first-time clone, ref checkout, and dataset download."""
+    worktree = tmp_path / "LongMemEval"
+    calls: list[list[str]] = []
+    real_run = subprocess.run
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del kwargs
+        calls.append(command)
+        if command[:2] == ["git", "clone"]:
+            monkeypatch.setattr("zaxy.longmembench.subprocess.run", real_run)
+            _write_official_worktree(worktree)
+            monkeypatch.setattr("zaxy.longmembench.subprocess.run", fake_run)
+            (worktree / "data" / "longmemeval_oracle.json").unlink()
+        return subprocess.CompletedProcess(command, 0, stdout="ok", stderr="")
+
+    def fake_get(*args: object, **kwargs: object) -> httpx.Response:
+        del args, kwargs
+        return httpx.Response(
+            200,
+            content=json.dumps(
+                [
+                    {
+                        "question_id": "q-download",
+                        "question": "Downloaded?",
+                        "answer": "Yes",
+                        "haystack_sessions": [],
+                        "answer_session_ids": [],
+                    }
+                ]
+            ).encode(),
+            request=httpx.Request("GET", "https://example.test/oracle.json"),
+        )
+
+    monkeypatch.setattr("zaxy.longmembench.subprocess.run", fake_run)
+    monkeypatch.setattr("zaxy.longmembench.httpx.get", fake_get)
+
+    result = bootstrap_longmemeval_official_suite(
+        worktree=worktree,
+        repo_url="https://example.test/LongMemEval.git",
+        ref="abc123",
+        dataset_url="https://example.test/oracle.json",
+    )
+
+    assert result["status"] == "ready"
+    assert result["dataset_count"] == 1
+    assert result["actions"] == ["git-clone", "git-checkout:abc123", "download-dataset"]
+    assert calls[0][:3] == ["git", "clone", "https://example.test/LongMemEval.git"]
+    assert ["git", "-C", str(worktree), "checkout", "abc123"] in calls
+
+
+def test_bootstrap_rejects_existing_non_git_worktree(tmp_path: Path) -> None:
+    """Bootstrap should not overwrite an arbitrary existing directory."""
+    worktree = tmp_path / "LongMemEval"
+    worktree.mkdir()
+
+    with pytest.raises(ValueError, match="not a git checkout"):
+        bootstrap_longmemeval_official_suite(worktree=worktree)
 
 
 def test_official_evaluator_runner_invokes_fixture_script(tmp_path: Path) -> None:
@@ -1131,6 +1195,44 @@ def test_readiness_reports_missing_launch_blockers(tmp_path: Path) -> None:
     assert any("SOTA baseline" in str(item) for item in blockers)
 
 
+def test_readiness_accepts_full_external_run_inputs_and_warns_on_extractive_mode(
+    tmp_path: Path,
+) -> None:
+    """Readiness should pass when official, diagnostic, and baseline artifacts are present."""
+    worktree = tmp_path / "LongMemEval"
+    dataset = _write_official_worktree(worktree, questions=OFFICIAL_FULL_QUESTION_COUNT)
+    hypotheses, eval_log = _write_official_rows(
+        tmp_path,
+        questions=OFFICIAL_FULL_QUESTION_COUNT,
+        correct=OFFICIAL_FULL_QUESTION_COUNT,
+    )
+    diagnostic = _write_diagnostic_report(tmp_path / "live-benchmark.json")
+    baseline = _write_sota_baseline(tmp_path / "sota-baseline.json", accuracy=0.95)
+
+    readiness = build_longmembench_readiness(
+        longmemeval_worktree=worktree,
+        dataset_path=dataset,
+        hypotheses_path=hypotheses,
+        official_eval_log_path=eval_log,
+        diagnostic_report_path=diagnostic,
+        sota_baseline_path=baseline,
+        answer_mode="extractive",
+        api_key_present=False,
+    )
+
+    assert readiness["status"] == "ready"
+    assert readiness["blockers"] == []
+    assert any(
+        str(warning).startswith("extractive mode is suitable for smoke tests")
+        for warning in readiness["warnings"]
+    )
+    assert readiness["dataset"]["question_count"] == OFFICIAL_FULL_QUESTION_COUNT
+    assert readiness["hypotheses"]["count"] == OFFICIAL_FULL_QUESTION_COUNT
+    assert readiness["official_eval_log"]["count"] == OFFICIAL_FULL_QUESTION_COUNT
+    assert readiness["diagnostic_report"]["status"] == "valid"
+    assert readiness["sota_baseline"]["status"] == "valid"
+
+
 def test_load_sota_baseline_validates_contract(tmp_path: Path) -> None:
     baseline_path = _write_sota_baseline(tmp_path / "sota-baseline.json", accuracy=0.965)
 
@@ -1530,6 +1632,116 @@ def test_openai_compatible_answer_uses_preference_candidate_without_provider(mon
     assert "hotels in Miami" in answer
     assert "ocean" in answer
     assert "rooftop pool" in answer
+
+
+def test_openai_compatible_answer_retries_provider_then_returns_message(monkeypatch) -> None:
+    """OpenAI-compatible answer generation should retry transient provider failures."""
+    calls: list[dict[str, object]] = []
+    sleeps: list[float] = []
+    request = httpx.Request("POST", "https://api.example.test/v1/chat/completions")
+    responses = [
+        httpx.Response(500, headers={"retry-after": "0.25"}, json={"error": {"message": "busy"}}, request=request),
+        httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {"message": {"content": "Project Kestrel"}},
+                ]
+            },
+            request=request,
+        ),
+    ]
+
+    def fake_post(*args: object, **kwargs: object) -> httpx.Response:
+        calls.append({"args": args, "kwargs": kwargs})
+        return responses.pop(0)
+
+    monkeypatch.setattr("zaxy.longmembench.httpx.post", fake_post)
+    monkeypatch.setattr("zaxy.longmembench.time.sleep", lambda delay: sleeps.append(delay))
+
+    answer = _openai_compatible_answer(
+        question="What is the project codename?",
+        contexts=["checkout_fact=true citation=eventloom://agent/events/1#aa user: Project Kestrel."],
+        model="gpt-4o-mini",
+        base_url="https://api.example.test/v1/",
+        api_key="test-key",
+        max_retries=1,
+    )
+
+    assert answer == "Project Kestrel"
+    assert len(calls) == 2
+    assert calls[0]["args"] == ("https://api.example.test/v1/chat/completions",)
+    assert calls[0]["kwargs"]["headers"] == {"Authorization": "Bearer test-key"}
+    assert sleeps == [0.25]
+    payload = calls[0]["kwargs"]["json"]
+    assert payload["model"] == "gpt-4o-mini"
+    assert "Project Kestrel" in payload["messages"][1]["content"]
+
+
+def test_openai_compatible_answer_rejects_malformed_provider_responses(monkeypatch) -> None:
+    """Malformed provider responses should fail before producing unsupported hypotheses."""
+    request = httpx.Request("POST", "https://api.example.test/v1/chat/completions")
+    responses = [
+        httpx.Response(200, json={}, request=request),
+        httpx.Response(200, json={"choices": ["not-an-object"]}, request=request),
+        httpx.Response(200, json={"choices": [{"message": "not-an-object"}]}, request=request),
+        httpx.Response(200, json={"choices": [{"message": {"content": ""}}]}, request=request),
+    ]
+
+    def fake_post(*args: object, **kwargs: object) -> httpx.Response:
+        del args, kwargs
+        return responses.pop(0)
+
+    monkeypatch.setattr("zaxy.longmembench.httpx.post", fake_post)
+
+    expected_messages = [
+        "missing choices",
+        "choice must be an object",
+        "choice missing message",
+        "message content is empty",
+    ]
+    for expected in expected_messages:
+        with pytest.raises(ValueError, match=expected):
+            _openai_compatible_answer(
+                question="What is the project codename?",
+                contexts=["checkout_fact=true citation=eventloom://agent/events/1#aa user: Project Kestrel."],
+                model="gpt-4o-mini",
+                base_url="https://api.example.test/v1",
+                api_key="test-key",
+                max_retries=0,
+            )
+
+
+def test_openai_compatible_answer_stops_retries_on_insufficient_quota(monkeypatch) -> None:
+    """Insufficient quota should not burn retry budget or hide the provider error."""
+    calls = 0
+    sleeps: list[float] = []
+
+    def fake_post(*args: object, **kwargs: object) -> httpx.Response:
+        nonlocal calls
+        del args, kwargs
+        calls += 1
+        return httpx.Response(
+            429,
+            request=httpx.Request("POST", "https://api.example.test/v1/chat/completions"),
+            json={"error": {"code": "insufficient_quota"}},
+        )
+
+    monkeypatch.setattr("zaxy.longmembench.httpx.post", fake_post)
+    monkeypatch.setattr("zaxy.longmembench.time.sleep", lambda delay: sleeps.append(delay))
+
+    with pytest.raises(httpx.HTTPStatusError):
+        _openai_compatible_answer(
+            question="What is the project codename?",
+            contexts=["checkout_fact=true citation=eventloom://agent/events/1#aa user: Project Kestrel."],
+            model="gpt-4o-mini",
+            base_url="https://api.example.test/v1",
+            api_key="test-key",
+            max_retries=3,
+        )
+
+    assert calls == 1
+    assert sleeps == []
 
 
 def test_deterministic_temporal_order_answer_uses_explicit_dates() -> None:

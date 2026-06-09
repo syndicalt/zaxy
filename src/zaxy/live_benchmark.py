@@ -932,6 +932,17 @@ class ZaxyRetriever:
                 and any(source_lane_priority(result) >= 2 for result in primary_results)
             ):
                 return primary_results
+            if (
+                {"aggregation", "aggregation_question"} & set(intent.reasons)
+                and not requires_expanded_support
+                and any(source_lane_priority(result) >= 2 for result in primary_results)
+                and source_synthesis_bundle(
+                    query=candidate_queries[0],
+                    source_results=primary_results,
+                    limit=limit,
+                )
+            ):
+                return primary_results
             bridge_results: list[str] = []
             if bridge_limit is None or bridge_limit > 0:
                 bridge_candidate_limit = candidate_limit if bridge_limit is None else bridge_limit
