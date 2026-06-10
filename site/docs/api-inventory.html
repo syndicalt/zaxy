@@ -24,7 +24,7 @@
   <main class="doc-layout">
     <article class="doc-content">
       <h1 id="api-inventory">API Inventory</h1>
-      <p>This inventory is the v0.9 freeze-candidate map for public Zaxy surfaces. It does not make every surface stable. It records which contracts are stable now, which are beta, which are experimental, and which remain internal so v1.0 work can avoid accidental breaking changes.</p>
+      <p>This inventory is the maintained map of public Zaxy surfaces, first frozen at the v0.9 release candidate and kept current through 2.0. It does not make every surface stable. It records which contracts are stable now, which are beta, which are experimental, and which remain internal so ongoing release work can avoid accidental breaking changes.</p>
       <h2 id="stability-labels">Stability Labels</h2>
       <ul>
         <li><code>Stable</code>: supported public contract; breaking changes require migration notes and compatibility tests.</li>
@@ -369,7 +369,7 @@
       </ul>
       <p><code>Experimental</code> surfaces can still change, but release notes must say so when the change affects documented setup, benchmark results, or user-visible output. <code>Internal</code> surfaces should not be referenced by public docs or examples except when explaining architecture.</p>
       <p>The current freeze-candidate manifest is <a href="https://github.com/syndicalt/zaxy/blob/master/docs/examples/v1-schema-freeze.json"><code>docs/examples/v1-schema-freeze.json</code></a>. For non-additive stable or beta changes, append <code>schema.migration.proposed</code> before implementation and <code>schema.migration.applied</code> after verification.</p>
-      <p>Upgrade guidance from 0.4 through 0.9 is tracked in <a href="migration.html">Migration Guide</a>.</p>
+      <p>Upgrade guidance from 0.4 through 2.0 is tracked in <a href="migration.html">Migration Guide</a>.</p>
       <p>Related references: <a href="api.html">api.md</a>, <a href="migration.html">migration.md</a>, <a href="runbook.html">runbook.md</a>, and <a href="../README.html">README.md</a>.</p>
     </article>
   </main>

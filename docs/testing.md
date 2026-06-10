@@ -57,8 +57,9 @@ query routing, MCP tools, tracing, configuration, embeddings, operations
 scripts, packaging, and site/docs validation. New modules should get focused
 tests rather than relying only on high-level workflows.
 
-The v0.9 freeze-candidate path includes fuzz-style parametrized checks for
-Eventloom payload validation, hash-chain replay, and bounded MCP inputs. These
+The contract-validation path (introduced with the v0.9 freeze) includes
+fuzz-style parametrized checks for Eventloom payload validation, hash-chain
+replay, and bounded MCP inputs. These
 tests intentionally exercise malformed payload shapes, oversized JSON objects,
 sequence-tampered but hash-valid Eventloom records, and invalid direct
 `memory_append` handler inputs so contract validation does not depend only on

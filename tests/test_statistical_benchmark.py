@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from zaxy.embedding import HashEmbeddingProvider
 from zaxy_benchmarks.live_benchmark import (
     BenchmarkWorkload,
     ExternalBenchmarkResult,
@@ -15,8 +16,6 @@ from zaxy_benchmarks.live_benchmark import (
     corpus_from_event_log,
     report_to_markdown,
 )
-
-from zaxy.embedding import HashEmbeddingProvider
 
 
 def test_statistical_workload_generates_hundreds_of_paired_queries(tmp_path: Path) -> None:

@@ -4,11 +4,42 @@ from __future__ import annotations
 
 import builtins
 import json
+import re
 
 from zaxy import evidence_candidates, retrieval_plan, synthesis
 from zaxy.evidence_candidates import EvidenceProjection
 from zaxy.retrieval_intent import classify_retrieval_intent
+from zaxy.retrieval_plan import bundles as retrieval_plan_bundles
+from zaxy.retrieval_plan import duration_evidence as retrieval_plan_duration_evidence
+from zaxy.retrieval_plan import fact_queries as retrieval_plan_fact_queries
+from zaxy.retrieval_plan import foundations as retrieval_plan_foundations
+from zaxy.retrieval_plan import ordering as retrieval_plan_ordering
+from zaxy.retrieval_plan import scalars as retrieval_plan_scalars
 from zaxy.synthesis import EvidenceLedger, SynthesisPlan, build_currency_ledger
+
+_RETRIEVAL_PLAN_MODULES = (
+    retrieval_plan,
+    retrieval_plan_foundations,
+    retrieval_plan_scalars,
+    retrieval_plan_fact_queries,
+    retrieval_plan_duration_evidence,
+    retrieval_plan_ordering,
+    retrieval_plan_bundles,
+)
+
+
+def _patch_retrieval_plan(monkeypatch, name, value):
+    """Patch a name in every retrieval_plan part module that binds it.
+
+    The historical flat module shared one namespace; after decomposition a
+    patched name must be replaced wherever a part imported it.
+    """
+    patched = False
+    for module in _RETRIEVAL_PLAN_MODULES:
+        if hasattr(module, name):
+            monkeypatch.setattr(module, name, value)
+            patched = True
+    assert patched, f"no retrieval_plan module binds {name!r}"
 
 
 def test_source_synthesis_reuses_candidate_evidence_scores(monkeypatch) -> None:
@@ -27,12 +58,11 @@ def test_source_synthesis_reuses_candidate_evidence_scores(monkeypatch) -> None:
             source_groups=groups,
         )
 
-    monkeypatch.setattr(
-        retrieval_plan,
+    _patch_retrieval_plan(monkeypatch,
         "aggregate_candidate_projection",
         fake_projection,
     )
-    monkeypatch.setattr(retrieval_plan, "aggregate_evidence_score", lambda query, context: 1)
+    _patch_retrieval_plan(monkeypatch, "aggregate_evidence_score", lambda query, context: 1)
     contexts = [
         (
             f"source_path=longmemeval/events/{index} "
@@ -455,8 +485,8 @@ def test_source_synthesis_bundle_result_preserves_string_api_and_typed_packet(mo
             answer_candidates=(typed_candidate,),
         )
 
-    monkeypatch.setattr(retrieval_plan, "aggregate_candidate_projection", fake_projection)
-    monkeypatch.setattr(retrieval_plan, "aggregate_evidence_score", lambda query, context: 1)
+    _patch_retrieval_plan(monkeypatch, "aggregate_candidate_projection", fake_projection)
+    _patch_retrieval_plan(monkeypatch, "aggregate_evidence_score", lambda query, context: 1)
     source_results = [
         "longmemeval_session_id=answer-1 I bought a bike helmet for $120.",
         "longmemeval_session_id=answer-2 I bought a bike chain for $25.",
@@ -1529,7 +1559,7 @@ def test_source_synthesis_bundle_emits_auditable_ledger_rows() -> None:
 
 def test_age_average_bundle_uses_typed_aggregate_projection(monkeypatch) -> None:
     """Age-average output should come from typed synthesis operations, not ad hoc line rendering."""
-    monkeypatch.setattr(retrieval_plan, "_age_average_synthesis_lines", lambda query, contexts: [])
+    _patch_retrieval_plan(monkeypatch, "_age_average_synthesis_lines", lambda query, contexts: [])
     result = retrieval_plan.source_synthesis_bundle_result(
         query="What is the average age of me, my parents, and my grandparents?",
         source_results=[
@@ -3929,7 +3959,7 @@ def test_source_ordering_reuses_context_tokens_across_ranking_passes(monkeypatch
             tokenized_contexts.append(text)
         return original_source_tokens(text)
 
-    monkeypatch.setattr(retrieval_plan, "source_tokens", tracking_source_tokens)
+    _patch_retrieval_plan(monkeypatch, "source_tokens", tracking_source_tokens)
     contexts = [
         f"source_path=doc-{index}.md longmemeval_session_id=answer-{index} I bought bike gear for ${index}."
         for index in range(8)
@@ -3960,9 +3990,9 @@ def test_retrieval_source_tokens_uses_compiled_regex_helpers(monkeypatch) -> Non
     def fail(*args, **kwargs):  # noqa: ANN001
         raise AssertionError("source_tokens should use compiled regex helpers")
 
-    monkeypatch.setattr(retrieval_plan.re, "findall", fail)
-    monkeypatch.setattr(retrieval_plan.re, "search", fail)
-    monkeypatch.setattr(retrieval_plan.re, "split", fail)
+    monkeypatch.setattr(re, "findall", fail)
+    monkeypatch.setattr(re, "search", fail)
+    monkeypatch.setattr(re, "split", fail)
 
     assert retrieval_plan.source_tokens("source_path=longmemeval/foo-bar.md") == [
         "source_path",
@@ -4010,7 +4040,7 @@ def test_retrieval_source_tokens_caches_repeated_text_without_mutation_leak(monk
             calls += 1
             return original_token_re.findall(text)
 
-    monkeypatch.setattr(retrieval_plan, "_SOURCE_TOKEN_RE", TrackingTokenRegex())
+    _patch_retrieval_plan(monkeypatch, "_SOURCE_TOKEN_RE", TrackingTokenRegex())
     text = "source_path=longmemeval/foo-bar.md I bought bike gear."
 
     first = retrieval_plan.source_tokens(text)
@@ -4036,7 +4066,7 @@ def test_source_context_provenance_uses_compiled_regex_helpers(monkeypatch) -> N
     def fail(*args, **kwargs):  # noqa: ANN001
         raise AssertionError("source provenance parsing should use compiled regex helpers")
 
-    monkeypatch.setattr(retrieval_plan.re, "search", fail)
+    monkeypatch.setattr(re, "search", fail)
 
     context = (
         "citation=file://longmemeval/session-1/chunk-0001.md "
@@ -4054,7 +4084,7 @@ def test_source_context_citation_uses_compiled_regex_helpers(monkeypatch) -> Non
     def fail(*args, **kwargs):  # noqa: ANN001
         raise AssertionError("source citation parsing should use compiled regex helpers")
 
-    monkeypatch.setattr(retrieval_plan.re, "search", fail)
+    monkeypatch.setattr(re, "search", fail)
 
     assert (
         retrieval_plan.source_context_citation(
@@ -4070,8 +4100,8 @@ def test_graph_answer_concepts_use_compiled_regex_helpers(monkeypatch) -> None:
     def fail(*args, **kwargs):  # noqa: ANN001
         raise AssertionError("graph concept extraction should use compiled regex helpers")
 
-    monkeypatch.setattr(retrieval_plan.re, "findall", fail)
-    monkeypatch.setattr(retrieval_plan.re, "fullmatch", fail)
+    monkeypatch.setattr(re, "findall", fail)
+    monkeypatch.setattr(re, "fullmatch", fail)
 
     assert retrieval_plan.graph_answer_concepts(
         [
@@ -4088,7 +4118,7 @@ def test_valid_entity_alias_uses_compiled_regex_helper(monkeypatch) -> None:
     def fail(*args, **kwargs):  # noqa: ANN001
         raise AssertionError("alias validation should use a compiled regex helper")
 
-    monkeypatch.setattr(retrieval_plan.re, "search", fail)
+    monkeypatch.setattr(re, "search", fail)
 
     assert retrieval_plan.valid_entity_alias("Rachel", "parent") is True
     assert retrieval_plan.valid_entity_alias("parent", "parent") is False
@@ -4100,7 +4130,7 @@ def test_possessive_entity_targets_use_compiled_regex_helper(monkeypatch) -> Non
     def fail(*args, **kwargs):  # noqa: ANN001
         raise AssertionError("possessive target extraction should use a compiled regex helper")
 
-    monkeypatch.setattr(retrieval_plan.re, "finditer", fail)
+    monkeypatch.setattr(re, "finditer", fail)
 
     assert retrieval_plan.possessive_entity_targets("What is my new bike timeline?") == ("bike",)
     assert retrieval_plan.possessive_entity_targets("What is my old project status?") == ()
@@ -4112,7 +4142,7 @@ def test_possessive_alias_extraction_uses_cached_compiled_regex_helpers(monkeypa
     def fail(*args, **kwargs):  # noqa: ANN001
         raise AssertionError("possessive alias extraction should use compiled regex helpers")
 
-    monkeypatch.setattr(retrieval_plan.re, "finditer", fail)
+    monkeypatch.setattr(re, "finditer", fail)
 
     assert retrieval_plan.aliases_for_possessive_target(
         "I bought my new bike Trek last month.",
@@ -4133,7 +4163,7 @@ def test_source_evidence_score_uses_bounded_scoring_context(monkeypatch) -> None
         score_lengths.append(len(context))
         return 0
 
-    monkeypatch.setattr(retrieval_plan, "aggregate_evidence_score", fake_score)
+    _patch_retrieval_plan(monkeypatch, "aggregate_evidence_score", fake_score)
     context = (
         "citation=eventloom://default/events/10#abc "
         "source_path=longmemeval/session/chunk-0001.md "
@@ -4165,12 +4195,11 @@ def test_source_evidence_score_uses_ledger_score_without_rendering_projection(mo
         score_calls += 1
         return 7
 
-    monkeypatch.setattr(
-        retrieval_plan,
+    _patch_retrieval_plan(monkeypatch,
         "aggregate_candidate_projection",
         fake_projection,
     )
-    monkeypatch.setattr(retrieval_plan, "aggregate_evidence_score", fake_score)
+    _patch_retrieval_plan(monkeypatch, "aggregate_evidence_score", fake_score)
 
     score = retrieval_plan.source_evidence_score(
         "How much total money have I spent on bike-related expenses?",
@@ -4187,7 +4216,7 @@ def test_currency_personal_evidence_hint_uses_compiled_regex_helper(monkeypatch)
     def fail(*args, **kwargs):  # noqa: ANN001
         raise AssertionError("currency personal evidence should use a compiled regex helper")
 
-    monkeypatch.setattr(retrieval_plan.re, "finditer", fail)
+    monkeypatch.setattr(re, "finditer", fail)
 
     assert retrieval_plan._currency_personal_evidence_hint("I bought bike lights for $40.") is True
     assert retrieval_plan._currency_personal_evidence_hint("Estimated travel budget is $400.") is False
@@ -4199,7 +4228,7 @@ def test_alternative_terms_uses_compiled_single_letter_regex(monkeypatch) -> Non
     def fail(*args, **kwargs):  # noqa: ANN001
         raise AssertionError("alternative terms should use a compiled regex helper")
 
-    monkeypatch.setattr(retrieval_plan.re, "finditer", fail)
+    monkeypatch.setattr(re, "finditer", fail)
 
     assert retrieval_plan._alternative_terms("Task A or task B") == ("a", "b")
 
@@ -4210,7 +4239,7 @@ def test_query_person_alternatives_uses_compiled_regex_helper(monkeypatch) -> No
     def fail(*args, **kwargs):  # noqa: ANN001
         raise AssertionError("person alternatives should use a compiled regex helper")
 
-    monkeypatch.setattr(retrieval_plan.re, "finditer", fail)
+    monkeypatch.setattr(re, "finditer", fail)
 
     assert retrieval_plan._query_person_alternatives(
         "Who became a parent first, Rachel or Alex?"
@@ -4223,8 +4252,8 @@ def test_flight_count_uses_compiled_regex_helpers(monkeypatch) -> None:
     def fail(*args, **kwargs):  # noqa: ANN001
         raise AssertionError("flight count parsing should use compiled regex helpers")
 
-    monkeypatch.setattr(retrieval_plan.re, "search", fail)
-    monkeypatch.setattr(retrieval_plan.re, "finditer", fail)
+    monkeypatch.setattr(re, "search", fail)
+    monkeypatch.setattr(re, "finditer", fail)
 
     assert retrieval_plan._flight_count_in_context("I took two flights each way with United.") == 4
     assert retrieval_plan._flight_count_in_context("I booked three flights during April.") == 3
@@ -4236,8 +4265,8 @@ def test_road_trip_drive_hours_use_compiled_regex_helpers(monkeypatch) -> None:
     def fail(*args, **kwargs):  # noqa: ANN001
         raise AssertionError("road-trip duration parsing should use compiled regex helpers")
 
-    monkeypatch.setattr(retrieval_plan.re, "compile", fail)
-    monkeypatch.setattr(retrieval_plan.re, "search", fail)
+    monkeypatch.setattr(re, "compile", fail)
+    monkeypatch.setattr(re, "search", fail)
 
     assert retrieval_plan._road_trip_drive_hour_values(
         [
@@ -4254,8 +4283,8 @@ def test_current_activity_weeks_uses_compiled_regex_helpers(monkeypatch) -> None
     def fail(*args, **kwargs):  # noqa: ANN001
         raise AssertionError("current activity duration parsing should use compiled regex helpers")
 
-    monkeypatch.setattr(retrieval_plan.re, "compile", fail)
-    monkeypatch.setattr(retrieval_plan.re, "search", fail)
+    monkeypatch.setattr(re, "compile", fail)
+    monkeypatch.setattr(re, "search", fail)
 
     assert retrieval_plan._current_activity_weeks(
         "How long have I been taking guitar lessons?",
@@ -4269,7 +4298,7 @@ def test_event_weeks_ago_uses_compiled_regex_helpers(monkeypatch) -> None:
     def fail(*args, **kwargs):  # noqa: ANN001
         raise AssertionError("event weeks-ago parsing should use compiled regex helpers")
 
-    monkeypatch.setattr(retrieval_plan.re, "compile", fail)
+    monkeypatch.setattr(re, "compile", fail)
 
     assert retrieval_plan._event_weeks_ago(
         "How long ago did I start pottery classes?",
@@ -4283,7 +4312,7 @@ def test_role_duration_months_uses_compiled_regex_helpers(monkeypatch) -> None:
     def fail(*args, **kwargs):  # noqa: ANN001
         raise AssertionError("role duration parsing should use compiled regex helpers")
 
-    monkeypatch.setattr(retrieval_plan.re, "search", fail)
+    monkeypatch.setattr(re, "search", fail)
 
     assert (
         retrieval_plan._role_duration_months(
@@ -4299,7 +4328,7 @@ def test_career_total_months_uses_compiled_regex_helpers(monkeypatch) -> None:
     def fail(*args, **kwargs):  # noqa: ANN001
         raise AssertionError("career total parsing should use compiled regex helpers")
 
-    monkeypatch.setattr(retrieval_plan.re, "search", fail)
+    monkeypatch.setattr(re, "search", fail)
 
     assert retrieval_plan._career_total_months(
         ["I've been working professionally for 9 years and currently use a notebook."]
@@ -4312,7 +4341,7 @@ def test_current_role_months_uses_compiled_employer_regex(monkeypatch) -> None:
     def fail(*args, **kwargs):  # noqa: ANN001
         raise AssertionError("current role parsing should use a compiled regex helper")
 
-    monkeypatch.setattr(retrieval_plan.re, "findall", fail)
+    monkeypatch.setattr(re, "findall", fail)
 
     assert retrieval_plan._current_role_months(
         "How long have I been working before I started my current job at NovaTech?",
@@ -4348,7 +4377,7 @@ def test_personal_current_age_values_use_compiled_regex_helpers(monkeypatch) -> 
     def fail(*args, **kwargs):  # noqa: ANN001
         raise AssertionError("personal age parsing should use compiled regex helpers")
 
-    monkeypatch.setattr(retrieval_plan.re, "finditer", fail)
+    monkeypatch.setattr(re, "finditer", fail)
 
     assert retrieval_plan._personal_current_age_values(
         [
@@ -4365,7 +4394,7 @@ def test_elapsed_year_values_use_compiled_regex_helpers(monkeypatch) -> None:
     def fail(*args, **kwargs):  # noqa: ANN001
         raise AssertionError("elapsed year parsing should use compiled regex helpers")
 
-    monkeypatch.setattr(retrieval_plan.re, "finditer", fail)
+    monkeypatch.setattr(re, "finditer", fail)
 
     assert retrieval_plan._elapsed_year_values(
         [
@@ -4381,7 +4410,7 @@ def test_age_values_use_compiled_regex_helpers(monkeypatch) -> None:
     def fail(*args, **kwargs):  # noqa: ANN001
         raise AssertionError("age parsing should use compiled regex helpers")
 
-    monkeypatch.setattr(retrieval_plan.re, "finditer", fail)
+    monkeypatch.setattr(re, "finditer", fail)
 
     assert retrieval_plan._age_values(
         [
@@ -4394,14 +4423,14 @@ def test_age_values_use_compiled_regex_helpers(monkeypatch) -> None:
 def test_unit_values_caches_parameterized_regex(monkeypatch) -> None:
     """Parameterized unit extraction should compile once per unit pattern."""
     compile_calls = 0
-    original_compile = retrieval_plan.re.compile
+    original_compile = re.compile
 
     def tracking_compile(*args, **kwargs):  # noqa: ANN001
         nonlocal compile_calls
         compile_calls += 1
         return original_compile(*args, **kwargs)
 
-    monkeypatch.setattr(retrieval_plan.re, "compile", tracking_compile)
+    monkeypatch.setattr(re, "compile", tracking_compile)
 
     assert retrieval_plan._unit_values(["I spent 3 hours there."], unit_pattern=r"hours?") == [3.0]
     assert retrieval_plan._unit_values(["I spent 4 hours there."], unit_pattern=r"hours?") == [4.0]
@@ -4416,8 +4445,8 @@ def test_week_values_use_compiled_regex_helpers(monkeypatch) -> None:
 
     retrieval_plan._unit_value_pattern.cache_clear()
     retrieval_plan._unit_value_pattern(r"weeks?")
-    monkeypatch.setattr(retrieval_plan.re, "compile", fail)
-    monkeypatch.setattr(retrieval_plan.re, "search", fail)
+    monkeypatch.setattr(re, "compile", fail)
+    monkeypatch.setattr(re, "search", fail)
 
     assert retrieval_plan._week_values(["I trained for two weeks.", "I went last weekend."]) == [2.0, 1.0]
 
@@ -4430,7 +4459,7 @@ def test_month_values_use_compiled_regex_helpers(monkeypatch) -> None:
 
     retrieval_plan._unit_value_pattern.cache_clear()
     retrieval_plan._unit_value_pattern(r"months?")
-    monkeypatch.setattr(retrieval_plan.re, "compile", fail)
+    monkeypatch.setattr(re, "compile", fail)
 
     assert retrieval_plan._month_values(["I trained for two months."]) == [2.0]
 
@@ -4441,7 +4470,7 @@ def test_clock_time_values_use_compiled_regex_helper(monkeypatch) -> None:
     def fail(*args, **kwargs):  # noqa: ANN001
         raise AssertionError("clock time parsing should use a compiled regex helper")
 
-    monkeypatch.setattr(retrieval_plan.re, "compile", fail)
+    monkeypatch.setattr(re, "compile", fail)
 
     assert retrieval_plan._clock_time_values(["I woke at 6:30 AM and slept at 10 PM."]) == [
         390,
@@ -4455,7 +4484,7 @@ def test_relative_minute_offsets_use_compiled_regex_helper(monkeypatch) -> None:
     def fail(*args, **kwargs):  # noqa: ANN001
         raise AssertionError("relative minute parsing should use a compiled regex helper")
 
-    monkeypatch.setattr(retrieval_plan.re, "compile", fail)
+    monkeypatch.setattr(re, "compile", fail)
 
     assert retrieval_plan._relative_minute_offsets(
         ["I woke 15 minutes earlier and went out 20 minutes later."]
@@ -4468,7 +4497,7 @@ def test_relative_days_ago_uses_compiled_regex_helpers(monkeypatch) -> None:
     def fail(*args, **kwargs):  # noqa: ANN001
         raise AssertionError("relative-day parsing should use compiled regex helpers")
 
-    monkeypatch.setattr(retrieval_plan.re, "compile", fail)
+    monkeypatch.setattr(re, "compile", fail)
 
     assert retrieval_plan._relative_days_ago("I met Tom about two weeks ago.") == 14
 
@@ -4491,8 +4520,8 @@ def test_source_evidence_score_reuses_query_synthesis_plan(monkeypatch) -> None:
         plan_calls += 1
         return plan
 
-    monkeypatch.setattr(retrieval_plan, "build_synthesis_plan", fake_plan)
-    monkeypatch.setattr(retrieval_plan, "aggregate_evidence_score", lambda query, context: 7)
+    _patch_retrieval_plan(monkeypatch, "build_synthesis_plan", fake_plan)
+    _patch_retrieval_plan(monkeypatch, "aggregate_evidence_score", lambda query, context: 7)
 
     score = retrieval_plan.source_evidence_score(
         "How much total money have I spent on bike-related expenses?",
@@ -4515,7 +4544,7 @@ def test_source_evidence_score_reuses_query_tokens_across_helpers(monkeypatch) -
             query_token_calls += 1
         return original_source_tokens(text)
 
-    monkeypatch.setattr(retrieval_plan, "source_tokens", tracking_source_tokens)
+    _patch_retrieval_plan(monkeypatch, "source_tokens", tracking_source_tokens)
 
     score = retrieval_plan.source_evidence_score(
         query,
@@ -4553,9 +4582,9 @@ def test_source_evidence_score_cache_reuses_query_state_across_contexts(monkeypa
         plan_calls += 1
         return plan
 
-    monkeypatch.setattr(retrieval_plan, "source_tokens", tracking_source_tokens)
-    monkeypatch.setattr(retrieval_plan, "build_synthesis_plan", tracking_plan)
-    monkeypatch.setattr(retrieval_plan, "aggregate_evidence_score", lambda query, context: 0)
+    _patch_retrieval_plan(monkeypatch, "source_tokens", tracking_source_tokens)
+    _patch_retrieval_plan(monkeypatch, "build_synthesis_plan", tracking_plan)
+    _patch_retrieval_plan(monkeypatch, "aggregate_evidence_score", lambda query, context: 0)
 
     retrieval_plan.evidence_source_order(
         query,
@@ -4643,7 +4672,7 @@ def test_source_evidence_score_skips_irrelevant_currency_documents(monkeypatch) 
         score_calls += 1
         return 99
 
-    monkeypatch.setattr(retrieval_plan, "aggregate_evidence_score", fake_score)
+    _patch_retrieval_plan(monkeypatch, "aggregate_evidence_score", fake_score)
 
     score = retrieval_plan.source_evidence_score(
         "How much total money have I spent on bike-related expenses?",
@@ -4668,7 +4697,7 @@ def test_source_evidence_score_skips_currency_ledger_when_context_has_no_amount(
         score_calls += 1
         return 7
 
-    monkeypatch.setattr(retrieval_plan, "aggregate_evidence_score", fake_score)
+    _patch_retrieval_plan(monkeypatch, "aggregate_evidence_score", fake_score)
 
     score = retrieval_plan.source_evidence_score(
         "How much total money have I spent on bike-related expenses?",

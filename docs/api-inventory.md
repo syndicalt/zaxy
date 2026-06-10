@@ -1,9 +1,10 @@
 # API Inventory
 
-This inventory is the v0.9 freeze-candidate map for public Zaxy surfaces. It
-does not make every surface stable. It records which contracts are stable now,
-which are beta, which are experimental, and which remain internal so v1.0 work
-can avoid accidental breaking changes.
+This inventory is the maintained map of public Zaxy surfaces, first frozen at
+the v0.9 release candidate and kept current through 2.0. It does not make every
+surface stable. It records which contracts are stable now, which are beta,
+which are experimental, and which remain internal so ongoing release work can
+avoid accidental breaking changes.
 
 ## Stability Labels
 
@@ -141,7 +142,7 @@ The current freeze-candidate manifest is
 non-additive stable or beta changes, append `schema.migration.proposed` before
 implementation and `schema.migration.applied` after verification.
 
-Upgrade guidance from 0.4 through 0.9 is tracked in
+Upgrade guidance from 0.4 through 2.0 is tracked in
 [Migration Guide](migration.md).
 
 Related references: [api.md](api.md), [migration.md](migration.md),

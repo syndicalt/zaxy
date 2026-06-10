@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import builtins
+import re
 
 from zaxy import synthesis
 from zaxy.synthesis import (
@@ -31,6 +32,30 @@ from zaxy.synthesis import (
     source_group,
     synthesis_operation_for_plan,
 )
+from zaxy.synthesis import evidence_rows as synthesis_evidence_rows
+from zaxy.synthesis import foundations as synthesis_foundations
+from zaxy.synthesis import labels as synthesis_labels
+from zaxy.synthesis import ledgers as synthesis_ledgers
+from zaxy.synthesis import operations as synthesis_operations
+
+_SYNTHESIS_MODULES = (
+    synthesis,
+    synthesis_foundations,
+    synthesis_labels,
+    synthesis_evidence_rows,
+    synthesis_operations,
+    synthesis_ledgers,
+)
+
+
+def _patch_synthesis(monkeypatch, name, value):
+    """Patch a name in every synthesis part module that binds it."""
+    patched = False
+    for module in _SYNTHESIS_MODULES:
+        if hasattr(module, name):
+            monkeypatch.setattr(module, name, value)
+            patched = True
+    assert patched, f"no synthesis module binds {name!r}"
 
 
 def test_build_synthesis_plan_classifies_currency_sum() -> None:
@@ -378,7 +403,7 @@ def test_build_synthesis_plan_tokenizes_query_once(monkeypatch) -> None:
         calls += 1
         return original_source_tokens(text)
 
-    monkeypatch.setattr(synthesis, "source_tokens", tracking_source_tokens)
+    _patch_synthesis(monkeypatch, "source_tokens", tracking_source_tokens)
 
     plan = synthesis.build_synthesis_plan(
         "How much total money have I spent on bike-related expenses?"
@@ -397,7 +422,7 @@ def test_currency_label_scans_bounded_prefix_for_pre_amount_labels(monkeypatch) 
         scanned_prefix_lengths.append(len(prefix))
         return original_before_amount(prefix)
 
-    monkeypatch.setattr(synthesis, "_currency_label_before_amount", tracking_before_amount)
+    _patch_synthesis(monkeypatch, "_currency_label_before_amount", tracking_before_amount)
     prefix = ("This older unrelated budget note mentions $5 and planning details. " * 80)
     prefix += "I replaced the bike chain cost me "
     text = prefix + "$45 after tax."
@@ -415,9 +440,9 @@ def test_source_tokens_uses_compiled_regex_helpers(monkeypatch) -> None:
     def fail(*args, **kwargs):  # noqa: ANN001
         raise AssertionError("source_tokens should use compiled regex helpers")
 
-    monkeypatch.setattr(synthesis.re, "findall", fail)
-    monkeypatch.setattr(synthesis.re, "search", fail)
-    monkeypatch.setattr(synthesis.re, "split", fail)
+    monkeypatch.setattr(re, "findall", fail)
+    monkeypatch.setattr(re, "search", fail)
+    monkeypatch.setattr(re, "split", fail)
 
     assert synthesis.source_tokens("source_path=longmemeval/foo-bar.md") == [
         "source_path",
@@ -465,7 +490,7 @@ def test_source_tokens_caches_repeated_text_without_mutation_leak(monkeypatch) -
             calls += 1
             return original_token_re.findall(text)
 
-    monkeypatch.setattr(synthesis, "_SOURCE_TOKEN_RE", TrackingTokenRegex())
+    _patch_synthesis(monkeypatch, "_SOURCE_TOKEN_RE", TrackingTokenRegex())
     text = "source_path=longmemeval/foo-bar.md I bought bike gear."
 
     first = synthesis.source_tokens(text)
@@ -491,7 +516,7 @@ def test_currency_label_before_amount_uses_compiled_regex_helpers(monkeypatch) -
     def fail(*args, **kwargs):  # noqa: ANN001
         raise AssertionError("currency label recovery should use compiled regex helpers")
 
-    monkeypatch.setattr(synthesis.re, "search", fail)
+    monkeypatch.setattr(re, "search", fail)
 
     assert synthesis._currency_label_before_amount("I recently bought bike lights for ") == "bike lights"
 
@@ -504,8 +529,7 @@ def test_currency_label_before_amount_skips_patterns_without_trigger(monkeypatch
             del value
             raise AssertionError("irrelevant prefixes should not scan currency-label patterns")
 
-    monkeypatch.setattr(
-        synthesis,
+    _patch_synthesis(monkeypatch,
         "_CURRENCY_LABEL_BEFORE_AMOUNT_PATTERNS",
         (FailingPattern(),),
     )

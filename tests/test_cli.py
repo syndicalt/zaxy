@@ -663,7 +663,7 @@ def test_status_command_reports_embedded_projection_without_neo4j(monkeypatch: p
     assert "Neo4j:" not in result.output
 
 
-@patch("zaxy.__main__.LocalPgGraphRuntime")
+@patch("zaxy.cli.runtime.LocalPgGraphRuntime")
 def test_status_command_can_check_pggraph_projection_backend(
     mock_runtime_cls: MagicMock,
     monkeypatch: pytest.MonkeyPatch,
@@ -2356,7 +2356,7 @@ def test_activate_codex_json_output(tmp_path: Path) -> None:
     assert "# Zaxy Session Bootstrap" in payload["injection_text"]
 
 
-@patch("zaxy.__main__.subprocess.run")
+@patch("zaxy.cli.evaluation.subprocess.run")
 @patch("zaxy.capture_manager.subprocess.Popen")
 def test_activate_codex_launches_codex_with_injected_prompt(
     mock_popen: MagicMock,
@@ -2470,7 +2470,7 @@ def test_activate_codex_dry_run_prints_launch_command(tmp_path: Path) -> None:
     assert "Zaxy Session Bootstrap" in result.output
 
 
-@patch("zaxy.__main__.MemoryFabric")
+@patch("zaxy.cli.runtime.MemoryFabric")
 def test_memory_checkout_json_output(mock_fabric_cls: MagicMock, tmp_path: Path) -> None:
     """memory checkout --json should expose the Memory Checkout contract."""
     checkout = MagicMock()
@@ -2681,7 +2681,7 @@ def test_memory_reasoning_help_commands_are_registered() -> None:
         ),
     ],
 )
-@patch("zaxy.__main__._memory_fabric")
+@patch("zaxy.cli.runtime._memory_fabric")
 def test_memory_reasoning_read_commands_json_delegate_to_fabric(
     mock_fabric_cls: MagicMock,
     tmp_path: Path,
@@ -2727,7 +2727,7 @@ def test_memory_reasoning_read_commands_json_delegate_to_fabric(
     fabric.close.assert_awaited_once()
 
 
-@patch("zaxy.__main__._memory_fabric")
+@patch("zaxy.cli.runtime._memory_fabric")
 def test_memory_reasoning_propose_belief_update_json_delegates_to_fabric(
     mock_fabric_cls: MagicMock,
     tmp_path: Path,
@@ -2785,7 +2785,7 @@ def test_memory_reasoning_propose_belief_update_json_delegates_to_fabric(
     fabric.close.assert_awaited_once()
 
 
-@patch("zaxy.__main__._memory_fabric")
+@patch("zaxy.cli.runtime._memory_fabric")
 def test_memory_reasoning_record_unknown_json_delegates_to_fabric(
     mock_fabric_cls: MagicMock,
     tmp_path: Path,
@@ -2847,7 +2847,7 @@ def test_memory_reasoning_record_unknown_json_delegates_to_fabric(
     fabric.close.assert_awaited_once()
 
 
-@patch("zaxy.__main__._memory_fabric")
+@patch("zaxy.cli.runtime._memory_fabric")
 def test_memory_causal_successors_json_queries_fabric(
     mock_fabric_cls: MagicMock,
     tmp_path: Path,
@@ -2903,7 +2903,7 @@ def test_memory_causal_successors_json_queries_fabric(
     fabric.close.assert_awaited_once()
 
 
-@patch("zaxy.__main__._memory_fabric")
+@patch("zaxy.cli.runtime._memory_fabric")
 def test_memory_causal_successors_rejects_invalid_relation_before_fabric(
     mock_fabric_cls: MagicMock,
     tmp_path: Path,
@@ -2930,7 +2930,7 @@ def test_memory_causal_successors_rejects_invalid_relation_before_fabric(
     mock_fabric_cls.assert_not_called()
 
 
-@patch("zaxy.__main__._memory_fabric")
+@patch("zaxy.cli.runtime._memory_fabric")
 def test_memory_consolidation_propose_appends_candidate_event(
     mock_fabric_cls: MagicMock,
     tmp_path: Path,
@@ -3024,7 +3024,7 @@ def test_memory_consolidation_propose_rejects_invalid_source_event(tmp_path: Pat
     assert "source event must be formatted as SEQ:HASH" in result.output
 
 
-@patch("zaxy.__main__._memory_fabric")
+@patch("zaxy.cli.runtime._memory_fabric")
 def test_memory_consolidation_propose_from_log_json_delegates_to_fabric(
     mock_fabric_cls: MagicMock,
     tmp_path: Path,
@@ -3073,7 +3073,7 @@ def test_memory_consolidation_propose_from_log_json_delegates_to_fabric(
     fabric.close.assert_awaited_once()
 
 
-@patch("zaxy.__main__._memory_fabric")
+@patch("zaxy.cli.runtime._memory_fabric")
 def test_memory_consolidation_propose_from_log_text_reports_segments(
     mock_fabric_cls: MagicMock,
     tmp_path: Path,
@@ -3105,7 +3105,7 @@ def test_memory_consolidation_propose_from_log_text_reports_segments(
     assert "Created 3 non-authoritative consolidation candidates from 2 log segments for agent." in result.output
 
 
-@patch("zaxy.__main__._memory_fabric")
+@patch("zaxy.cli.runtime._memory_fabric")
 def test_memory_consolidation_status_json_delegates_to_fabric(
     mock_fabric_cls: MagicMock,
     tmp_path: Path,
@@ -3143,7 +3143,7 @@ def test_memory_consolidation_status_json_delegates_to_fabric(
     fabric.close.assert_awaited_once()
 
 
-@patch("zaxy.__main__._memory_fabric")
+@patch("zaxy.cli.runtime._memory_fabric")
 def test_memory_consolidation_review_appends_review_event(
     mock_fabric_cls: MagicMock,
     tmp_path: Path,
@@ -3192,7 +3192,7 @@ def test_memory_consolidation_review_appends_review_event(
     fabric.close.assert_awaited_once()
 
 
-@patch("zaxy.__main__.MemoryFabric")
+@patch("zaxy.cli.runtime.MemoryFabric")
 def test_memory_checkout_uses_repo_local_embedded_profile(
     mock_fabric_cls: MagicMock,
     monkeypatch,
@@ -3237,7 +3237,7 @@ def test_memory_checkout_uses_repo_local_embedded_profile(
 
 
 @patch("os.getpid", return_value=4321)
-@patch("zaxy.__main__.MemoryFabric")
+@patch("zaxy.cli.runtime.MemoryFabric")
 def test_memory_checkout_retries_locked_embedded_projection_with_isolated_path(
     mock_fabric_cls: MagicMock,
     _mock_getpid: MagicMock,
@@ -3345,7 +3345,7 @@ def test_packet_project_cli_projects_completed_packets(tmp_path: Path) -> None:
     assert "Atlas" in events[-1].payload["summary"]
 
 
-@patch("zaxy.__main__.GraphStore")
+@patch("zaxy.cli.runtime.GraphStore")
 def test_packet_project_cli_can_project_new_packets_to_graph(
     mock_graph_cls: MagicMock,
     tmp_path: Path,
@@ -6054,7 +6054,7 @@ def test_packet_status_command_reports_json(tmp_path: Path) -> None:
     assert '"unprojected": 1' in result.output
 
 
-@patch("zaxy.__main__.capture_codex_sessions")
+@patch("zaxy.cli.runtime.capture_codex_sessions")
 def test_codex_capture_command_imports_local_codex_records(mock_capture: MagicMock, tmp_path: Path) -> None:
     """codex-capture should expose deterministic local Codex observation import."""
     mock_capture.return_value.imported = 4
@@ -6089,8 +6089,8 @@ def test_codex_capture_command_imports_local_codex_records(mock_capture: MagicMo
     )
 
 
-@patch("zaxy.__main__.time.sleep")
-@patch("zaxy.__main__.capture_codex_sessions")
+@patch("zaxy.cli.workspace.time.sleep")
+@patch("zaxy.cli.runtime.capture_codex_sessions")
 def test_codex_capture_watch_mode_supports_bounded_iterations(
     mock_capture: MagicMock,
     mock_sleep: MagicMock,
@@ -6127,8 +6127,8 @@ def test_codex_capture_watch_mode_supports_bounded_iterations(
     mock_sleep.assert_called_once_with(0.25)
 
 
-@patch("zaxy.__main__.GraphStore")
-@patch("zaxy.__main__.capture_codex_sessions")
+@patch("zaxy.cli.runtime.GraphStore")
+@patch("zaxy.cli.runtime.capture_codex_sessions")
 def test_codex_capture_can_project_captured_events_to_graph(
     mock_capture: MagicMock,
     mock_graph_store: MagicMock,
@@ -6177,7 +6177,7 @@ def test_codex_capture_can_project_captured_events_to_graph(
     store.close.assert_awaited_once()
 
 
-@patch("zaxy.__main__.MemoryFabric")
+@patch("zaxy.cli.runtime.MemoryFabric")
 def test_index_codebase_command_reports_indexed_count(mock_fabric_cls: MagicMock, tmp_path: Path) -> None:
     """index-codebase should append codebase mapping events through MemoryFabric."""
     fabric = AsyncMock()
@@ -6196,7 +6196,7 @@ def test_index_codebase_command_reports_indexed_count(mock_fabric_cls: MagicMock
     fabric.close.assert_awaited_once()
 
 
-@patch("zaxy.__main__.MemoryFabric")
+@patch("zaxy.cli.runtime.MemoryFabric")
 def test_refresh_context_command_uses_backend_aware_fabric(
     mock_fabric_cls: MagicMock,
     tmp_path: Path,
@@ -6264,7 +6264,7 @@ def test_refresh_context_command_uses_backend_aware_fabric(
     fabric.close.assert_awaited_once()
 
 
-@patch("zaxy.__main__.MemoryFabric")
+@patch("zaxy.cli.runtime.MemoryFabric")
 def test_refresh_context_command_uses_repo_local_embedded_profile(
     mock_fabric_cls: MagicMock,
     monkeypatch,
@@ -6320,7 +6320,7 @@ def test_refresh_context_command_uses_repo_local_embedded_profile(
     assert kwargs["embedded_graph_path"] == embedded_path
 
 
-@patch("zaxy.__main__.MemoryFabric")
+@patch("zaxy.cli.runtime.MemoryFabric")
 def test_init_session_command_reports_workspace_profile(mock_fabric_cls: MagicMock, tmp_path: Path) -> None:
     """init-session should append a genesis event through MemoryFabric."""
     fabric = AsyncMock()
@@ -6542,7 +6542,7 @@ def test_init_command_rejects_mcp_output_without_client(tmp_path: Path) -> None:
     assert "mcp_client is required" in result.output
 
 
-@patch("zaxy.__main__.run_onboarding")
+@patch("zaxy.cli.runtime.run_onboarding")
 def test_init_command_passes_infra_action(mock_run_onboarding: AsyncMock, tmp_path: Path) -> None:
     """init --infra should pass explicit infra action into the orchestrator."""
     result_obj = MagicMock()
@@ -6556,7 +6556,7 @@ def test_init_command_passes_infra_action(mock_run_onboarding: AsyncMock, tmp_pa
     assert mock_run_onboarding.await_args.kwargs["infra"] == "check"
 
 
-@patch("zaxy.__main__.run_onboarding")
+@patch("zaxy.cli.runtime.run_onboarding")
 def test_init_command_passes_pggraph_bootstrap_options(mock_run_onboarding: AsyncMock, tmp_path: Path) -> None:
     """init should expose pgGraph bootstrap inputs to the onboarding orchestrator."""
     result_obj = MagicMock()
@@ -6588,7 +6588,7 @@ def test_init_command_passes_pggraph_bootstrap_options(mock_run_onboarding: Asyn
     assert kwargs["pggraph_repo"] == repo
 
 
-@patch("zaxy.__main__.run_onboarding")
+@patch("zaxy.cli.runtime.run_onboarding")
 def test_init_command_passes_embedded_projection_backend(mock_run_onboarding: AsyncMock, tmp_path: Path) -> None:
     """init should expose embedded projection selection to onboarding infra checks."""
     result_obj = MagicMock()
@@ -6614,7 +6614,7 @@ def test_init_command_passes_embedded_projection_backend(mock_run_onboarding: As
     assert kwargs["projection_backend"] == "embedded"
 
 
-@patch("zaxy.__main__.run_onboarding")
+@patch("zaxy.cli.runtime.run_onboarding")
 def test_init_command_expands_local_embedded_codex_preset(mock_run_onboarding: AsyncMock, tmp_path: Path) -> None:
     """init --preset local-embedded-codex should select embedded without extra flags."""
     result_obj = MagicMock()
@@ -6632,7 +6632,7 @@ def test_init_command_expands_local_embedded_codex_preset(mock_run_onboarding: A
     assert kwargs["hook_client"] == "codex"
 
 
-@patch("zaxy.__main__.run_onboarding")
+@patch("zaxy.cli.runtime.run_onboarding")
 def test_init_command_defaults_to_local_embedded_codex_onboarding(mock_run_onboarding: AsyncMock, tmp_path: Path) -> None:
     """Bare init should be the one-command no-sidecar local onboarding path."""
     result_obj = MagicMock()
@@ -6656,7 +6656,7 @@ def test_init_command_defaults_to_local_embedded_codex_onboarding(mock_run_onboa
     assert kwargs["agent_instructions"] is True
 
 
-@patch("zaxy.__main__.run_onboarding")
+@patch("zaxy.cli.runtime.run_onboarding")
 def test_init_command_can_skip_agent_instruction_install(
     mock_run_onboarding: AsyncMock,
     tmp_path: Path,
@@ -6673,7 +6673,7 @@ def test_init_command_can_skip_agent_instruction_install(
     assert mock_run_onboarding.await_args.kwargs["agent_instructions"] is False
 
 
-@patch("zaxy.__main__.run_onboarding")
+@patch("zaxy.cli.runtime.run_onboarding")
 def test_init_command_expands_local_claude_preset(mock_run_onboarding: AsyncMock, tmp_path: Path) -> None:
     """init --preset local-claude should pass expanded explicit options."""
     result_obj = MagicMock()
@@ -6694,7 +6694,7 @@ def test_init_command_expands_local_claude_preset(mock_run_onboarding: AsyncMock
     assert kwargs["capture_mode"] == "deterministic"
 
 
-@patch("zaxy.__main__.run_onboarding")
+@patch("zaxy.cli.runtime.run_onboarding")
 def test_init_command_expands_local_codex_preset(mock_run_onboarding: AsyncMock, tmp_path: Path) -> None:
     """init --preset local-codex should install safe repo-local capture config."""
     result_obj = MagicMock()
@@ -6715,7 +6715,7 @@ def test_init_command_expands_local_codex_preset(mock_run_onboarding: AsyncMock,
     assert kwargs["capture_mode"] == "deterministic"
 
 
-@patch("zaxy.__main__.run_onboarding")
+@patch("zaxy.cli.runtime.run_onboarding")
 def test_init_command_passes_packet_capture_options(
     mock_run_onboarding: AsyncMock,
     tmp_path: Path,
@@ -6747,7 +6747,7 @@ def test_init_command_passes_packet_capture_options(
     assert kwargs["packet_port"] == 8788
 
 
-@patch("zaxy.__main__.run_onboarding")
+@patch("zaxy.cli.runtime.run_onboarding")
 def test_init_command_accepts_capture_mode_packet(mock_run_onboarding: AsyncMock, tmp_path: Path) -> None:
     """init --capture-mode packet should explicitly opt into packet-capture guidance."""
     result_obj = MagicMock()
@@ -6761,7 +6761,7 @@ def test_init_command_accepts_capture_mode_packet(mock_run_onboarding: AsyncMock
     assert mock_run_onboarding.await_args.kwargs["capture_mode"] == "packet"
 
 
-@patch("zaxy.__main__.run_onboarding")
+@patch("zaxy.cli.runtime.run_onboarding")
 def test_init_command_accepts_capture_start_action(mock_run_onboarding: AsyncMock, tmp_path: Path) -> None:
     """init --capture start should ask onboarding to start deterministic capture."""
     result_obj = MagicMock()
@@ -6775,7 +6775,7 @@ def test_init_command_accepts_capture_start_action(mock_run_onboarding: AsyncMoc
     assert mock_run_onboarding.await_args.kwargs["capture_action"] == "start"
 
 
-@patch("zaxy.__main__.run_onboarding")
+@patch("zaxy.cli.runtime.run_onboarding")
 def test_init_command_accepts_codex_mcp_install_options(
     mock_run_onboarding: AsyncMock,
     tmp_path: Path,
@@ -6808,7 +6808,7 @@ def test_init_command_accepts_codex_mcp_install_options(
     assert kwargs["codex_home"] == tmp_path / "codex-home"
 
 
-@patch("zaxy.__main__.run_onboarding")
+@patch("zaxy.cli.runtime.run_onboarding")
 def test_init_command_auto_codex_mcp_install_uses_existing_user_config(
     mock_run_onboarding: AsyncMock,
     tmp_path: Path,
@@ -6834,7 +6834,7 @@ def test_init_command_auto_codex_mcp_install_uses_existing_user_config(
     assert kwargs["codex_home"] is None
 
 
-@patch("zaxy.__main__.run_onboarding")
+@patch("zaxy.cli.runtime.run_onboarding")
 def test_init_command_auto_codex_mcp_install_keeps_command_without_existing_config(
     mock_run_onboarding: AsyncMock,
     tmp_path: Path,
@@ -6858,7 +6858,7 @@ def test_init_command_auto_codex_mcp_install_keeps_command_without_existing_conf
     assert kwargs["codex_home"] is None
 
 
-@patch("zaxy.__main__.run_onboarding")
+@patch("zaxy.cli.runtime.run_onboarding")
 def test_init_command_auto_codex_mcp_install_keeps_command_for_existing_zaxy_entry(
     mock_run_onboarding: AsyncMock,
     tmp_path: Path,
@@ -6888,7 +6888,7 @@ def test_init_command_auto_codex_mcp_install_keeps_command_for_existing_zaxy_ent
     assert kwargs["codex_mcp_conflict_path"] == codex_home / "config.toml"
 
 
-@patch("zaxy.__main__.run_onboarding")
+@patch("zaxy.cli.runtime.run_onboarding")
 def test_init_command_auto_codex_mcp_install_uses_matching_existing_zaxy_entry(
     mock_run_onboarding: AsyncMock,
     tmp_path: Path,

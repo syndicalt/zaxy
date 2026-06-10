@@ -19,6 +19,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 
+import numpy as np
+import numpy.typing as npt
+
 _CacheValue = TypeVar("_CacheValue")
 _TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
 _KEYWORD_STOP_WORDS = frozenset(
@@ -71,12 +74,26 @@ class _KeywordIndex:
     document_length_norms: list[float]
 
 
+VECTOR_INDEX_CACHE_MAX_ENTRIES = 8
+VECTOR_INDEX_CACHE_MAX_BYTES = 256 * 1024 * 1024
+
+
+@dataclass(frozen=True)
+class _VectorGroup:
+    """Unit-normalized embedding matrix for one embedding dimensionality."""
+
+    matrix: npt.NDArray[np.float64]
+    entity_indexes: list[int]
+
+
 @dataclass(frozen=True)
 class _VectorIndex:
     entities: list[GraphEntity]
-    norms: list[float]
-    postings: dict[int, list[tuple[int, float]]]
-    dimensions: list[int]
+    groups: dict[int, _VectorGroup]
+
+    @property
+    def matrix_bytes(self) -> int:
+        return sum(group.matrix.nbytes for group in self.groups.values())
 
 
 @dataclass(frozen=True)
@@ -867,37 +884,40 @@ class EmbeddedGraphStore:
 
         if limit <= 0:
             return []
-        query_norm = _vector_norm(embedding)
+        query = np.asarray(embedding, dtype=np.float64)
+        query_norm = float(np.linalg.norm(query))
         if query_norm == 0.0:
             return []
         index = self._vector_index(session_id, temporal_point)
-        query_sparse = _sparse_vector(embedding)
-        dot_products: dict[int, float] = {}
-        for dimension, query_value in query_sparse.items():
-            for entity_index, entity_value in index.postings.get(dimension, []):
-                dot_products[entity_index] = dot_products.get(entity_index, 0.0) + (query_value * entity_value)
-        matches: list[SearchResult] = []
-        for entity_index, dot in dot_products.items():
-            norm = index.norms[entity_index]
-            if norm == 0.0 or index.dimensions[entity_index] != len(embedding):
-                continue
-            score = dot / (query_norm * norm)
-            if score <= 0.0:
-                continue
-            matches.append(
+        group = index.groups.get(len(embedding))
+        if group is None:
+            return []
+        scores = group.matrix @ (query / query_norm)
+        positive_rows = np.flatnonzero(scores > 0.0)
+        if positive_rows.size == 0:
+            return []
+        # Stable sort keeps first-projected entities ahead on score ties,
+        # matching the previous heapq.nlargest behavior.
+        ordered_rows = positive_rows[np.argsort(-scores[positive_rows], kind="stable")]
+        results: list[SearchResult] = []
+        for row in ordered_rows[:limit]:
+            score = float(scores[row])
+            results.append(
                 SearchResult(
-                    entity=index.entities[entity_index],
+                    entity=index.entities[group.entity_indexes[int(row)]],
                     score=score,
                     source="vector",
                     raw_score=score,
                 )
             )
-        return heapq.nlargest(limit, matches, key=lambda item: item.score)
+        return results
 
     def _vector_index(self, session_id: str, temporal_point: str | None) -> _VectorIndex:
         key = (session_id, temporal_point)
         cached = self._vector_index_cache.get(key)
         if cached is not None:
+            # Move-to-end so LRU eviction drops the least recently used index.
+            self._vector_index_cache[key] = self._vector_index_cache.pop(key)
             return cached
         candidate_entities = (
             self._current_entities(session_id)
@@ -905,32 +925,45 @@ class EmbeddedGraphStore:
             else self._temporal_entities(session_id, temporal_point)
         )
         entities: list[GraphEntity] = []
-        norms: list[float] = []
-        dimensions: list[int] = []
-        postings: dict[int, list[tuple[int, float]]] = {}
+        unit_vectors: dict[int, list[npt.NDArray[np.float64]]] = {}
+        group_entity_indexes: dict[int, list[int]] = {}
         for entity in candidate_entities:
             vector = _embedding_vector(entity.properties.get("embedding"))
             if vector is None:
                 continue
-            norm = _vector_norm(vector)
+            values = np.asarray(vector, dtype=np.float64)
+            norm = float(np.linalg.norm(values))
             if norm == 0.0:
                 continue
             entity.properties["embedding_dimension"] = len(vector)
+            entity_index = len(entities)
             entities.append(entity)
-            entity_index = len(norms)
-            sparse_vector = _sparse_vector(vector)
-            norms.append(norm)
-            dimensions.append(len(vector))
-            for dimension, value in sparse_vector.items():
-                postings.setdefault(dimension, []).append((entity_index, value))
-        index = _VectorIndex(
-            entities=entities,
-            norms=norms,
-            postings=postings,
-            dimensions=dimensions,
-        )
+            unit_vectors.setdefault(len(vector), []).append(values / norm)
+            group_entity_indexes.setdefault(len(vector), []).append(entity_index)
+        groups = {
+            dimension: _VectorGroup(
+                matrix=np.vstack(vectors),
+                entity_indexes=group_entity_indexes[dimension],
+            )
+            for dimension, vectors in unit_vectors.items()
+        }
+        index = _VectorIndex(entities=entities, groups=groups)
         self._vector_index_cache[key] = index
+        self._evict_vector_indexes_over_budget()
         return index
+
+    def _evict_vector_indexes_over_budget(self) -> None:
+        """Drop least-recently-used vector indexes beyond the entry/byte budget.
+
+        The newest index always survives, even alone over budget, so a single
+        large session degrades to cache-of-one rather than rebuild-per-query.
+        """
+        while len(self._vector_index_cache) > 1 and (
+            len(self._vector_index_cache) > VECTOR_INDEX_CACHE_MAX_ENTRIES
+            or sum(index.matrix_bytes for index in self._vector_index_cache.values())
+            > VECTOR_INDEX_CACHE_MAX_BYTES
+        ):
+            self._vector_index_cache.pop(next(iter(self._vector_index_cache)))
 
     def _clear_vector_index_cache(self, session_id: str) -> None:
         self._vector_index_cache = self._clear_session_keyed_cache(self._vector_index_cache, session_id)
@@ -1768,17 +1801,6 @@ def _embedding_vector(value: Any) -> list[float] | None:
             return None
         vector.append(float(item))
     return vector
-
-
-def _vector_norm(vector: list[float]) -> float:
-    squared_sum = 0.0
-    for value in vector:
-        squared_sum += value * value
-    return math.sqrt(squared_sum)
-
-
-def _sparse_vector(vector: list[float]) -> dict[int, float]:
-    return {index: value for index, value in enumerate(vector) if value != 0.0}
 
 
 def _json_dict(raw: Any) -> dict[str, Any]:

@@ -7,6 +7,7 @@ import importlib.util
 from collections import Counter
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 import zaxy.embedded_graph_store as embedded_graph_store
@@ -17,7 +18,6 @@ from zaxy.embedded_graph_store import (
     _keyword_query_terms,
     _properties_reference_source,
     _terms,
-    _vector_norm,
 )
 from zaxy.extract import ExtractedEdge, ExtractedEntity, ExtractionResult
 from zaxy.graph import GraphEntity
@@ -86,9 +86,9 @@ def test_embedded_store_clear_read_caches_removes_session_indexes_only() -> None
         ("agent-2", "then"): embedded_graph_store._KeywordIndex([], [], {}, {}, []),
     }
     store._vector_index_cache = {
-        ("agent-1", None): embedded_graph_store._VectorIndex([], [], {}, []),
-        ("agent-1", "2026-05-20T01:00:00Z"): embedded_graph_store._VectorIndex([], [], {}, []),
-        ("agent-2", None): embedded_graph_store._VectorIndex([], [], {}, []),
+        ("agent-1", None): embedded_graph_store._VectorIndex([], {}),
+        ("agent-1", "2026-05-20T01:00:00Z"): embedded_graph_store._VectorIndex([], {}),
+        ("agent-2", None): embedded_graph_store._VectorIndex([], {}),
     }
     store._traversal_index_cache = {
         "agent-1": embedded_graph_store._TraversalIndex({}, {}),
@@ -828,7 +828,7 @@ async def test_upsert_extraction_preserves_read_caches_for_event_only_projection
     store._current_entity_index_cache["agent-1"] = []
     store._current_entity_lookup_cache["agent-1"] = {}
     store._keyword_index_cache["agent-1"] = embedded_graph_store._KeywordIndex([], [], {}, {}, [])
-    store._vector_index_cache[("agent-1", None)] = embedded_graph_store._VectorIndex([], [], {}, [])
+    store._vector_index_cache[("agent-1", None)] = embedded_graph_store._VectorIndex([], {})
     store._traversal_index_cache["agent-1"] = embedded_graph_store._TraversalIndex({}, {})
 
     await store.upsert_extraction(
@@ -1887,8 +1887,9 @@ async def test_embedded_store_searches_entity_vectors(tmp_path: Path) -> None:
     assert results[0].score > 0
     assert results[0].entity.properties["source_event_hash"] == "hash-1"
     index = store._vector_index_cache[("agent-1", None)]
-    assert index.postings[0] == [(0, 1.0)]
-    assert index.postings[1] == [(1, 1.0)]
+    group = index.groups[2]
+    assert group.entity_indexes == [0, 1]
+    assert group.matrix.tolist() == [[1.0, 0.0], [0.0, 1.0]]
 
     await store.close()
 
@@ -1906,17 +1907,79 @@ async def test_embedded_store_zero_vector_search_skips_index_build(monkeypatch: 
     assert await store.search_vector([0.0, 0.0], session_id="agent-1") == []
 
 
-def test_embedded_vector_norm_avoids_generator_sum_hot_path(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Embedded vector scoring should avoid generator allocation per candidate vector."""
-    monkeypatch.setattr(
-        builtins,
-        "sum",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            AssertionError("embedded vector norm should not allocate a generator for sum")
-        ),
+def test_embedded_vector_index_groups_store_unit_vectors() -> None:
+    """The vector index must store unit-normalized rows grouped by dimension."""
+    entity = GraphEntity(
+        name="Vector Goal",
+        entity_type="goal",
+        valid_from="2026-05-20T01:00:00Z",
+        valid_to=None,
+        properties={"embedding": [3.0, 4.0]},
+        session_id="agent-1",
+    )
+    store = EmbeddedGraphStore(Path("unused.kuzu"))
+    store._current_entity_index_cache["agent-1"] = [entity]
+
+    index = store._vector_index("agent-1", None)
+
+    assert index.groups[2].matrix.tolist() == [[0.6, 0.8]]
+    assert index.groups[2].entity_indexes == [0]
+    assert entity.properties["embedding_dimension"] == 2
+
+
+def _vector_entity(name: str, embedding: list[float]) -> GraphEntity:
+    return GraphEntity(
+        name=name,
+        entity_type="goal",
+        valid_from="2026-05-20T01:00:00Z",
+        valid_to=None,
+        properties={"embedding": embedding},
+        session_id="agent-1",
     )
 
-    assert _vector_norm([3.0, 4.0]) == 5.0
+
+def test_embedded_vector_index_cache_evicts_lru_beyond_entry_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The vector index cache must cap how many session/temporal variants it holds."""
+    monkeypatch.setattr(embedded_graph_store, "VECTOR_INDEX_CACHE_MAX_ENTRIES", 2)
+    store = EmbeddedGraphStore(Path("unused.kuzu"))
+    for session in ("agent-1", "agent-2", "agent-3"):
+        store._current_entity_index_cache[session] = [_vector_entity(session, [1.0, 0.0])]
+        store._vector_index(session, None)
+
+    assert list(store._vector_index_cache) == [("agent-2", None), ("agent-3", None)]
+
+
+def test_embedded_vector_index_cache_evicts_lru_beyond_byte_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Embedding matrices beyond the byte budget must evict oldest indexes first."""
+    # Each 2-dim float64 unit vector is 16 bytes; budget of 24 holds only one.
+    monkeypatch.setattr(embedded_graph_store, "VECTOR_INDEX_CACHE_MAX_BYTES", 24)
+    store = EmbeddedGraphStore(Path("unused.kuzu"))
+    for session in ("agent-1", "agent-2"):
+        store._current_entity_index_cache[session] = [_vector_entity(session, [1.0, 0.0])]
+        store._vector_index(session, None)
+
+    assert list(store._vector_index_cache) == [("agent-2", None)]
+
+
+def test_embedded_vector_index_cache_hit_refreshes_lru_position(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A cache hit must protect that index from the next eviction pass."""
+    monkeypatch.setattr(embedded_graph_store, "VECTOR_INDEX_CACHE_MAX_ENTRIES", 2)
+    store = EmbeddedGraphStore(Path("unused.kuzu"))
+    for session in ("agent-1", "agent-2"):
+        store._current_entity_index_cache[session] = [_vector_entity(session, [1.0, 0.0])]
+        store._vector_index(session, None)
+
+    store._vector_index("agent-1", None)  # refresh agent-1 recency
+    store._current_entity_index_cache["agent-3"] = [_vector_entity("agent-3", [1.0, 0.0])]
+    store._vector_index("agent-3", None)
+
+    assert list(store._vector_index_cache) == [("agent-1", None), ("agent-3", None)]
 
 
 def test_properties_reference_source_uses_loop_hot_path(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1949,20 +2012,9 @@ async def test_embedded_store_vector_search_zero_limit_skips_index(monkeypatch: 
 
 @pytest.mark.asyncio
 async def test_embedded_store_vector_search_computes_candidate_score_once(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Vector candidates should compute cosine score once and reuse it as raw_score."""
+    """Vector candidates should score via one matrix product and reuse it as raw_score."""
     store = EmbeddedGraphStore(Path("unused.kuzu"))
 
-    class _CountingNorm:
-        score_calls = 0
-
-        def __rmul__(self, _query_norm: float) -> _CountingNorm:
-            return self
-
-        def __rtruediv__(self, _dot: float) -> float:
-            self.score_calls += 1
-            return 1.0
-
-    norm = _CountingNorm()
     entity = GraphEntity(
         name="Vector Goal",
         entity_type="goal",
@@ -1977,19 +2029,21 @@ async def test_embedded_store_vector_search_computes_candidate_score_once(monkey
         assert temporal_point is None
         return embedded_graph_store._VectorIndex(
             entities=[entity],
-            norms=[norm],
-            postings={0: [(0, 1.0)]},
-            dimensions=[1],
+            groups={
+                1: embedded_graph_store._VectorGroup(
+                    matrix=np.array([[1.0]]),
+                    entity_indexes=[0],
+                )
+            },
         )
 
     monkeypatch.setattr(store, "_vector_index", vector_index)
 
-    results = await store.search_vector([1.0], session_id="agent-1")
+    results = await store.search_vector([2.0], session_id="agent-1")
 
     assert [result.entity.name for result in results] == ["Vector Goal"]
     assert results[0].score == 1.0
-    assert results[0].raw_score == 1.0
-    assert norm.score_calls == 1
+    assert results[0].raw_score == results[0].score
 
 
 @pytest.mark.asyncio
@@ -2019,7 +2073,9 @@ async def test_embedded_store_caches_vector_index_and_invalidates_on_projection(
     assert [result.entity.name for result in first] == ["Original Vector"]
     assert ("agent-1", None) in store._vector_index_cache
     assert not hasattr(store._vector_index_cache[("agent-1", None)], "sparse_vectors")
-    assert store._vector_index_cache[("agent-1", None)].postings == {0: [(0, 1.0)]}
+    cached_group = store._vector_index_cache[("agent-1", None)].groups[2]
+    assert cached_group.matrix.tolist() == [[1.0, 0.0]]
+    assert cached_group.entity_indexes == [0]
 
     await store.upsert_extraction(
         ExtractionResult(
@@ -2081,7 +2137,8 @@ async def test_embedded_store_current_vector_index_reuses_warmed_entities(
 
     assert index.entities[0] is warmed_entities[0]
     assert not hasattr(index, "sparse_vectors")
-    assert index.postings == {0: [(0, 1.0)]}
+    assert index.groups[2].matrix.tolist() == [[1.0, 0.0]]
+    assert index.groups[2].entity_indexes == [0]
     await store.close()
 
 
@@ -2118,7 +2175,8 @@ async def test_embedded_store_temporal_vector_index_reuses_temporal_entities_hel
     index = store._vector_index("agent-1", "2026-05-20T01:01:00Z")
 
     assert index.entities[0] is temporal_entities[0]
-    assert index.postings == {1: [(0, 1.0)]}
+    assert index.groups[2].matrix.tolist() == [[0.0, 1.0]]
+    assert index.groups[2].entity_indexes == [0]
     await store.close()
 
 

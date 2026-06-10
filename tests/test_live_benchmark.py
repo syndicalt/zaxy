@@ -10,6 +10,25 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from typer.testing import CliRunner
+
+from zaxy.__main__ import app
+from zaxy.cli import _parse_benchmark_baselines
+from zaxy.embedding import HashEmbeddingProvider
+from zaxy.event import EventLog
+from zaxy.graph import GraphEventProjectionStatus
+from zaxy.projection_backends import ProjectionBackendConfig
+from zaxy.query import ContextChunk
+from zaxy.retrieval_intent import classify_retrieval_intent
+from zaxy.retrieval_plan import (
+    absence_check_bundle,
+    bridge_source_lane_queries,
+    source_evidence_score,
+    source_lane_candidate_limit,
+    source_lane_queries,
+    source_lane_query,
+    source_synthesis_bundle,
+    source_synthesis_candidate_limit,
+)
 from zaxy_benchmarks.benchmark import build_competitive_event_log, competitive_cases
 from zaxy_benchmarks.live_benchmark import (
     CONSOLIDATION_WORKLOAD_VERSION,
@@ -69,28 +88,12 @@ from zaxy_benchmarks.live_benchmark import (
     write_benchmark_report,
 )
 
-from zaxy.__main__ import _parse_benchmark_baselines, app
-from zaxy.embedding import HashEmbeddingProvider
-from zaxy.event import EventLog
-from zaxy.graph import GraphEventProjectionStatus
-from zaxy.projection_backends import ProjectionBackendConfig
-from zaxy.query import ContextChunk
-from zaxy.retrieval_intent import classify_retrieval_intent
-from zaxy.retrieval_plan import (
-    absence_check_bundle,
-    bridge_source_lane_queries,
-    source_evidence_score,
-    source_lane_candidate_limit,
-    source_lane_queries,
-    source_lane_query,
-    source_synthesis_bundle,
-    source_synthesis_candidate_limit,
-)
-
 
 def test_cli_exposes_live_benchmark_command() -> None:
     """The public CLI should expose a reproducible live benchmark command."""
-    cli = Path("src/zaxy/__main__.py").read_text(encoding="utf-8")
+    cli = "\n".join(
+        path.read_text(encoding="utf-8") for path in sorted(Path("src/zaxy/cli").glob("*.py"))
+    )
     script = Path("scripts/live-benchmark.sh").read_text(encoding="utf-8")
 
     assert "def benchmark(" in cli

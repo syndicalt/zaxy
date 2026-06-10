@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from zaxy_benchmarks.benchmark import BenchmarkCase, expected_terms_recall
-
 from zaxy.checkout import (
     _compact_synthesis_summary,
     _merge_answer_candidates,
@@ -15,6 +13,7 @@ from zaxy.checkout import (
 )
 from zaxy.context import Context
 from zaxy.core import ContextAssembly, build_memory_checkout
+from zaxy_benchmarks.benchmark import BenchmarkCase, expected_terms_recall
 
 
 def test_answer_candidate_merge_prioritizes_specific_state_operations() -> None:

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import pytest
+
+from zaxy.consolidation import build_consolidation_candidate_event
 from zaxy_benchmarks.causal_benchmark import (
     CausalBenchmarkCase,
     ConsolidationBenchmarkCase,
@@ -10,8 +12,6 @@ from zaxy_benchmarks.causal_benchmark import (
     evaluate_consolidation_candidate,
     summarize_causal_benchmark,
 )
-
-from zaxy.consolidation import build_consolidation_candidate_event
 
 
 class GraphEntityLike:

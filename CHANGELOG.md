@@ -2,6 +2,21 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 2.0.1 - 2026-06-10
+
+- Decomposed the largest internal modules into dependency-layered packages while
+  preserving the original `zaxy.retrieval_plan`, `zaxy.synthesis`, and CLI
+  import surfaces for existing callers.
+- Replaced the embedded projection backend's pure-Python vector scoring loop
+  with numpy-backed unit-vector matrix ranking plus bounded LRU cache budgets.
+- Added session-scoped paged-query caching with Eventloom log freshness
+  detection so continuation pages avoid redundant retrieval without serving
+  stale direct-writer results.
+- Expanded CI lint and strict type checking to cover source-checkout benchmark
+  modules in `zaxy_benchmarks`.
+- Updated stale v0.9-era documentation wording and regenerated rendered site
+  pages.
+
 ## 2.0.0 - 2026-06-09
 
 - Added the Zaxy 2.0 cognitive-substrate release-candidate surface with causal
