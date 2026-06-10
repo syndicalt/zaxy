@@ -12,6 +12,8 @@ from pathlib import Path
 import httpx
 import pytest
 from typer.testing import CliRunner
+
+from zaxy.__main__ import app
 from zaxy_benchmarks.longmembench import (
     OFFICIAL_FULL_QUESTION_COUNT,
     _answer_generation_contexts,
@@ -39,8 +41,6 @@ from zaxy_benchmarks.longmembench import (
     write_longmembench_external_run_manifest,
     write_longmembench_report,
 )
-
-from zaxy.__main__ import app
 
 
 def _write_official_worktree(root: Path, *, questions: int = 2) -> Path:

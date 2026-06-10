@@ -9,6 +9,8 @@ from dataclasses import replace
 from pathlib import Path
 
 from typer.testing import CliRunner
+
+from zaxy.__main__ import app
 from zaxy_benchmarks.harvey_lab_benchmark import (
     ARTICLE_FRAMEWORK_FIT,
     ARTICLE_TASKS,
@@ -37,8 +39,6 @@ from zaxy_benchmarks.harvey_lab_benchmark import (
     validate_harvey_lab_report,
     write_harvey_lab_report,
 )
-
-from zaxy.__main__ import app
 
 
 def _zaxy_result(

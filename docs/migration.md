@@ -1,7 +1,7 @@
 # Migration Guide
 
-This guide covers the public upgrade path from Zaxy 0.4 through the v0.9
-freeze candidate. Eventloom logs are append-only; migrations should add events,
+This guide covers the public upgrade path from Zaxy 0.4 through 2.0. Eventloom
+logs are append-only; migrations should add events,
 projection metadata, indexes, docs, or compatibility shims instead of rewriting
 historical records.
 
@@ -109,7 +109,7 @@ Required actions:
 
 ## From 0.8 to 0.9
 
-0.9 is the API freeze candidate. The main migration task is to compare your
+0.9 was the API freeze candidate. The main migration task is to compare your
 client usage with `docs/api-inventory.md` and remove dependencies on surfaces
 marked `Internal`. Surfaces marked `Experimental` can remain in prototypes, but
 they should not be required for a production 1.0 rollout.
@@ -125,6 +125,21 @@ Required actions:
   release gate explicitly promotes them.
 - Do not make public benchmark claims from untracked Eventloom, query, or
   diagnostics files.
+
+## From 0.9 to 2.0
+
+The frozen v0.9 surfaces carry forward; 1.x and 2.0 changes are additive or
+follow the freeze policy in `docs/api-inventory.md`. Notable upgrade items:
+
+- The PyPI distribution is `zaxy-memory`; the import package and console
+  command remain `zaxy`.
+- 1.1.x adopted Eventloom v1 JSONL envelopes while preserving legacy log
+  replay; see the changelog for envelope details.
+- 2.0 added causal memory contracts, review-gated consolidation, and
+  reasoning-loop primitives as new (additive) surfaces.
+- Benchmark and evaluation modules moved out of the runtime package into
+  `zaxy_benchmarks`; production imports of `zaxy.*benchmark*` modules should
+  be removed (they were `Internal`/`Experimental` surfaces).
 
 ## Compatibility Tests
 

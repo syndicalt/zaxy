@@ -15,6 +15,7 @@ from zaxy.compaction import build_compaction_projection, write_compaction_projec
 from zaxy.config import Settings
 from zaxy.coordination import CoordinationBrief
 from zaxy.core import (
+    QUERY_PAGE_CACHE_TTL_SECONDS,
     Context,
     ContextAssembly,
     ContextRefreshReport,
@@ -603,6 +604,88 @@ class TestQueryPagination:
         assert [context.content for context in second.contexts] == ["gamma"]
         assert second.next_cursor is None
         assert second.has_more is False
+
+    async def test_query_page_serves_repeat_page_from_cache(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """An identical page request inside the TTL should not re-run retrieval."""
+        fabric._connected = True
+        fabric.query_router.query.return_value = [
+            ContextChunk(content="alpha", source="keyword", score=0.9, valid_from=None, valid_to=None),
+            ContextChunk(content="beta", source="keyword", score=0.8, valid_from=None, valid_to=None),
+        ]
+
+        first = await fabric.query_page("roadmap", limit=2, session_id="agent-1")
+        repeat = await fabric.query_page("roadmap", limit=2, session_id="agent-1")
+
+        assert [context.content for context in first.contexts] == ["alpha", "beta"]
+        assert [context.content for context in repeat.contexts] == ["alpha", "beta"]
+        assert fabric.query_router.query.await_count == 1
+
+    async def test_query_page_append_invalidates_cached_pages_for_session(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """New session events must drop cached pages so results stay fresh."""
+        fabric._connected = True
+        fabric.query_router.query.return_value = [
+            ContextChunk(content="alpha", source="keyword", score=0.9, valid_from=None, valid_to=None),
+        ]
+
+        await fabric.query_page("roadmap", limit=2, session_id="agent-1")
+        await fabric.append("note.created", actor="tester", payload={"text": "hi"}, session_id="agent-1")
+        await fabric.query_page("roadmap", limit=2, session_id="agent-1")
+
+        assert fabric.query_router.query.await_count == 2
+
+    async def test_query_page_cache_detects_writers_that_bypass_fabric_append(
+        self,
+        fabric: MemoryFabric,
+        tmp_path: Path,
+    ) -> None:
+        """Direct EventLog appends must invalidate cached pages via the log signature."""
+        log_path = tmp_path / "agent-1.jsonl"
+        log_path.write_text("seed\n")
+        fabric.session_manager.get.return_value.eventlog.path = str(log_path)
+        key = ("roadmap", "agent-1", None, None)
+
+        signature = fabric._query_page_log_signature("agent-1")
+        assert signature is not None
+        fabric._store_query_page_contexts(key, 3, signature, [])
+        assert (
+            fabric._cached_query_page_contexts(key, 3, fabric._query_page_log_signature("agent-1"))
+            == []
+        )
+
+        with log_path.open("a", encoding="utf-8") as fh:
+            fh.write("direct-writer-event\n")
+
+        assert (
+            fabric._cached_query_page_contexts(key, 3, fabric._query_page_log_signature("agent-1"))
+            is None
+        )
+
+    async def test_query_page_cache_expires_after_ttl(
+        self,
+        fabric: MemoryFabric,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Cached pages must not outlive the freshness window."""
+        import time
+
+        fabric._connected = True
+        fabric.query_router.query.return_value = [
+            ContextChunk(content="alpha", source="keyword", score=0.9, valid_from=None, valid_to=None),
+        ]
+        clock = {"now": 1000.0}
+        monkeypatch.setattr(time, "monotonic", lambda: clock["now"])
+
+        await fabric.query_page("roadmap", limit=2, session_id="agent-1")
+        clock["now"] += QUERY_PAGE_CACHE_TTL_SECONDS + 1.0
+        await fabric.query_page("roadmap", limit=2, session_id="agent-1")
+
+        assert fabric.query_router.query.await_count == 2
 
     async def test_query_page_rejects_cursor_for_different_query(
         self,

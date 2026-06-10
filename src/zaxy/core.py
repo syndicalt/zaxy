@@ -17,6 +17,7 @@ Example::
 
 from __future__ import annotations
 
+import os
 import re
 from contextlib import suppress
 from dataclasses import dataclass, field, replace
@@ -123,6 +124,9 @@ from zaxy.workspace import (
     mark_workspace_instruction_event_updated,
     workspace_profile_from_payload,
 )
+
+QUERY_PAGE_CACHE_TTL_SECONDS = 30.0
+QUERY_PAGE_CACHE_MAX_ENTRIES = 32
 
 
 @dataclass(frozen=True)
@@ -368,6 +372,10 @@ class MemoryFabric:
             packet_memory_slots=resolved_settings.context_packet_memory_slots,
         )
         self._verbatim_index_cache: dict[str, tuple[tuple[int, int], VerbatimIndex]] = {}
+        self._query_page_cache: dict[
+            tuple[str, str, str | None, tuple[float, ...] | None],
+            tuple[float, int, tuple[int, int] | None, list[Context]],
+        ] = {}
         self._initialized_workspaces: dict[tuple[str, str], WorkspaceProfile] = {}
         self._initialized_instruction_signatures: dict[tuple[str, str], str] = {}
         self._warmed_projection_sessions: set[str] = set()
@@ -389,6 +397,7 @@ class MemoryFabric:
         await self.graph.close()
         await self.tracer.close()
         self._verbatim_index_cache = {}
+        self._query_page_cache = {}
         self._warmed_projection_sessions = set()
         self._connected = False
 
@@ -1148,6 +1157,7 @@ class MemoryFabric:
 
         await self._project_event(event, session_id=sid)
         await self._append_generated_inferences(eventlog, source_event=event, session_id=sid)
+        self._invalidate_query_page_cache(sid)
         return event
 
     async def _project_event(self, event: Any, *, session_id: str) -> None:
@@ -1714,13 +1724,27 @@ class MemoryFabric:
             )
             offset = decoded.offset
         fetch_limit = min(offset + page_limit + 1, MAX_QUERY_LIMIT)
-        contexts = await self.query(
+        if cursor:
+            # Continuation pages fetch the full ranked window once so later
+            # pages slice the cached list instead of re-running retrieval.
+            fetch_limit = MAX_QUERY_LIMIT
+        cache_key = (
             validated_query,
-            temporal_point=temporal_point,
-            limit=fetch_limit,
-            embedding=embedding,
-            session_id=sid,
+            sid,
+            temporal_point,
+            tuple(embedding) if embedding is not None else None,
         )
+        log_signature = self._query_page_log_signature(sid)
+        contexts = self._cached_query_page_contexts(cache_key, fetch_limit, log_signature)
+        if contexts is None:
+            contexts = await self.query(
+                validated_query,
+                temporal_point=temporal_point,
+                limit=fetch_limit,
+                embedding=embedding,
+                session_id=sid,
+            )
+            self._store_query_page_contexts(cache_key, fetch_limit, log_signature, contexts)
         page_contexts = contexts[offset : offset + page_limit]
         has_more = len(contexts) > offset + page_limit
         next_cursor = None
@@ -1738,6 +1762,68 @@ class MemoryFabric:
             has_more=has_more,
             offset=offset,
         )
+
+    def _query_page_log_signature(self, session_id: str) -> tuple[int, int] | None:
+        """Return the session eventlog's (mtime_ns, size) freshness signature.
+
+        Cached pages are bound to this signature so writers that bypass
+        ``MemoryFabric.append`` (direct EventLog appends, other processes)
+        still invalidate them. ``None`` means the log cannot be stat-ed;
+        the cache then degrades to TTL-only freshness.
+        """
+        try:
+            stat = os.stat(Path(self.session_manager.get(session_id).eventlog.path))
+        except (OSError, TypeError, ValueError):
+            return None
+        return (stat.st_mtime_ns, stat.st_size)
+
+    def _cached_query_page_contexts(
+        self,
+        key: tuple[str, str, str | None, tuple[float, ...] | None],
+        fetch_limit: int,
+        log_signature: tuple[int, int] | None,
+    ) -> list[Context] | None:
+        """Return cached ranked contexts when they already cover this page depth."""
+        import time
+
+        entry = self._query_page_cache.get(key)
+        if entry is None:
+            return None
+        expires_at, cached_fetch_limit, cached_signature, contexts = entry
+        if time.monotonic() >= expires_at or cached_signature != log_signature:
+            del self._query_page_cache[key]
+            return None
+        if cached_fetch_limit >= fetch_limit or cached_fetch_limit >= MAX_QUERY_LIMIT:
+            return contexts
+        if len(contexts) < cached_fetch_limit:
+            # The ranked result set was exhausted below the cached fetch
+            # window, so a deeper fetch cannot add results.
+            return contexts
+        return None
+
+    def _store_query_page_contexts(
+        self,
+        key: tuple[str, str, str | None, tuple[float, ...] | None],
+        fetch_limit: int,
+        log_signature: tuple[int, int] | None,
+        contexts: list[Context],
+    ) -> None:
+        import time
+
+        while len(self._query_page_cache) >= QUERY_PAGE_CACHE_MAX_ENTRIES:
+            self._query_page_cache.pop(next(iter(self._query_page_cache)))
+        self._query_page_cache[key] = (
+            time.monotonic() + QUERY_PAGE_CACHE_TTL_SECONDS,
+            fetch_limit,
+            log_signature,
+            contexts,
+        )
+
+    def _invalidate_query_page_cache(self, session_id: str) -> None:
+        """Drop cached pages for a session after its memory changes."""
+        self._query_page_cache = {
+            key: value for key, value in self._query_page_cache.items() if key[1] != session_id
+        }
 
     async def query_verbatim(
         self,
@@ -2306,6 +2392,7 @@ class MemoryFabric:
         )
         await self._project_event(event, session_id=sid)
         await self._append_generated_inferences(eventlog, source_event=event, session_id=sid)
+        self._invalidate_query_page_cache(sid)
         return event
 
     async def record_synthesis_evidence(
@@ -2344,6 +2431,7 @@ class MemoryFabric:
         )
         await self._project_event(event, session_id=sid)
         await self._append_generated_inferences(eventlog, source_event=event, session_id=sid)
+        self._invalidate_query_page_cache(sid)
         return event
 
     async def record_synthesis_artifact(
@@ -2370,6 +2458,7 @@ class MemoryFabric:
         )
         await self._project_event(event, session_id=sid)
         await self._append_generated_inferences(eventlog, source_event=event, session_id=sid)
+        self._invalidate_query_page_cache(sid)
         return event
 
     async def after_turn(

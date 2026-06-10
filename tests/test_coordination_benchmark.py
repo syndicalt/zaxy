@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
+
+from zaxy.__main__ import app
 from zaxy_benchmarks.coordination_benchmark import (
     COORDINATION_WORKLOAD_VERSION,
     CoordinationBenchMetrics,
@@ -31,8 +33,6 @@ from zaxy_benchmarks.coordination_benchmark import (
     validate_coordination_competitor_result,
     validate_coordination_competitor_runner_manifest,
 )
-
-from zaxy.__main__ import app
 
 
 def test_coordination_benchmark_workload_is_frozen_and_replayable(tmp_path: Path) -> None:

@@ -24,7 +24,7 @@
   <main class="doc-layout">
     <article class="doc-content">
       <h1 id="migration-guide">Migration Guide</h1>
-      <p>This guide covers the public upgrade path from Zaxy 0.4 through the v0.9 freeze candidate. Eventloom logs are append-only; migrations should add events, projection metadata, indexes, docs, or compatibility shims instead of rewriting historical records.</p>
+      <p>This guide covers the public upgrade path from Zaxy 0.4 through 2.0. Eventloom logs are append-only; migrations should add events, projection metadata, indexes, docs, or compatibility shims instead of rewriting historical records.</p>
       <h2 id="upgrade-checklist">Upgrade Checklist</h2>
       <p>Before and after each upgrade:</p>
       <ol>
@@ -81,13 +81,21 @@
         <li>Preserve review and promotion events in the parent mission session; worker findings alone are diagnostic until promoted.</li>
       </ul>
       <h2 id="from-08-to-09">From 0.8 to 0.9</h2>
-      <p>0.9 is the API freeze candidate. The main migration task is to compare your client usage with <code>docs/api-inventory.md</code> and remove dependencies on surfaces marked <code>Internal</code>. Surfaces marked <code>Experimental</code> can remain in prototypes, but they should not be required for a production 1.0 rollout.</p>
+      <p>0.9 was the API freeze candidate. The main migration task is to compare your client usage with <code>docs/api-inventory.md</code> and remove dependencies on surfaces marked <code>Internal</code>. Surfaces marked <code>Experimental</code> can remain in prototypes, but they should not be required for a production 1.0 rollout.</p>
       <p>Required actions:</p>
       <ul>
         <li>Compare MCP tools, Python imports, CLI commands, Eventloom event types, projection backend usage, and benchmark artifacts against <code>docs/api-inventory.md</code>.</li>
         <li>For <code>Stable</code> or <code>Beta</code> surfaces, add compatibility tests before changing payload keys, command options, event names, or report schemas.</li>
         <li>Treat pgGraph and LatticeDB backend use as experimental unless the current release gate explicitly promotes them.</li>
         <li>Do not make public benchmark claims from untracked Eventloom, query, or diagnostics files.</li>
+      </ul>
+      <h2 id="from-09-to-20">From 0.9 to 2.0</h2>
+      <p>The frozen v0.9 surfaces carry forward; 1.x and 2.0 changes are additive or follow the freeze policy in <code>docs/api-inventory.md</code>. Notable upgrade items:</p>
+      <ul>
+        <li>The PyPI distribution is <code>zaxy-memory</code>; the import package and console command remain <code>zaxy</code>.</li>
+        <li>1.1.x adopted Eventloom v1 JSONL envelopes while preserving legacy log replay; see the changelog for envelope details.</li>
+        <li>2.0 added causal memory contracts, review-gated consolidation, and reasoning-loop primitives as new (additive) surfaces.</li>
+        <li>Benchmark and evaluation modules moved out of the runtime package into <code>zaxy_benchmarks</code>; production imports of <code>zaxy.*benchmark*</code> modules should be removed (they were <code>Internal</code>/<code>Experimental</code> surfaces).</li>
       </ul>
       <h2 id="compatibility-tests">Compatibility Tests</h2>
       <p>The compatibility suite should prove that old public behavior still works or that a migration path is documented:</p>

@@ -1,6 +1,6 @@
 [project]
 name = "zaxy-memory"
-version = "2.0.0"
+version = "2.0.1"
 description = "Coordinator memory for auditable multi-agent projects"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -40,6 +40,7 @@ dependencies = [
     "tomlkit>=0.13.0",
     "PyYAML>=6.0.0",
     "kuzu>=0.11.0",
+    "numpy>=1.26.0",
 ]
 
 [project.optional-dependencies]
@@ -155,7 +156,7 @@ min_total_percent = "92.00"
 [tool.ruff]
 target-version = "py311"
 line-length = 100
-src = ["src", "tests"]
+src = ["src", "tests", "."]
 
 [tool.ruff.lint]
 select = [
@@ -180,6 +181,7 @@ indent-style = "space"
 
 [tool.mypy]
 python_version = "3.11"
+files = ["src/zaxy", "zaxy_benchmarks"]
 strict = true
 warn_return_any = true
 warn_unused_configs = true

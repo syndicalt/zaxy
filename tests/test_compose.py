@@ -119,7 +119,9 @@ def test_dockerfile_creates_embedded_projection_directory_without_stale_volumes(
 
 def test_sse_transport_host_is_configurable() -> None:
     """Container deployments need the SSE listener host to be explicit."""
-    cli = Path("src/zaxy/__main__.py").read_text(encoding="utf-8")
+    cli = "\n".join(
+        path.read_text(encoding="utf-8") for path in sorted(Path("src/zaxy/cli").glob("*.py"))
+    )
     server = Path("src/zaxy/mcp_server.py").read_text(encoding="utf-8")
 
     assert "host: str = typer.Option" in cli
