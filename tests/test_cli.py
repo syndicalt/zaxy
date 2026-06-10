@@ -15,6 +15,9 @@ from typer.main import get_command
 from typer.testing import CliRunner
 
 from zaxy.__main__ import app
+from zaxy.cli import benchmarks as cli_benchmarks
+from zaxy.cli import evaluation as cli_evaluation
+from zaxy.cli import runtime as cli_runtime
 from zaxy.coordination import CoordinationManager
 from zaxy.event import EventLog
 from zaxy.release import package_version
@@ -39,6 +42,367 @@ def _cli_command_params(*path: str) -> tuple[set[str], set[str]]:
     options = {opt for param in command.params for opt in getattr(param, "opts", []) if opt.startswith("--")}
     arguments = {param.name for param in command.params if not any(opt.startswith("--") for opt in param.opts)}
     return options, arguments
+
+
+class _FakeBenchmarkRetriever:
+    def __init__(self, *args: object) -> None:
+        self.args = args
+
+
+class _FakeExternalBenchmarkResult:
+    def __init__(self, **kwargs: object) -> None:
+        if "name" not in kwargs:
+            raise TypeError("name is required")
+        self.kwargs = kwargs
+
+
+class _FakeLiveBenchmarkModule:
+    BM25Retriever = _FakeBenchmarkRetriever
+    CentroidConsolidationRetriever = _FakeBenchmarkRetriever
+    ExternalBenchmarkResult = _FakeExternalBenchmarkResult
+    MarkdownRetriever = _FakeBenchmarkRetriever
+    MarkdownVectorRetriever = _FakeBenchmarkRetriever
+    VectorRetriever = _FakeBenchmarkRetriever
+
+
+def test_split_cli_benchmark_baseline_parser_validates_selection() -> None:
+    """Benchmark CLI helpers should preserve backend selection semantics after the split."""
+    assert cli_benchmarks._parse_benchmark_baselines("md,bm25,md", allow_centroid=False) == ("md", "bm25")
+    assert cli_benchmarks._parse_benchmark_baselines("none", allow_centroid=True) == ()
+    assert cli_benchmarks._parse_benchmark_baselines("centroid", allow_centroid=True) == ("centroid",)
+
+    with pytest.raises(Exception, match="Unsupported baseline backend"):
+        cli_benchmarks._parse_benchmark_baselines("centroid", allow_centroid=False)
+    with pytest.raises(Exception, match="must include at least one backend"):
+        cli_benchmarks._parse_benchmark_baselines(",", allow_centroid=False)
+
+
+def test_split_cli_builds_requested_benchmark_baselines(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The benchmark command should instantiate only selected optional baselines."""
+    monkeypatch.setattr(cli_benchmarks, "_benchmark_module", lambda name: _FakeLiveBenchmarkModule)
+
+    provider = object()
+    corpus = ("event",)
+    baselines = cli_benchmarks._build_benchmark_baselines(
+        corpus,
+        provider,
+        ("md", "bm25", "vector", "md+vector", "centroid"),
+    )
+
+    assert tuple(baselines) == ("md", "bm25", "vector", "md+vector", "centroid")
+    assert baselines["md"].args == (corpus,)
+    assert baselines["bm25"].args == (corpus,)
+    assert baselines["vector"].args == (corpus, provider)
+    assert baselines["md+vector"].args == (corpus, provider)
+    assert baselines["centroid"].args == (corpus, provider)
+
+
+def test_split_cli_loads_external_benchmark_results(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """External comparison rows should stay JSON validated at the CLI boundary."""
+    monkeypatch.setattr(cli_benchmarks, "_benchmark_module", lambda name: _FakeLiveBenchmarkModule)
+    path = tmp_path / "external-results.json"
+    path.write_text(json.dumps([{"name": "baseline-a", "score": 0.72}]), encoding="utf-8")
+
+    rows = cli_benchmarks._load_external_results(path)
+
+    assert len(rows) == 1
+    assert rows[0].kwargs == {"name": "baseline-a", "score": 0.72}
+    assert cli_benchmarks._load_external_results(None) == ()
+
+    path.write_text(json.dumps({"name": "not-a-list"}), encoding="utf-8")
+    with pytest.raises(Exception, match="must be a list"):
+        cli_benchmarks._load_external_results(path)
+
+    path.write_text(json.dumps(["not-an-object"]), encoding="utf-8")
+    with pytest.raises(Exception, match="must be an object"):
+        cli_benchmarks._load_external_results(path)
+
+    path.write_text(json.dumps([{"score": 0.1}]), encoding="utf-8")
+    with pytest.raises(Exception, match="invalid external result"):
+        cli_benchmarks._load_external_results(path)
+
+
+def test_split_cli_benchmark_module_reports_missing_eval_package(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Optional eval tooling must fail with an actionable CLI error when absent from the wheel."""
+
+    def missing_benchmark_module(name: str) -> object:
+        raise ModuleNotFoundError("No module named 'zaxy_benchmarks.live_benchmark'", name="zaxy_benchmarks.live_benchmark")
+
+    monkeypatch.setattr("zaxy.cli.runtime.importlib.import_module", missing_benchmark_module)
+
+    with pytest.raises(Exception, match="optional source-checkout eval package"):
+        cli_runtime._benchmark_module("live_benchmark")
+
+
+def test_split_cli_benchmark_module_reraises_unrelated_import_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Import failures inside an eval module should not be masked as missing tooling."""
+
+    def missing_dependency(name: str) -> object:
+        raise ModuleNotFoundError("No module named 'missing_dependency'", name="missing_dependency")
+
+    monkeypatch.setattr("zaxy.cli.runtime.importlib.import_module", missing_dependency)
+
+    with pytest.raises(ModuleNotFoundError, match="missing_dependency"):
+        cli_runtime._benchmark_module("live_benchmark")
+
+
+def test_longmembench_validate_cli_uses_optional_eval_module(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """LongMemBench validation should stay routed through the optional eval module seam."""
+
+    class FakeLongMemBenchModule:
+        @staticmethod
+        def load_longmembench_report(path: Path) -> dict[str, object]:
+            assert path == tmp_path / "report.json"
+            return {"status": "loaded"}
+
+        @staticmethod
+        def validate_longmembench_report(
+            report: dict[str, object],
+            *,
+            require_official_full: bool,
+        ) -> dict[str, object]:
+            return {
+                "status": "valid",
+                "report_status": report["status"],
+                "require_official_full": require_official_full,
+            }
+
+    monkeypatch.setattr(cli_evaluation, "_benchmark_module", lambda name: FakeLongMemBenchModule)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["longmembench-validate", str(tmp_path / "report.json"), "--require-official-full"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["status"] == "valid"
+    assert payload["require_official_full"] is True
+
+
+def test_longmembench_gate_cli_exits_nonzero_for_failed_gate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """LongMemBench claim gates should propagate failed gate status to the shell."""
+
+    class FakeLongMemBenchModule:
+        @staticmethod
+        def load_longmembench_report(path: Path) -> dict[str, object]:
+            return {"path": str(path)}
+
+        @staticmethod
+        def check_longmembench_gate(
+            report: dict[str, object],
+            *,
+            require_official_sota_candidate: bool,
+            require_official_sota: bool,
+            require_external_validator: bool,
+            min_accuracy: float | None,
+        ) -> dict[str, object]:
+            return {
+                "status": "failed",
+                "report": report,
+                "require_official_sota_candidate": require_official_sota_candidate,
+                "require_official_sota": require_official_sota,
+                "require_external_validator": require_external_validator,
+                "min_accuracy": min_accuracy,
+            }
+
+    monkeypatch.setattr(cli_evaluation, "_benchmark_module", lambda name: FakeLongMemBenchModule)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "longmembench-gate",
+            str(tmp_path / "report.json"),
+            "--require-official-sota-candidate",
+            "--require-official-sota",
+            "--require-external-validator",
+            "--min-accuracy",
+            "0.9",
+        ],
+    )
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["status"] == "failed"
+    assert payload["require_external_validator"] is True
+    assert payload["min_accuracy"] == 0.9
+
+
+def test_split_cli_runtime_reasoning_helpers_validate_and_format() -> None:
+    """Runtime helper seams should keep strict validation and readable fallback output."""
+    event_hash = "a" * 64
+
+    assert cli_runtime._parse_source_event(f"42:{event_hash}") == {"seq": 42, "hash": event_hash}
+    assert cli_runtime._validate_reasoning_phase_option("planning") == "planning"
+    assert (
+        cli_runtime._format_reasoning_result_text(
+            {"primitive": "claim-confidence", "session_id": "agent-1", "evidence": [{}, {}]}
+        )
+        == "claim-confidence for agent-1: result_count=2"
+    )
+    assert (
+        cli_runtime._format_reasoning_result_text({"primitive": "known-unknowns", "session_id": "agent-1"})
+        == "known-unknowns for agent-1"
+    )
+    assert (
+        cli_runtime._format_causal_results_text(direction="successors", entity_name="Build", results=[])
+        == "No causal successors found for Build."
+    )
+    assert "Build -> Release" in cli_runtime._format_causal_results_text(
+        direction="successors",
+        entity_name="Build",
+        results=[
+            {
+                "source": {"name": "Build"},
+                "target": {"name": "Release"},
+                "relation_type": "CAUSES",
+                "confidence": 0.875,
+                "citation": "agent-1:7",
+                "path_length": 1,
+            }
+        ],
+    )
+
+    with pytest.raises(Exception, match="formatted as SEQ:HASH"):
+        cli_runtime._parse_source_event("bad")
+    with pytest.raises(Exception, match="must be a positive integer"):
+        cli_runtime._parse_source_event(f"0:{event_hash}")
+    with pytest.raises(Exception, match="exactly 64 lowercase hex"):
+        cli_runtime._parse_source_event("1:BAD")
+    with pytest.raises(Exception, match="reasoning phase must be one of"):
+        cli_runtime._validate_reasoning_phase_option("drafting")
+
+
+def test_longmembench_bootstrap_cli_reports_non_ready_status(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """LongMemBench bootstrap should surface non-ready official-suite setup results."""
+
+    class FakeLongMemBenchModule:
+        @staticmethod
+        def bootstrap_longmemeval_official_suite(
+            *,
+            worktree: Path,
+            repo_url: str,
+            ref: str | None,
+            dataset_source: Path | None,
+            force_dataset: bool,
+        ) -> dict[str, object]:
+            return {
+                "status": "needs_dataset",
+                "worktree": str(worktree),
+                "repo_url": repo_url,
+                "ref": ref,
+                "dataset_source": str(dataset_source) if dataset_source else None,
+                "force_dataset": force_dataset,
+            }
+
+    monkeypatch.setattr(cli_benchmarks, "_benchmark_module", lambda name: FakeLongMemBenchModule)
+    dataset = tmp_path / "oracle.json"
+    dataset.write_text("[]", encoding="utf-8")
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "longmembench-bootstrap",
+            "--worktree",
+            str(tmp_path / "LongMemEval"),
+            "--repo-url",
+            "https://example.test/LongMemEval.git",
+            "--ref",
+            "abc123",
+            "--dataset-source",
+            str(dataset),
+            "--force-dataset",
+        ],
+    )
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["status"] == "needs_dataset"
+    assert payload["force_dataset"] is True
+
+
+def test_longmembench_adapter_and_plan_cli_use_optional_eval_module(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Adapter-kit and external-run plan commands should remain source-checkout eval seams."""
+
+    class _WrittenManifest:
+        json_path = tmp_path / "manifest.json"
+        markdown_path = tmp_path / "manifest.md"
+        script_path = tmp_path / "run.sh"
+
+    class FakeLongMemBenchModule:
+        @staticmethod
+        def export_longmembench_adapter_kit(output_dir: Path) -> dict[str, str]:
+            return {"adapter": str(output_dir / "adapter.py")}
+
+        @staticmethod
+        def build_longmembench_external_run_manifest(
+            *,
+            dataset: str,
+            evaluator_model: str,
+            output_dir: str,
+        ) -> dict[str, str]:
+            return {
+                "dataset": dataset,
+                "evaluator_model": evaluator_model,
+                "output_dir": output_dir,
+            }
+
+        @staticmethod
+        def write_longmembench_external_run_manifest(
+            manifest: dict[str, str],
+            output_dir: Path,
+        ) -> _WrittenManifest:
+            assert manifest["dataset"] == "data/oracle.json"
+            assert output_dir == tmp_path / "external"
+            return _WrittenManifest()
+
+    monkeypatch.setattr(cli_benchmarks, "_benchmark_module", lambda name: FakeLongMemBenchModule)
+    runner = CliRunner()
+
+    adapter = runner.invoke(
+        app,
+        ["longmembench-adapter-kit", "--output-dir", str(tmp_path / "kit")],
+    )
+    plan = runner.invoke(
+        app,
+        [
+            "longmembench-plan",
+            "--output-dir",
+            str(tmp_path / "external"),
+            "--dataset",
+            "data/oracle.json",
+            "--evaluator-model",
+            "gpt-test",
+        ],
+    )
+
+    assert adapter.exit_code == 0
+    assert json.loads(adapter.output)["adapter"].endswith("adapter.py")
+    assert plan.exit_code == 0
+    assert "Wrote LongMemBench external run JSON" in plan.output
+    assert "manifest.json" in plan.output
 
 
 def _write_rc1_freeze_artifacts(root: Path) -> None:
