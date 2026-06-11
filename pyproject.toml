@@ -1,6 +1,6 @@
 [project]
 name = "zaxy-memory"
-version = "2.1.0"
+version = "2.2.0"
 description = "Coordinator memory for auditable multi-agent projects"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -191,5 +191,5 @@ check_untyped_defs = true
 show_error_codes = true
 
 [[tool.mypy.overrides]]
-module = ["pathlight", "psycopg", "psycopg.rows"]
+module = ["pathlight", "psycopg", "psycopg.rows", "pyarrow", "pyarrow.parquet"]
 ignore_missing_imports = true

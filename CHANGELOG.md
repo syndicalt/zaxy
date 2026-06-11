@@ -2,6 +2,61 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 2.2.0 - 2026-06-11
+
+- Re-engineered the embedded ANN vector path end to end, every change backed
+  by the internal vector-scale lane
+  (`docs/research/artifacts/ann-2026-06/`):
+  - Query path: HNSW candidates are oversampled and reranked with exact
+    float64 scores from the resident entity vectors, fixing the measured
+    recall deficit — float32 near-tie flips at the shadow table's precision
+    boundary, not HNSW search quality (strict recall@10 at dim 64: 0.9062
+    at 10^4 / 0.8969 at 10^5 before the rerank, 1.0 at 10^5 in both G4
+    passes) — and each (session, version, dimension) scope queries its own
+    shadow table directly: no per-query projected graph or predicate scan,
+    which dominated filtered query latency at 10^5 vectors.
+  - Build path: full index rebuilds load a fresh generation table via bulk
+    `COPY` and build the HNSW index after the load, then swap atomically —
+    ~13x faster at 10^5 vectors (1,180s → 92s); small digest-verified
+    append-only deltas ride live-index inserts instead.
+  - Frozen-runtime hardening: three defects of the pinned Kuzu 0.11.3 (the
+    final upstream release) are designed around: `COPY FROM` an in-memory
+    Arrow table with a fixed-size-list column segfaults, so bulk loads
+    round-trip through a parquet tempfile; `DROP_VECTOR_INDEX` leaves
+    un-checkpointed index metadata (kuzu#6040) and mutating a live index in
+    place silently breaks subsequent direct-table searches, so rebuilds are
+    drop-free generation swaps whose superseded tables are emptied, never
+    dropped; and an unbound `$param` segfaults instead of raising, so every
+    query runs through a single execution choke point that rejects unbound
+    parameters.
+  - Measurement: lane recall is judged tie-aware (standard ann-benchmarks
+    tie handling) with strict identity recall always reported alongside,
+    because the hash corpus at dimension 1536 has a measured median of 210
+    corpus vectors exactly tied with the true top-10; a realistic gaussian
+    distribution variant gates the high-dimension posture (ANN recall@10
+    0.9844/0.975 strict at 10^4 × dim 1536 across two runs).
+  - Raised the `VECTOR_ANN_EFS` default from `200` to `400`: the gaussian
+    efs sweep at dimension 1536 measured recall@10 of 0.8531 at 200, 0.9875
+    at 400, and 1.0 at 800, with ~2ms of added p50 per step.
+- Lowered `VECTOR_ANN_THRESHOLD` from `1000000` to `100000` and made ANN
+  engagement two-clause within a new dimension ceiling (gate G4): scopes at
+  or below `VECTOR_ANN_MAX_DIMENSION` (default `64`) engage at the count
+  threshold or when their exact float64 matrix would exceed the 256 MiB
+  vector cache byte budget (above 524,288 rows at dim 64). The count default
+  is backed by two consecutive lane passes at exactly 10^5 vectors (dim 64):
+  recall@10 1.0 on both metrics, ANN p50 at-or-better than exact in-run,
+  resident bytes improved. The ceiling is that evidence's measured envelope:
+  at dim 1536/50k gaussian, HNSW recall@10 was 0.6 at efs 400 (0.6344 on a
+  rerun; 0.8438 at efs 800 with worse-than-exact latency) while exact
+  answered in 22ms p50,
+  so high-dimension scopes stay on exact (or opted-in
+  int8) search regardless of size. Opt out with
+  `VECTOR_ANN_THRESHOLD=1000000` and/or
+  `VECTOR_ANN_BYTE_BUDGET_ENGAGEMENT=false`; an explicit
+  `VECTOR_QUANTIZATION=int8` keeps its precedence below the count threshold.
+  `memory_capabilities` reports the effective engagement rule. See
+  `docs/migration.md`.
+
 ## 2.1.0 - 2026-06-10
 
 - Flipped the default MCP tool listing profile from `full` to `core`, backed

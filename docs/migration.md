@@ -194,10 +194,10 @@ New settings (all documented in [configuration.md](configuration.md)):
 - `ENCODING_GATE_ENABLED` (default `false`): tag appends as
   `novel`/`reinforcing`/`redundant`; events are always appended and
   hash-chained regardless.
-- `VECTOR_ANN_THRESHOLD` (default `1000000`): per-session vector count above
-  which the embedded backend uses a Kuzu-native HNSW index; results from the
-  approximate path report `exact: false`. The default keeps ANN effectively
-  opt-in per the vector-scale lane evidence.
+- `VECTOR_ANN_THRESHOLD` (default `1000000` in 2.1.0, lowered to `100000` in
+  2.2 — see the 2.2 subsection below): per-scope vector count at which the
+  embedded backend uses a Kuzu-native HNSW index; results from the
+  approximate path report `exact: false`.
 - `VECTOR_QUANTIZATION` (`none` default, or `int8`): opt-in quantized vector
   storage with exact float rerank of oversampled candidates.
 
@@ -257,6 +257,33 @@ pinned and authority-bearing memories, and reversible by switching to
 listing with `MCP_TOOL_PROFILE=full` or `zaxy serve --profile full`;
 `memory_capabilities` reports the active profile and the
 available-but-unlisted tools.
+
+### 2.2: ANN engagement defaults
+
+2.2 changes when the embedded backend's HNSW vector path engages — nothing
+else in the upgrade path changes. `VECTOR_ANN_THRESHOLD` drops from `1000000`
+to `100000`, gated by a new dimension ceiling `VECTOR_ANN_MAX_DIMENSION`
+(default `64`), and engagement gains a second clause: within the ceiling, a
+(session, version) vector scope also engages ANN when its exact float64
+matrix (count × dimension × 8 bytes) would exceed the 256 MiB vector index
+cache byte budget — above 524,288 rows at dimension 64. The lowered count
+default is backed by two consecutive vector-scale lane passes at exactly
+10^5 vectors (dimension 64) with recall@10 of 1.0 on both the strict and
+tie-aware metrics, ANN p50 at-or-better than exact in-run, and resident
+bytes improved
+(`docs/research/artifacts/ann-2026-06/ann3-d64-100k-r1.json`/`-r2.json`);
+the ceiling is that evidence's measured envelope — at dimension 1536/50k
+gaussian the lane measured HNSW recall@10 of 0.6 against exact at 22ms p50
+(`ann3-d1536-50k-gauss-crossover.json`; 0.6344 on a rerun, and 0.8438 at
+`efs` 800 with worse-than-exact latency), so higher-dimensional scopes stay
+on exact (or opted-in int8) search regardless of size. **Opt out:**
+`VECTOR_ANN_THRESHOLD=1000000` restores the 2.1 count behavior, and
+`VECTOR_ANN_BYTE_BUDGET_ENGAGEMENT=false` disables the byte clause; a
+single over-budget exact matrix stays resident as a cache of one (the
+budget bounds multi-scope cache totals). An explicit
+`VECTOR_QUANTIZATION=int8` opt-in keeps its precedence below the count
+threshold and is exempt from the byte clause. `memory_capabilities` reports
+the effective rule under `vector_search`.
 
 ## Compatibility Tests
 

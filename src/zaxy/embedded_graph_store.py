@@ -14,9 +14,9 @@ import json
 import math
 import re
 import shutil
+import tempfile
 from collections import Counter
 from collections.abc import Sequence
-from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
@@ -85,12 +85,29 @@ VECTOR_INDEX_CACHE_MAX_BYTES = 256 * 1024 * 1024
 # under this sentinel and never compared against tagged vectors.
 LEGACY_EMBEDDING_VERSION = "legacy"
 
-# Quantized search scores top-k * oversample candidates with int8 dot products
-# before the exact float64 rerank.
-VECTOR_QUANTIZATION_OVERSAMPLE = 4
+# Approximate candidate selection (int8 dot products or HNSW) gathers
+# top-k * oversample candidates before the shared exact float64 rerank.
+VECTOR_SEARCH_OVERSAMPLE = 4
 
 _ANN_SHADOW_TABLE_PREFIX = "ZaxyVectorAnnShadow"
 _ANN_INSERT_BATCH_SIZE = 1024
+
+# Delta policy for shadow rebuilds: when the new corpus extends the resident
+# generation unchanged (same leading rows, same vectors), a delta up to this
+# fraction of the resident count rides live-index UNWIND inserts; anything
+# larger (or any non-extension change) triggers a full COPY generation swap.
+# Measured at 10k/dim64: live-index inserts cost ~6.9ms/row while a COPY
+# load plus post-load index build costs ~0.63ms/row, so raw build time
+# crosses over near a 9% delta. The boundary sits at 10% because incremental
+# inserts also keep the resident HNSW graph (no rebuild recall variance) and
+# add no superseded generation table; that is worth the <=10% time premium
+# in the 9-10% band.
+_ANN_DELTA_REBUILD_FRACTION = 0.1
+
+# Kuzu 0.11.3 segfaults (rather than raising) when a query references an
+# unbound $parameter, so every store query is checked against this pattern at
+# the single execution choke point before it reaches the runtime.
+_QUERY_PARAMETER_RE = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)")
 
 
 @dataclass(frozen=True)
@@ -139,6 +156,24 @@ class _AnnVectorGroup:
         return 0
 
 
+@dataclass(frozen=True)
+class _AnnGenerationState:
+    """Resident shadow generation for one (session, version, dimension) scope.
+
+    ``content_digest`` hashes the (entity_row, float32 vector) sequence the
+    generation table holds, so a rebuild can prove the new corpus is an
+    unchanged extension before riding the incremental insert path. The swap
+    to a fresh generation replaces this record atomically (single assignment)
+    before superseded generations are emptied.
+    """
+
+    table_name: str
+    index_name: str
+    generation: int
+    vector_count: int
+    content_digest: str
+
+
 _AnyVectorGroup = _VectorGroup | _QuantizedVectorGroup | _AnnVectorGroup
 
 
@@ -166,6 +201,9 @@ class EmbeddedGraphStore:
         path: Path,
         *,
         vector_ann_threshold: int | None = None,
+        vector_ann_max_dimension: int | None = None,
+        vector_ann_efs: int | None = None,
+        vector_ann_byte_budget_engagement: bool | None = None,
         vector_quantization: str | None = None,
         active_embedding_version: str | None = None,
     ) -> None:
@@ -173,10 +211,14 @@ class EmbeddedGraphStore:
         self._database: Any | None = None
         self._connection: Any | None = None
         self._vector_ann_threshold_override = vector_ann_threshold
+        self._vector_ann_max_dimension_override = vector_ann_max_dimension
+        self._vector_ann_efs_override = vector_ann_efs
+        self._vector_ann_byte_budget_engagement_override = vector_ann_byte_budget_engagement
         self._vector_quantization_override = vector_quantization
         self._active_embedding_version_override = active_embedding_version
         self._ann_supported: bool | None = None
         self._ann_indexed_tables: set[str] = set()
+        self._ann_generation_states: dict[tuple[str, str, int], _AnnGenerationState] = {}
         self._active_entity_cache: dict[tuple[str, str, str], tuple[str, str | None, str]] = {}
         self._current_entity_index_cache: dict[str, list[GraphEntity]] = {}
         self._current_entity_lookup_cache: dict[str, dict[tuple[str, str | None], list[GraphEntity]]] = {}
@@ -212,8 +254,7 @@ class EmbeddedGraphStore:
 
     async def init_schema(self) -> None:
         """Initialize embedded graph schema."""
-        conn = self._require_connection()
-        conn.execute(
+        self._execute(
             """
             CREATE NODE TABLE IF NOT EXISTS Entity(
                 node_key STRING,
@@ -230,7 +271,7 @@ class EmbeddedGraphStore:
             )
             """
         )
-        conn.execute(
+        self._execute(
             """
             CREATE NODE TABLE IF NOT EXISTS Event(
                 event_key STRING,
@@ -244,7 +285,7 @@ class EmbeddedGraphStore:
             )
             """
         )
-        conn.execute(
+        self._execute(
             """
             CREATE NODE TABLE IF NOT EXISTS BenchmarkProjection(
                 key STRING,
@@ -255,7 +296,7 @@ class EmbeddedGraphStore:
             )
             """
         )
-        conn.execute(
+        self._execute(
             """
             CREATE REL TABLE IF NOT EXISTS RELATES(
                 FROM Entity TO Entity,
@@ -272,7 +313,7 @@ class EmbeddedGraphStore:
             )
             """
         )
-        conn.execute(
+        self._execute(
             """
             CREATE REL TABLE IF NOT EXISTS NEXT_EVENT(
                 FROM Event TO Event,
@@ -280,7 +321,7 @@ class EmbeddedGraphStore:
             )
             """
         )
-        conn.execute(
+        self._execute(
             """
             CREATE REL TABLE IF NOT EXISTS PREVIOUS_EVENT(
                 FROM Event TO Event,
@@ -313,9 +354,8 @@ class EmbeddedGraphStore:
         """Return whether this embedded projection is marked for a benchmark workload."""
         if not key:
             return False
-        conn = self._require_connection()
         try:
-            rows = conn.execute(
+            rows = self._execute(
                 """
                 MATCH (p:BenchmarkProjection {key: $key})
                 RETURN p.key
@@ -334,7 +374,7 @@ class EmbeddedGraphStore:
         if not key:
             return
         latest = events[-1] if events else None
-        self._require_connection().execute(
+        self._execute(
             """
             MERGE (p:BenchmarkProjection {key: $key})
             SET p.event_count = $event_count,
@@ -353,14 +393,14 @@ class EmbeddedGraphStore:
         """Begin an explicit Kuzu write transaction for bulk Eventloom replay."""
         if self._bulk_projection_open:
             return
-        self._require_connection().execute("BEGIN TRANSACTION")
+        self._execute("BEGIN TRANSACTION")
         self._bulk_projection_open = True
 
     async def commit_bulk_projection(self) -> None:
         """Commit an explicit Kuzu write transaction for bulk Eventloom replay."""
         if not self._bulk_projection_open:
             return
-        self._require_connection().execute("COMMIT")
+        self._execute("COMMIT")
         self._bulk_projection_open = False
         for session_id in sorted(self._dirty_bulk_sessions):
             self._current_entity_lookup(session_id)
@@ -374,15 +414,14 @@ class EmbeddedGraphStore:
         """Rollback an explicit Kuzu write transaction for bulk Eventloom replay."""
         if not self._bulk_projection_open:
             return
-        self._require_connection().execute("ROLLBACK")
+        self._execute("ROLLBACK")
         self._bulk_projection_open = False
         self._clear_all_caches()
 
     async def upsert_extraction(self, result: ExtractionResult, session_id: str = "default") -> None:
         """Project an extracted Eventloom event."""
-        conn = self._require_connection()
         projected_indexed_content = False
-        conn.execute(
+        self._execute(
             """
             MERGE (ev:Event {event_key: $event_key})
             SET ev.session_id = $session_id,
@@ -403,7 +442,7 @@ class EmbeddedGraphStore:
             },
         )
         if result.source_event_prev_hash:
-            conn.execute(
+            self._execute(
                 """
                 MATCH (prev:Event), (current:Event {event_key: $event_key})
                 WHERE prev.session_id = $session_id AND prev.hash = $prev_hash
@@ -430,7 +469,7 @@ class EmbeddedGraphStore:
                 continue
             projected_indexed_content = True
             if active_entity is not None:
-                conn.execute(
+                self._execute(
                     """
                     MATCH (e:Entity {node_key: $node_key})
                     SET e.valid_to = $valid_to
@@ -440,7 +479,7 @@ class EmbeddedGraphStore:
                         "valid_to": entity.observed_at,
                     },
                 )
-            conn.execute(
+            self._execute(
                 """
                 MERGE (e:Entity {node_key: $node_key})
                 SET e.session_id = $session_id,
@@ -486,7 +525,7 @@ class EmbeddedGraphStore:
             if source_key is None or target_key is None:
                 continue
             projected_indexed_content = True
-            conn.execute(
+            self._execute(
                 """
                 MATCH (source:Entity {node_key: $source_key}), (target:Entity {node_key: $target_key})
                 MERGE (source)-[r:RELATES {relation_type: $relation_type}]->(target)
@@ -602,7 +641,7 @@ class EmbeddedGraphStore:
         cached = self._current_entity_index_cache.get(session_id)
         if cached is not None:
             return cached
-        rows = self._require_connection().execute(
+        rows = self._execute(
             """
             MATCH (e:Entity)
             WHERE e.session_id = $session_id AND e.valid_to IS NULL
@@ -633,7 +672,7 @@ class EmbeddedGraphStore:
         cached = self._temporal_entity_index_cache.get(key)
         if cached is not None:
             return cached
-        rows = self._require_connection().execute(
+        rows = self._execute(
             """
             MATCH (e:Entity)
             WHERE e.session_id = $session_id
@@ -774,7 +813,7 @@ class EmbeddedGraphStore:
 
     def _causal_edge_rows(self, *, session_id: str, temporal_point: str | None) -> list[Any]:
         if temporal_point is None:
-            rows = self._require_connection().execute(
+            rows = self._execute(
                 """
                 MATCH (source:Entity)-[r:RELATES]->(target:Entity)
                 WHERE source.session_id = $session_id
@@ -799,7 +838,7 @@ class EmbeddedGraphStore:
                 {"session_id": session_id},
             ).get_all()
             return cast(list[Any], rows)
-        rows = self._require_connection().execute(
+        rows = self._execute(
             """
             MATCH (source:Entity)-[r:RELATES]->(target:Entity)
             WHERE source.session_id = $session_id
@@ -846,7 +885,7 @@ class EmbeddedGraphStore:
 
     def _build_traversal_index(self, session_id: str, temporal_point: str | None) -> _TraversalIndex:
         if temporal_point is None:
-            rows = self._require_connection().execute(
+            rows = self._execute(
                 """
                 MATCH (source:Entity)-[r:RELATES]->(target:Entity)
                 WHERE source.session_id = $session_id
@@ -880,7 +919,7 @@ class EmbeddedGraphStore:
                 {"session_id": session_id},
             ).get_all()
         else:
-            rows = self._require_connection().execute(
+            rows = self._execute(
                 """
                 MATCH (source:Entity)-[r:RELATES]->(target:Entity)
                 WHERE source.session_id = $session_id
@@ -942,7 +981,7 @@ class EmbeddedGraphStore:
         cached = self._traversal_index_cache.get(session_id)
         if cached is not None:
             return bool(cached.adjacency)
-        rows = self._require_connection().execute(
+        rows = self._execute(
             """
             MATCH (:Entity)-[r:RELATES]->(:Entity)
             WHERE r.session_id = $session_id AND r.valid_to IS NULL
@@ -979,8 +1018,7 @@ class EmbeddedGraphStore:
         return snapshot
 
     def _build_adjacency_snapshot(self, session_id: str) -> AdjacencySnapshot:
-        conn = self._require_connection()
-        node_rows = conn.execute(
+        node_rows = self._execute(
             """
             MATCH (e:Entity)
             WHERE e.session_id = $session_id AND e.valid_to IS NULL
@@ -988,7 +1026,7 @@ class EmbeddedGraphStore:
             """,
             {"session_id": session_id},
         ).get_all()
-        edge_rows = conn.execute(
+        edge_rows = self._execute(
             """
             MATCH (source:Entity)-[r:RELATES]->(target:Entity)
             WHERE source.session_id = $session_id
@@ -1023,7 +1061,15 @@ class EmbeddedGraphStore:
         session_id: str = "default",
         embedding_version: str | None = None,
     ) -> list[SearchResult]:
-        """Search by vector similarity within one embedding version group."""
+        """Search by vector similarity within one embedding version group.
+
+        All groups share one strategy pipeline: candidate selection (exact
+        dense matrix, Kuzu HNSW, or int8 dot products) followed by an exact
+        float64 rerank for the approximate selectors. Dense selection already
+        scores exactly, so it returns directly with ``exact=True``; the
+        approximate paths stay ``exact=False`` because their candidate set is
+        approximate even though the final ordering is exact.
+        """
         if limit <= 0:
             return []
         query = np.asarray(embedding, dtype=np.float64)
@@ -1036,112 +1082,44 @@ class EmbeddedGraphStore:
         if group is None:
             return []
         unit_query = query / query_norm
+        if isinstance(group, _VectorGroup):
+            return _dense_vector_results(group, unit_query, limit=limit, entities=index.entities)
         if isinstance(group, _AnnVectorGroup):
-            return self._search_vector_ann(group, unit_query, limit=limit, entities=index.entities)
-        if isinstance(group, _QuantizedVectorGroup):
-            return self._search_vector_quantized(group, unit_query, limit=limit, entities=index.entities)
-        return _dense_vector_results(group, unit_query, limit=limit, entities=index.entities)
-
-    def _search_vector_quantized(
-        self,
-        group: _QuantizedVectorGroup,
-        unit_query: npt.NDArray[np.float64],
-        *,
-        limit: int,
-        entities: list[GraphEntity],
-    ) -> list[SearchResult]:
-        """Oversample candidates with int8 dot products, then rerank exactly."""
-        from zaxy.graph import SearchResult
-
-        query_max = float(np.abs(unit_query).max())
-        if query_max == 0.0:
-            return []
-        quantized_query = np.clip(np.rint(unit_query * (127.0 / query_max)), -127, 127).astype(np.int8)
-        integer_scores = group.matrix.astype(np.int32) @ quantized_query.astype(np.int32)
-        approximate_scores = integer_scores.astype(np.float64) * group.scales
-        candidate_count = min(approximate_scores.size, limit * VECTOR_QUANTIZATION_OVERSAMPLE)
-        if candidate_count <= 0:
-            return []
-        if candidate_count < approximate_scores.size:
-            candidate_rows = np.argpartition(-approximate_scores, candidate_count - 1)[:candidate_count]
+            candidates = self._ann_candidate_entity_indexes(group, unit_query, limit=limit)
         else:
-            candidate_rows = np.arange(approximate_scores.size)
-        # Projection order keeps the exact rerank's tie behavior aligned with
-        # the dense path's stable sort.
-        candidate_rows = np.sort(candidate_rows)
-        scored: list[tuple[float, int]] = []
-        for row in candidate_rows:
-            entity = entities[group.entity_indexes[int(row)]]
-            vector = _embedding_vector(entity.properties.get("embedding"))
-            if vector is None:
-                continue
-            values = np.asarray(vector, dtype=np.float64)
-            norm = float(np.linalg.norm(values))
-            if norm == 0.0:
-                continue
-            score = float((values / norm) @ unit_query)
-            if score > 0.0:
-                scored.append((score, int(row)))
-        scored.sort(key=lambda item: -item[0])
-        return [
-            SearchResult(
-                entity=entities[group.entity_indexes[row]],
-                score=score,
-                source="vector",
-                raw_score=score,
-                exact=False,
-            )
-            for score, row in scored[:limit]
-        ]
+            candidates = _quantized_candidate_entity_indexes(group, unit_query, limit=limit)
+        return _exact_rerank_results(candidates, unit_query, limit=limit, entities=index.entities)
 
-    def _search_vector_ann(
+    def _ann_candidate_entity_indexes(
         self,
         group: _AnnVectorGroup,
         unit_query: npt.NDArray[np.float64],
         *,
         limit: int,
-        entities: list[GraphEntity],
-    ) -> list[SearchResult]:
-        """Query the Kuzu-native HNSW index scoped to one session and version."""
-        from zaxy.graph import SearchResult
+    ) -> list[int]:
+        """Select oversampled HNSW candidates from the group's shadow table.
 
-        conn = self._require_connection()
-        graph_name = f"zaxy_vector_ann_scope_{group.dimension}"
-        # The predicate is itself a single-quoted Kuzu string argument, so its
-        # inner string literals use double quotes.
-        predicate = (
-            f'n.session_id = "{_kuzu_string_literal(group.session_id)}" '
-            f'AND n.embedding_version = "{_kuzu_string_literal(group.version)}"'
-        )
-        with suppress(RuntimeError):
-            conn.execute(f"CALL DROP_PROJECTED_GRAPH('{graph_name}')")
-        conn.execute(
-            f"CALL PROJECT_GRAPH('{graph_name}', {{'{group.table_name}': '{predicate}'}}, [])"
-        )
-        try:
-            rows = conn.execute(
-                f"CALL QUERY_VECTOR_INDEX('{graph_name}', '{group.index_name}', $query_vector, $k) "
-                "RETURN node.entity_row, distance ORDER BY distance",
-                {"query_vector": unit_query.tolist(), "k": limit},
-            ).get_all()
-        finally:
-            with suppress(RuntimeError):
-                conn.execute(f"CALL DROP_PROJECTED_GRAPH('{graph_name}')")
-        results: list[SearchResult] = []
-        for row in rows:
-            score = 1.0 - float(row[1])
-            if score <= 0.0:
-                continue
-            results.append(
-                SearchResult(
-                    entity=entities[int(row[0])],
-                    score=score,
-                    source="vector",
-                    raw_score=score,
-                    exact=False,
-                )
-            )
-        return results
+        The per-(session, version) shadow table is queried directly by name:
+        the group owns the whole table, so no session/version predicate and no
+        projected graph is needed (the per-query prefilter mask scan — not
+        graph create/drop — dominated filtered-query latency at 10^5). HNSW
+        retrieves ``limit * VECTOR_SEARCH_OVERSAMPLE`` candidates and the
+        exact float64 rerank restores the true ordering: the shadow table
+        stores float32, and near-tie flips at that precision boundary were the
+        measured recall deficit of the unreranked path.
+        """
+        k = min(group.vector_count, limit * VECTOR_SEARCH_OVERSAMPLE)
+        if k <= 0:
+            return []
+        # efs is the HNSW query-time candidate-list size; it can never be
+        # smaller than the number of results asked of the index.
+        efs = max(self._resolved_vector_ann_efs(), k)
+        rows = self._execute(
+            f"CALL QUERY_VECTOR_INDEX('{group.table_name}', '{group.index_name}', "
+            f"$query_vector, $k, efs := {efs}) RETURN node.entity_row",
+            {"query_vector": unit_query.tolist(), "k": k},
+        ).get_all()
+        return sorted({int(row[0]) for row in rows})
 
     def _resolved_active_embedding_version(self) -> str:
         if self._active_embedding_version_override is not None:
@@ -1156,6 +1134,74 @@ class EmbeddedGraphStore:
         from zaxy.config import get_settings
 
         return get_settings().vector_ann_threshold
+
+    def _resolved_vector_ann_max_dimension(self) -> int:
+        if self._vector_ann_max_dimension_override is not None:
+            return self._vector_ann_max_dimension_override
+        from zaxy.config import get_settings
+
+        return get_settings().vector_ann_max_dimension
+
+    def _resolved_vector_ann_efs(self) -> int:
+        if self._vector_ann_efs_override is not None:
+            return self._vector_ann_efs_override
+        from zaxy.config import get_settings
+
+        return get_settings().vector_ann_efs
+
+    def _resolved_vector_ann_byte_budget_engagement(self) -> bool:
+        if self._vector_ann_byte_budget_engagement_override is not None:
+            return self._vector_ann_byte_budget_engagement_override
+        from zaxy.config import get_settings
+
+        return get_settings().vector_ann_byte_budget_engagement
+
+    def _ann_engagement_reason(self, *, count: int, dimension: int) -> str | None:
+        """Return why the ANN path engages for a scope, or None to stay resident.
+
+        Engagement rule (2.2 gate G4): the scope's vector dimension must be
+        at or below ``vector_ann_max_dimension`` — a hard precondition — and
+        then either clause may engage:
+
+        - ``"count"``: the per-scope vector count is at or above
+          ``vector_ann_threshold`` — the lane-proven count clause (two
+          consecutive ALL-criteria vector-scale lane passes at exactly
+          10^5/dim 64; see
+          docs/research/artifacts/ann-2026-06/ann3-d64-100k-r1.json and -r2.json).
+        - ``"byte_budget"``: the exact float64 matrix for the scope
+          (count x dimension x 8 bytes) would exceed
+          ``VECTOR_INDEX_CACHE_MAX_BYTES``, regardless of any explicit
+          threshold. It is skipped when int8 quantization is opted in (int8
+          keeps roughly 1/8 of the float64 bytes resident, so the explicit
+          opt-in keeps its precedence below the count threshold) or when
+          ``vector_ann_byte_budget_engagement`` is disabled.
+
+        The dimension precondition exists because the G4 evidence does not
+        transfer upward: at dim 1536/50k (gaussian) HNSW recall@10 is 0.6
+        even at efs 400, while the exact matrix answers in 22ms p50 despite
+        sitting 2.4x over the cache byte budget — the LRU eviction always
+        keeps the newest matrix resident, so a single over-budget scope is a
+        cache of one, not a thrash (the budget bounds multi-scope totals).
+        See docs/research/artifacts/ann-2026-06/ann3-d1536-50k-gauss-crossover.json.
+        This is the single ANN selection choke point — query-time strategy
+        choice and shadow rebuild triggers both pass through it, so no shadow
+        generation is ever built for a scope that would not be queried
+        through it.
+
+        The check is intentionally cheap: count and dimension are known
+        before any matrix is constructed.
+        """
+        if dimension > self._resolved_vector_ann_max_dimension():
+            return None
+        if count >= self._resolved_vector_ann_threshold():
+            return "count"
+        if (
+            self._resolved_vector_quantization() != "int8"
+            and self._resolved_vector_ann_byte_budget_engagement()
+            and count * dimension * 8 > VECTOR_INDEX_CACHE_MAX_BYTES
+        ):
+            return "byte_budget"
+        return None
 
     def _resolved_vector_quantization(self) -> str:
         if self._vector_quantization_override is not None:
@@ -1222,7 +1268,7 @@ class EmbeddedGraphStore:
         if (
             temporal_point is None
             and not self._bulk_projection_open
-            and len(vectors) > self._resolved_vector_ann_threshold()
+            and self._ann_engagement_reason(count=len(vectors), dimension=dimension) is not None
         ):
             ann_group = self._try_build_ann_group(
                 session_id=session_id,
@@ -1250,65 +1296,182 @@ class EmbeddedGraphStore:
     ) -> _AnnVectorGroup | None:
         """Sync this group into a Kuzu HNSW shadow table, if the runtime supports it.
 
-        Shadow rows for the (session, version) scope are deleted and re-inserted
-        on every index rebuild — the same rebuild trigger as the dense matrix —
-        and the persistent HNSW index reflects inserts and deletes incrementally.
+        Each (session, version, dimension) scope owns dedicated shadow tables
+        so queries pass the table name straight to ``QUERY_VECTOR_INDEX`` —
+        no predicate and no projected graph. The rebuild trigger is the same
+        lazy signature change that rebuilds the dense matrix; the delta policy
+        decides the sync mechanics:
+
+        - **Unchanged corpus** (content digest matches the resident
+          generation): reuse the resident table with no writes at all.
+        - **Small extension** (digest-verified prefix, delta at most
+          ``_ANN_DELTA_REBUILD_FRACTION`` of the resident count): insert only
+          the new rows into the live mutable index — inserts are reflected in
+          queries on the pinned Kuzu 0.11.3.
+        - **Anything else**: full rebuild into a fresh generation table via
+          ``COPY FROM`` a parquet tempfile (100x faster than batched UNWIND;
+          falls back to UNWIND without pyarrow), index built after the load,
+          then an atomic state swap.
+
+        A fresh generation's HNSW index only ever sees inserts: mutating a
+        live index in place (delete + reinsert) silently breaks subsequent
+        direct-table searches on the pinned Kuzu 0.11.3, and the upstream
+        drop paths are closed too (``DROP_VECTOR_INDEX`` leaves an
+        un-checkpointed index removal per kuzu#6040, ``DROP TABLE`` is
+        rejected by the binder while an index references the table — both
+        re-verified against kuzu 0.11.3). Superseded generations are
+        therefore emptied — never queried again, near-zero load cost at
+        database open — which is the maximum reclaim the frozen runtime
+        allows.
         """
         if not self._kuzu_vector_index_supported():
             return None
-        conn = self._require_connection()
-        table_name = f"{_ANN_SHADOW_TABLE_PREFIX}{dimension}"
-        index_name = f"zaxy_vector_ann_{dimension}"
-        conn.execute(
+        entity_rows = np.asarray(entity_indexes, dtype=np.int64)
+        matrix = np.ascontiguousarray(np.vstack(vectors), dtype=np.float32)
+
+        def group_for(table_name: str, index_name: str) -> _AnnVectorGroup:
+            return _AnnVectorGroup(
+                table_name=table_name,
+                index_name=index_name,
+                dimension=dimension,
+                version=version,
+                session_id=session_id,
+                vector_count=len(entity_indexes),
+            )
+
+        scope_key = (session_id, version, dimension)
+        state = self._ann_generation_states.get(scope_key)
+        if state is not None:
+            delta = len(entity_indexes) - state.vector_count
+            if 0 <= delta <= max(1, int(state.vector_count * _ANN_DELTA_REBUILD_FRACTION)) and (
+                _ann_content_digest(entity_rows[: state.vector_count], matrix[: state.vector_count])
+                == state.content_digest
+            ):
+                if delta:
+                    self._ann_insert_rows(state.table_name, entity_rows, matrix, start=state.vector_count)
+                    state = _AnnGenerationState(
+                        table_name=state.table_name,
+                        index_name=state.index_name,
+                        generation=state.generation,
+                        vector_count=len(entity_indexes),
+                        content_digest=_ann_content_digest(entity_rows, matrix),
+                    )
+                    self._ann_generation_states[scope_key] = state
+                return group_for(state.table_name, state.index_name)
+        scope = _ann_scope_digest(session_id, version)
+        scope_prefix = f"{_ANN_SHADOW_TABLE_PREFIX}{dimension}_{scope}_g"
+        previous_generations = self._ann_shadow_generations(scope_prefix)
+        generation = previous_generations[-1] + 1 if previous_generations else 0
+        table_name = f"{scope_prefix}{generation}"
+        index_name = f"zaxy_vector_ann_{dimension}_{scope}_g{generation}"
+        self._execute(
             f"""
-            CREATE NODE TABLE IF NOT EXISTS {table_name}(
-                shadow_key STRING,
-                session_id STRING,
-                embedding_version STRING,
+            CREATE NODE TABLE {table_name}(
                 entity_row INT64,
                 vec FLOAT[{dimension}],
-                PRIMARY KEY(shadow_key)
+                PRIMARY KEY(entity_row)
             )
             """
         )
+        self._ann_bulk_load(table_name, entity_rows, matrix)
+        # The index is created after the bulk load: building over resident
+        # rows is the documented fast path, and bulk mutation under a live
+        # index is the historically buggiest path of the frozen runtime.
         self._ensure_ann_index(table_name, index_name)
-        conn.execute(
-            f"MATCH (n:{table_name}) "
-            "WHERE n.session_id = $session_id AND n.embedding_version = $version "
-            "DETACH DELETE n",
-            {"session_id": session_id, "version": version},
-        )
-        for start in range(0, len(vectors), _ANN_INSERT_BATCH_SIZE):
-            batch = [
-                {
-                    "shadow_key": f"{session_id}\x1f{version}\x1f{entity_indexes[position]}",
-                    "entity_row": entity_indexes[position],
-                    "vec": vectors[position].tolist(),
-                }
-                for position in range(start, min(start + _ANN_INSERT_BATCH_SIZE, len(vectors)))
-            ]
-            conn.execute(
-                f"UNWIND $rows AS row CREATE (:{table_name} {{"
-                "shadow_key: row.shadow_key, session_id: $session_id, "
-                "embedding_version: $version, entity_row: row.entity_row, vec: row.vec})",
-                {"rows": batch, "session_id": session_id, "version": version},
-            )
-        return _AnnVectorGroup(
+        self._ann_generation_states[scope_key] = _AnnGenerationState(
             table_name=table_name,
             index_name=index_name,
-            dimension=dimension,
-            version=version,
-            session_id=session_id,
-            vector_count=len(vectors),
+            generation=generation,
+            vector_count=len(entity_indexes),
+            content_digest=_ann_content_digest(entity_rows, matrix),
         )
+        for old_generation in previous_generations:
+            old_table = f"{scope_prefix}{old_generation}"
+            self._execute(f"MATCH (n:{old_table}) DETACH DELETE n")
+            self._ann_indexed_tables.discard(old_table)
+        return group_for(table_name, index_name)
+
+    def _ann_bulk_load(
+        self,
+        table_name: str,
+        entity_rows: npt.NDArray[np.int64],
+        matrix: npt.NDArray[np.float32],
+    ) -> None:
+        """Bulk load one shadow generation, preferring ``COPY FROM`` parquet.
+
+        ``COPY FROM`` is the documented bulk path and measured ~100x faster
+        than batched UNWIND at 10k vectors. The data must round-trip through
+        a parquet tempfile: ``COPY FROM`` an in-memory Arrow table with a
+        fixed-size-list column segfaults the pinned Kuzu 0.11.3. pyarrow is a
+        transitive (not guaranteed) dependency, so its absence degrades to
+        the batched-UNWIND load rather than failing.
+        """
+        if importlib.util.find_spec("pyarrow") is None:
+            self._ann_insert_rows(table_name, entity_rows, matrix)
+            return
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        temp_dir = tempfile.mkdtemp(prefix="zaxy-ann-shadow-")
+        try:
+            parquet_path = Path(temp_dir) / "shadow.parquet"
+            vec_column = pa.FixedSizeListArray.from_arrays(
+                pa.array(matrix.reshape(-1), type=pa.float32()),
+                matrix.shape[1],
+            )
+            # no-untyped-call fires only where pyarrow is installed; unused-ignore
+            # covers environments (CI) where it is absent and treated as Any.
+            pq.write_table(  # type: ignore[no-untyped-call, unused-ignore]
+                pa.table({"entity_row": pa.array(entity_rows, type=pa.int64()), "vec": vec_column}),
+                str(parquet_path),
+            )
+            escaped_path = str(parquet_path).replace("\\", "\\\\").replace("'", "\\'")
+            self._execute(f"COPY {table_name} FROM '{escaped_path}'")
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def _ann_insert_rows(
+        self,
+        table_name: str,
+        entity_rows: npt.NDArray[np.int64],
+        matrix: npt.NDArray[np.float32],
+        *,
+        start: int = 0,
+    ) -> None:
+        """Insert shadow rows with batched UNWIND statements from ``start`` on.
+
+        Serves the incremental delta path (inserts into the live mutable
+        index) and the full-load fallback when pyarrow is unavailable.
+        """
+        for batch_start in range(start, len(entity_rows), _ANN_INSERT_BATCH_SIZE):
+            batch = [
+                {
+                    "entity_row": int(entity_rows[position]),
+                    "vec": matrix[position].tolist(),
+                }
+                for position in range(batch_start, min(batch_start + _ANN_INSERT_BATCH_SIZE, len(entity_rows)))
+            ]
+            self._execute(
+                f"UNWIND $rows AS row CREATE (:{table_name} {{entity_row: row.entity_row, vec: row.vec}})",
+                {"rows": batch},
+            )
+
+    def _ann_shadow_generations(self, scope_prefix: str) -> list[int]:
+        """List existing shadow generation numbers for one scope, ascending."""
+        rows = self._execute("CALL SHOW_TABLES() RETURN name").get_all()
+        generations = []
+        for row in rows:
+            suffix = str(row[0]).removeprefix(scope_prefix)
+            if suffix != str(row[0]) and suffix.isdigit():
+                generations.append(int(suffix))
+        return sorted(generations)
 
     def _ensure_ann_index(self, table_name: str, index_name: str) -> None:
         """Create the persistent HNSW index for a shadow table exactly once."""
         if table_name in self._ann_indexed_tables:
             return
-        conn = self._require_connection()
         try:
-            conn.execute(
+            self._execute(
                 f"CALL CREATE_VECTOR_INDEX('{table_name}', '{index_name}', 'vec', metric := 'cosine')"
             )
         except RuntimeError as exc:
@@ -1320,7 +1483,7 @@ class EmbeddedGraphStore:
         """Probe once whether the pinned Kuzu runtime ships the vector index."""
         if self._ann_supported is None:
             try:
-                rows = self._require_connection().execute(
+                rows = self._execute(
                     "CALL SHOW_FUNCTIONS() WHERE name = 'CREATE_VECTOR_INDEX' RETURN name"
                 ).get_all()
             except RuntimeError:
@@ -1347,9 +1510,8 @@ class EmbeddedGraphStore:
         tag = version_tag or provider_version_tag(provider)
         if not tag:
             raise ValueError("embedding provider does not expose a version tag")
-        conn = self._require_connection()
         try:
-            rows = conn.execute(
+            rows = self._execute(
                 """
                 MATCH (e:Entity)
                 WHERE e.session_id = $session_id
@@ -1382,7 +1544,7 @@ class EmbeddedGraphStore:
             new_vector = provider.embed(text)
             properties["embedding"] = [float(value) for value in new_vector]
             properties["embedding_version"] = tag
-            conn.execute(
+            self._execute(
                 """
                 MATCH (e:Entity {node_key: $node_key})
                 SET e.properties_json = $properties_json
@@ -1481,6 +1643,7 @@ class EmbeddedGraphStore:
         self._dirty_bulk_sessions = set()
         self._bulk_active_state_loaded_sessions = set()
         self._ann_indexed_tables = set()
+        self._ann_generation_states = {}
 
     async def invalidate_entity(
         self,
@@ -1490,7 +1653,7 @@ class EmbeddedGraphStore:
         session_id: str = "default",
     ) -> None:
         """Close an entity validity window."""
-        self._require_connection().execute(
+        self._execute(
             """
             MATCH (e:Entity)
             WHERE e.session_id = $session_id
@@ -1517,8 +1680,7 @@ class EmbeddedGraphStore:
         session_id: str = "default",
     ) -> None:
         """Close projections derived from one source."""
-        conn = self._require_connection()
-        rows = conn.execute(
+        rows = self._execute(
             """
             MATCH (e:Entity)
             WHERE e.session_id = $session_id AND e.valid_to IS NULL
@@ -1532,14 +1694,14 @@ class EmbeddedGraphStore:
             if _properties_reference_source(_json_dict(row[1]), source_path)
         ]
         for node_key in retired_node_keys:
-            conn.execute(
+            self._execute(
                 """
                 MATCH (e:Entity {node_key: $node_key})
                 SET e.valid_to = $invalid_at
                 """,
                 {"node_key": node_key, "invalid_at": invalid_at},
             )
-            conn.execute(
+            self._execute(
                 """
                 MATCH (source:Entity)-[r:RELATES]->(target:Entity)
                 WHERE r.session_id = $session_id
@@ -1567,9 +1729,8 @@ class EmbeddedGraphStore:
         """Inspect Eventloom projection integrity."""
         from zaxy.graph import GraphEventProjectionStatus
 
-        conn = self._require_connection()
         try:
-            event_rows = conn.execute(
+            event_rows = self._execute(
                 """
                 MATCH (e:Event)
                 WHERE e.session_id = $session_id
@@ -1603,7 +1764,7 @@ class EmbeddedGraphStore:
         known_hashes = {row[1] for row in event_rows if row[1] is not None}
         missing_chain_links = sum(1 for row in event_rows if row[2] is not None and row[2] not in known_hashes)
         next_event_edges = _first_count(
-            conn.execute(
+            self._execute(
                 """
                 MATCH (:Event)-[r:NEXT_EVENT]->(:Event)
                 WHERE r.session_id = $session_id
@@ -1613,7 +1774,7 @@ class EmbeddedGraphStore:
             ).get_all()
         )
         previous_event_edges = _first_count(
-            conn.execute(
+            self._execute(
                 """
                 MATCH (:Event)-[r:PREVIOUS_EVENT]->(:Event)
                 WHERE r.session_id = $session_id
@@ -1660,7 +1821,7 @@ class EmbeddedGraphStore:
         )
 
         try:
-            rows = self._require_connection().execute(
+            rows = self._execute(
                 """
                 MATCH (source:Entity)-[r:RELATES]->(target:Entity)
                 WHERE r.session_id = $session_id AND r.inferred = true
@@ -1752,6 +1913,23 @@ class EmbeddedGraphStore:
             raise RuntimeError("embedded graph store is not connected")
         return self._connection
 
+    def _execute(self, query: str, parameters: dict[str, Any] | None = None) -> Any:
+        """Execute one store query with guaranteed parameter binding.
+
+        This is the single query-execution choke point: Kuzu 0.11.3 segfaults
+        — it does not raise — when a query references an unbound
+        ``$parameter``, so every ``$placeholder`` must arrive with a binding
+        before the statement reaches the runtime.
+        """
+        placeholders = set(_QUERY_PARAMETER_RE.findall(query))
+        missing = placeholders.difference(parameters or ())
+        if missing:
+            raise RuntimeError(f"query references unbound parameters: {sorted(missing)}")
+        connection = self._require_connection()
+        if parameters is None:
+            return connection.execute(query)
+        return connection.execute(query, parameters)
+
     def _active_node_key(self, session_id: str, entity_type: str, name: str) -> str | None:
         active_entity = self._active_entity_state(session_id=session_id, entity_type=entity_type, name=name)
         return active_entity[0] if active_entity is not None else None
@@ -1769,7 +1947,7 @@ class EmbeddedGraphStore:
         if self._bulk_projection_open:
             self._load_bulk_active_state(session_id)
             return self._active_entity_cache.get((session_id, entity_type, name))
-        rows = self._require_connection().execute(
+        rows = self._execute(
             """
             MATCH (e:Entity)
             WHERE e.session_id = $session_id
@@ -1800,7 +1978,7 @@ class EmbeddedGraphStore:
         """Load active entity state once for a bulk projection transaction."""
         if session_id in self._bulk_active_state_loaded_sessions:
             return
-        rows = self._require_connection().execute(
+        rows = self._execute(
             """
             MATCH (e:Entity)
             WHERE e.session_id = $session_id AND e.valid_to IS NULL
@@ -1826,8 +2004,7 @@ class EmbeddedGraphStore:
         new_node_key: str,
     ) -> None:
         """Carry active relationships from the immediately previous entity version."""
-        conn = self._require_connection()
-        incoming_rows = conn.execute(
+        incoming_rows = self._execute(
             """
             MATCH (source:Entity)-[r:RELATES]->(prev:Entity)
             WHERE prev.session_id = $session_id
@@ -1869,7 +2046,7 @@ class EmbeddedGraphStore:
                 evidence_json=str(row[8] or "{}"),
             )
 
-        outgoing_rows = conn.execute(
+        outgoing_rows = self._execute(
             """
             MATCH (prev:Entity)-[r:RELATES]->(target:Entity)
             WHERE prev.session_id = $session_id
@@ -1926,7 +2103,7 @@ class EmbeddedGraphStore:
         source_event_hash: str,
         evidence_json: str,
     ) -> None:
-        self._require_connection().execute(
+        self._execute(
             """
             MATCH (source:Entity {node_key: $source_key}), (target:Entity {node_key: $target_key})
             MERGE (source)-[r:RELATES {relation_type: $relation_type}]->(target)
@@ -2285,6 +2462,118 @@ def _bm25_score_from_precomputed(
     return score
 
 
+def _ann_scope_digest(session_id: str, version: str) -> str:
+    """Identifier-safe digest naming one (session, version) shadow scope."""
+    return hashlib.sha256(f"{session_id}\x1f{version}".encode()).hexdigest()[:16]
+
+
+def _ann_content_digest(
+    entity_rows: npt.NDArray[np.int64],
+    matrix: npt.NDArray[np.float32],
+) -> str:
+    """Hash a shadow generation's (entity_row, float32 vector) content.
+
+    Hashed in the exact float32 representation the shadow table stores, so
+    the digest of a leading slice of a new corpus proves the resident rows
+    (values *and* entity-row mapping) are unchanged before the delta policy
+    chooses the incremental insert path over a generation swap.
+    """
+    hasher = hashlib.sha256()
+    hasher.update(np.int64(entity_rows.shape[0]).tobytes())
+    hasher.update(np.ascontiguousarray(entity_rows).tobytes())
+    hasher.update(np.ascontiguousarray(matrix).tobytes())
+    return hasher.hexdigest()
+
+
+def _quantized_candidate_entity_indexes(
+    group: _QuantizedVectorGroup,
+    unit_query: npt.NDArray[np.float64],
+    *,
+    limit: int,
+) -> list[int]:
+    """Select oversampled candidate entities with int8 dot products."""
+    query_max = float(np.abs(unit_query).max())
+    if query_max == 0.0:
+        return []
+    quantized_query = np.clip(np.rint(unit_query * (127.0 / query_max)), -127, 127).astype(np.int8)
+    integer_scores = group.matrix.astype(np.int32) @ quantized_query.astype(np.int32)
+    approximate_scores = integer_scores.astype(np.float64) * group.scales
+    candidate_count = min(approximate_scores.size, limit * VECTOR_SEARCH_OVERSAMPLE)
+    if candidate_count <= 0:
+        return []
+    if candidate_count < approximate_scores.size:
+        candidate_rows = np.argpartition(-approximate_scores, candidate_count - 1)[:candidate_count]
+    else:
+        candidate_rows = np.arange(approximate_scores.size)
+    return sorted(group.entity_indexes[int(row)] for row in candidate_rows)
+
+
+def _exact_rerank_results(
+    candidate_entity_indexes: Sequence[int],
+    unit_query: npt.NDArray[np.float64],
+    *,
+    limit: int,
+    entities: list[GraphEntity],
+) -> list[SearchResult]:
+    """Rerank approximate candidates with exact float64 scores.
+
+    Shared by the ANN and int8 selectors: scores read the float64 vectors
+    already resident on the indexed entities, so candidate selection never
+    decides the final ordering. Candidates arrive in ascending entity order,
+    which keeps the stable descending sort's tie behavior aligned with the
+    dense path. Results stay ``exact=False`` because the candidate set is
+    approximate.
+
+    Candidate embeddings were validated when the vector index admitted them
+    into a group, so the hot path converts them in one bulk pass (the
+    per-candidate conversion loop measurably dominated high-dimension query
+    latency); if a property has been mutated since admission, the rerank
+    falls back to per-candidate validation and skips the bad rows.
+    """
+    from zaxy.graph import SearchResult
+
+    if not candidate_entity_indexes:
+        return []
+    kept = list(candidate_entity_indexes)
+    try:
+        matrix = np.asarray(
+            [entities[entity_index].properties["embedding"] for entity_index in kept],
+            dtype=np.float64,
+        )
+        if matrix.ndim != 2:
+            raise ValueError("candidate embeddings are not uniform vectors")
+    except (KeyError, TypeError, ValueError):
+        kept = []
+        vectors: list[list[float]] = []
+        for entity_index in candidate_entity_indexes:
+            vector = _embedding_vector(entities[entity_index].properties.get("embedding"))
+            if vector is None:
+                continue
+            kept.append(entity_index)
+            vectors.append(vector)
+        if not kept:
+            return []
+        matrix = np.asarray(vectors, dtype=np.float64)
+    norms = np.linalg.norm(matrix, axis=1)
+    scores = np.zeros(len(kept), dtype=np.float64)
+    nonzero_rows = norms > 0.0
+    scores[nonzero_rows] = (matrix[nonzero_rows] / norms[nonzero_rows, np.newaxis]) @ unit_query
+    positive_rows = np.flatnonzero(scores > 0.0)
+    if positive_rows.size == 0:
+        return []
+    ordered_rows = positive_rows[np.argsort(-scores[positive_rows], kind="stable")]
+    return [
+        SearchResult(
+            entity=entities[kept[int(row)]],
+            score=float(scores[row]),
+            source="vector",
+            raw_score=float(scores[row]),
+            exact=False,
+        )
+        for row in ordered_rows[:limit]
+    ]
+
+
 def _dense_vector_results(
     group: _VectorGroup,
     unit_query: npt.NDArray[np.float64],
@@ -2340,11 +2629,6 @@ def _embedding_version(properties: dict[str, Any]) -> str:
     if isinstance(version, str) and version:
         return version
     return LEGACY_EMBEDDING_VERSION
-
-
-def _kuzu_string_literal(value: str) -> str:
-    """Escape a value for inlining inside a quoted Kuzu string literal."""
-    return value.replace("\\", "\\\\").replace("'", "\\'").replace('"', '\\"')
 
 
 def _embedding_vector(value: Any) -> list[float] | None:

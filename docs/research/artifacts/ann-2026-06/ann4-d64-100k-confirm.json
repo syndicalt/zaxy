@@ -1,0 +1,124 @@
+{
+  "lanes": {
+    "vector_scale": {
+      "config": {
+        "ann_threshold": 256,
+        "dimension": 64,
+        "distribution": "hash",
+        "embedding_version_tag": "hash@99329f18-dim64",
+        "latency_passes": 3,
+        "query_count": 32,
+        "recall_floor": 0.95,
+        "sizes": [
+          100000
+        ],
+        "target_scale": 100000,
+        "top_k": 10
+      },
+      "deterministic": {
+        "note": "Corpus hashes, exact/quantized recall (strict and tie-aware), group types, resident bytes, and byte budgets are exactly reproducible across runs.",
+        "sizes": {
+          "100000": {
+            "byte_budget": {
+              "budget_fraction": 0.190735,
+              "exact_matrix_bytes": 51200000,
+              "exceeds_budget": false,
+              "vector_index_cache_max_bytes": 268435456
+            },
+            "corpus_sha256": "7f1465988165f1b67fcb9108dc5fe8cb118423a942022d419a76596de90f37f3",
+            "distribution": "hash",
+            "modes": {
+              "ann": {
+                "bytes_vs_exact_ratio": 0.0,
+                "engaged": true,
+                "group_type": "ann",
+                "resident_index_bytes": 0
+              },
+              "exact": {
+                "engaged": true,
+                "group_type": "dense",
+                "recall_at_k_strict": 1.0,
+                "recall_at_k_tie_aware": 1.0,
+                "recall_note": "exact mode is the ground truth; strict recall@k is 1.0 by definition",
+                "resident_index_bytes": 51200000
+              },
+              "quantized": {
+                "bytes_vs_exact_ratio": 0.1406,
+                "engaged": true,
+                "group_type": "quantized",
+                "recall_at_k_strict": 1.0,
+                "recall_at_k_tie_aware": 1.0,
+                "resident_index_bytes": 7200000
+              }
+            },
+            "vector_count": 100000
+          }
+        }
+      },
+      "exit_criteria": {
+        "evaluated_at_size": 100000,
+        "evaluated_at_target_scale": true,
+        "modes": {
+          "ann": {
+            "all_criteria_met": true,
+            "bytes_improved": true,
+            "engaged": true,
+            "latency_improved_p50": true,
+            "recall_at_k_strict": 1.0,
+            "recall_at_k_tie_aware": 1.0,
+            "recall_metric": "tie_aware",
+            "recall_pass": true
+          },
+          "quantized": {
+            "all_criteria_met": true,
+            "bytes_improved": true,
+            "engaged": true,
+            "latency_improved_p50": true,
+            "recall_at_k_strict": 1.0,
+            "recall_at_k_tie_aware": 1.0,
+            "recall_metric": "tie_aware",
+            "recall_pass": true
+          }
+        },
+        "note": "recall_pass evaluates recall_at_k_tie_aware (hit = exact float64 score >= the k-th true score, standard ann-benchmarks tie handling): at dim 1536 the hash corpus has a measured median of 210 corpus vectors exactly tied with the true top-10, so strict identity recall is ill-posed there. Strict recall is reported unconditionally alongside it. Quantized recall and bytes_improved are deterministic; ann recall varies slightly per run (HNSW rebuild nondeterminism) and latency_improved_p50 depends on the host machine. The roadmap criterion is defined at 10^5 vectors; smaller runs report not_evaluated_at_target_scale.",
+        "status": "pass"
+      },
+      "lane": "vector_scale",
+      "measurement": "strict and tie-aware recall@k vs exact float64 ground truth, p50/p95 query latency, resident index bytes, and byte-budget fractions for the embedded store's exact, Kuzu-HNSW, and int8-quantized vector modes over deterministic synthetic corpora (hash-embedded or seeded gaussian). Timings are environment-dependent.",
+      "measurements": {
+        "note": "Environment- or run-dependent values; excluded from determinism comparisons. ann recall (both metrics) lives here because Kuzu's HNSW graph construction is not run-to-run reproducible: rebuilding the same corpus yields slightly different recall.",
+        "sizes": {
+          "100000": {
+            "ann_backing_store_bytes": 67497984,
+            "ann_recall_at_k_strict": 1.0,
+            "ann_recall_at_k_tie_aware": 1.0,
+            "latency_ms": {
+              "ann": {
+                "first_query_ms": 62471.612,
+                "p50_ms": 16.483,
+                "p95_ms": 21.694,
+                "samples": 96
+              },
+              "exact": {
+                "first_query_ms": 2175.05,
+                "p50_ms": 38.273,
+                "p95_ms": 107.647,
+                "samples": 96
+              },
+              "quantized": {
+                "first_query_ms": 3370.146,
+                "p50_ms": 14.121,
+                "p95_ms": 15.48,
+                "samples": 96
+              }
+            }
+          }
+        }
+      },
+      "validation": "internal",
+      "version": "vector-scale-lane-v2"
+    }
+  },
+  "validation": "internal",
+  "version": "graph-scale-lanes-v1"
+}

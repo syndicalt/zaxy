@@ -337,7 +337,15 @@ class TestCapabilitiesProfileBlock:
         assert "available_but_unlisted" not in profile
 
     async def test_capabilities_report_vector_search_settings(self, tmp_path: Path) -> None:
-        """Capabilities should surface the embedded vector scale settings."""
+        """Capabilities should surface the effective ANN engagement rule.
+
+        2.2 G4 engagement: scopes at or below ann_max_dimension engage when
+        count >= ann_threshold OR — with ann_byte_budget_engagement on and no
+        int8 opt-in — when the exact float64 matrix would exceed the reported
+        cache byte budget.
+        """
+        from zaxy.embedded_graph_store import VECTOR_INDEX_CACHE_MAX_BYTES
+
         server = _real_server(tmp_path)
 
         result = await server.handle_memory_capabilities({"session_id": "agent-1"})
@@ -346,10 +354,17 @@ class TestCapabilitiesProfileBlock:
         assert vector_search == {
             "quantization": server._settings.vector_quantization,
             "ann_threshold": server._settings.vector_ann_threshold,
+            "ann_max_dimension": server._settings.vector_ann_max_dimension,
+            "ann_byte_budget_engagement": server._settings.vector_ann_byte_budget_engagement,
+            "vector_index_cache_max_bytes": VECTOR_INDEX_CACHE_MAX_BYTES,
         }
         assert vector_search["quantization"] in {"none", "int8"}
         assert isinstance(vector_search["ann_threshold"], int)
         assert vector_search["ann_threshold"] >= 1
+        assert isinstance(vector_search["ann_max_dimension"], int)
+        assert vector_search["ann_max_dimension"] >= 1
+        assert isinstance(vector_search["ann_byte_budget_engagement"], bool)
+        assert vector_search["vector_index_cache_max_bytes"] == 256 * 1024 * 1024
 
 
 # ------------------------------------------------------------------

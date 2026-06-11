@@ -1,0 +1,31 @@
+{
+  "mcpServers": {
+    "zaxy": {
+      "args": [
+        "serve",
+        "--eventloom-path",
+        "/home/cheapseatsecon/Projects/Personal/zaxy/.eventloom"
+      ],
+      "command": "/home/cheapseatsecon/miniconda3/bin/zaxy",
+      "env": {
+        "EMBEDDED_GRAPH_PATH": "/home/cheapseatsecon/Projects/Personal/zaxy/.eventloom/projections/embedded.kuzu",
+        "EVENTLOOM_PATH": "/home/cheapseatsecon/Projects/Personal/zaxy/.eventloom",
+        "EVENTLOOM_THREAD": "zaxy-default",
+        "LOG_LEVEL": "ERROR",
+        "MCP_ADMIN_TOKEN_FILE": "",
+        "MCP_REMOTE_AUTH_TOKEN_FILE": "",
+        "NEO4J_AUTO_START": "false",
+        "NEO4J_CA_CERT": "",
+        "NEO4J_PASSWORD_FILE": "",
+        "NEO4J_URI": "bolt://localhost:7687",
+        "OPENAI_API_KEY_FILE": "",
+        "PATHLIGHT_ACCESS_TOKEN_FILE": "",
+        "PGGRAPH_AUTO_START": "false",
+        "PROJECTION_BACKEND": "embedded",
+        "ZAXY_DOMAIN": "zaxy",
+        "ZAXY_ENV": "development"
+      },
+      "startup_timeout_sec": 90
+    }
+  }
+}

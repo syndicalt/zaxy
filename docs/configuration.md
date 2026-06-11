@@ -62,17 +62,78 @@ Embedding settings include `EMBEDDING_ENABLED`, `EMBEDDING_PROVIDER`,
 offline development. The hosted OpenAI-compatible provider is useful when vector
 similarity quality matters. See [embeddings.md](embeddings.md).
 
-Embedded vector index scale settings include `VECTOR_ANN_THRESHOLD` and
-`VECTOR_QUANTIZATION`. Stored vectors carry the producing provider's version
-tag (for example `hash@<fingerprint>-dim1536`); search never compares vectors
-across version tags, `zaxy doctor` reports mixed-version corpora, and
-`zaxy memory re-embed --session-id <session>` migrates stale-version vectors to
-the active provider. `VECTOR_ANN_THRESHOLD` (default `1000000`) is the
-per-session vector count above which the embedded backend switches from the
-exact dense matrix to a Kuzu-native HNSW index; results from the HNSW path
-report `exact: false`. The 2.1.0 default keeps ANN effectively opt-in: the
-vector-scale lane measured the current HNSW path below exact search on both
-recall and latency, so no default corpus size auto-engages it. `VECTOR_QUANTIZATION=int8` (default `none`) opts in to
+Embedded vector index scale settings include `VECTOR_ANN_THRESHOLD`,
+`VECTOR_ANN_MAX_DIMENSION`, `VECTOR_ANN_BYTE_BUDGET_ENGAGEMENT`,
+`VECTOR_ANN_EFS`, and `VECTOR_QUANTIZATION`. Stored vectors carry the
+producing provider's version tag (for example `hash@<fingerprint>-dim1536`);
+search never compares vectors across version tags, `zaxy doctor` reports
+mixed-version corpora, and `zaxy memory re-embed --session-id <session>`
+migrates stale-version vectors to the active provider.
+
+ANN engagement is a two-clause rule since 2.2, gated by a dimension ceiling.
+A (session, version) vector scope whose dimension is at or below
+`VECTOR_ANN_MAX_DIMENSION` (default `64`) switches from the exact dense
+matrix to a Kuzu-native HNSW index when **(a)** the scope's vector count
+reaches `VECTOR_ANN_THRESHOLD` (default `100000`), or **(b)** the scope's
+exact float64 matrix (count × dimension × 8 bytes) would exceed the 256 MiB
+vector index cache byte budget. Scopes above the dimension ceiling always
+use exact float64 (or explicitly opted-in int8) search regardless of corpus
+size. The count default came down from `1000000` in 2.2 on gate-G4 evidence:
+two consecutive vector-scale lane runs at exactly 10^5 vectors (dimension
+64) passed every ANN exit criterion — recall@10 of 1.0 on both the strict
+and tie-aware metrics, ANN p50 at-or-better than the exact matrix in-run,
+resident index bytes improved, and full `COPY`-based index builds of 92–98s
+(`docs/research/artifacts/ann-2026-06/ann3-d64-100k-r1.json`/`-r2.json`).
+The dimension ceiling default is the measured envelope of that evidence —
+the lane's all-criteria double pass exists only at dimension 64, and the
+conclusion does not transfer upward: at dimension 1536 with 50k gaussian
+vectors the lane measured HNSW recall@10 of 0.6 even at `efs` 400 while the
+exact matrix answered in 22ms p50
+(`docs/research/artifacts/ann-2026-06/ann3-d1536-50k-gauss-crossover.json`;
+a rerun measured 0.6344, `ann4-d1536-50k-gauss-r2.json`), and raising `efs`
+to 800 recovered recall only to 0.8438 with ANN p50 worse than exact
+(`ann4-d1536-50k-gauss-efs800.json`) — tuning does not rescue
+high-dimension scale.
+Raise `VECTOR_ANN_MAX_DIMENSION` only with lane evidence for your dimension
+and distribution.
+
+Clause (b) is the dimension-aware memory guard within the ceiling; at the
+256 MiB budget the exact matrix crosses it above these row counts:
+
+| Dimension | Exact float64 rows that fit the byte budget |
+| --- | --- |
+| 64 | 524,288 |
+| 384 | 87,381 |
+| 1536 | 21,845 |
+
+`VECTOR_ANN_BYTE_BUDGET_ENGAGEMENT` (default `true`) controls clause (b)
+alone. An explicit `VECTOR_ANN_THRESHOLD` remains an absolute count override
+for clause (a), but within the dimension ceiling the byte clause applies
+regardless of it — to force the exact float64 matrix above budget, also set
+`VECTOR_ANN_BYTE_BUDGET_ENGAGEMENT=false` (or opt in to
+`VECTOR_QUANTIZATION=int8`, which keeps its precedence below the count
+threshold and stores ~1/8 of the float64 bytes). Exact search above budget
+is viable — and above the dimension ceiling it is the measured
+recommendation — because the cache's LRU byte eviction always keeps the
+newest matrix resident: a single over-budget scope degrades to a cache of
+one (a 100k-vector corpus at dimension 1536 is a 1.23 GB matrix, 4.58× the
+budget, and stays resident); the budget bounds multi-scope cache totals, so
+only workloads alternating across several jointly over-budget scopes rebuild
+per switch. The HNSW path oversamples candidates from the index and reranks
+them with exact float64 scores read from the resident entity vectors, so the
+final ordering is exact while results still report `exact: false` (the
+candidate set is approximate). Each (session, version) group queries its own
+shadow table directly — no per-query graph projection or predicate scan.
+`VECTOR_ANN_EFS` (default `400`) is the HNSW query-time candidate-list size
+(`efs`), the primary recall knob: higher values trade latency for recall, and
+the effective value is never below the oversampled candidate count a query
+requests. The default moved from `200` to `400` in 2.2 on lane evidence: an
+internal sweep on a realistic embedding distribution (10k vectors, dimension
+1536) measured recall@10 of 0.8531 at `efs` 200, 0.9875 at 400, and 1.0 at
+800, with roughly 2ms of added p50 per step, so the default now matches the
+high-dimension recommendation. Set `VECTOR_ANN_EFS=800` for maximum recall
+when the extra few milliseconds are acceptable.
+`VECTOR_QUANTIZATION=int8` (default `none`) opts in to
 int8 matrix storage with per-vector scale factors; quantized search oversamples
 candidates with integer dot products and reranks them with exact float scores.
 
