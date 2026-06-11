@@ -2,7 +2,7 @@
 
 All notable Zaxy release changes are recorded here.
 
-## Unreleased (2.2.0)
+## 2.2.0 - 2026-06-11
 
 - Re-engineered the embedded ANN vector path end to end, every change backed
   by the internal vector-scale lane
