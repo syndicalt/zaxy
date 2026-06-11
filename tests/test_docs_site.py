@@ -82,8 +82,13 @@ def test_public_site_has_product_positioning_and_required_sections() -> None:
     assert "<title>Zaxy - event-sourced memory for agent work</title>" in html
     assert 'name="description"' in html
     assert 'property="og:image"' in html
-    assert "https://docs.zaxy.io/assets/zaxy-v1.1-header.png" in html
+    assert "https://docs.zaxy.io/assets/zaxy-v2.1-header.png" in html
+    for path in ("docs/assets/zaxy-v2.1-header.png", "site/assets/zaxy-v2.1-header.png"):
+        assert Path(path).exists(), path
+        assert Path(path).stat().st_size > 0, path
     assert "Event-sourced memory for agent work" in html
+    assert "salience-based forgetting" in html
+    assert "Cognitive memory" in html
     assert "purpose-conditioned checkout" in html
     assert "Worker sessions" in html
     assert "Parent mission" in html
@@ -181,7 +186,10 @@ def test_v11_release_article_and_graph_image_are_published() -> None:
     assert "StateRecoveryBench, MemoryFabric checkout lane" in x_article
     assert "citation coverage" in x_article
     assert "../../assets/zaxy-v1.1-header.png" in rendered
-    assert "https://docs.zaxy.io/assets/zaxy-v1.1-header.png" in homepage
+    # The homepage social image moved to the v2.1 header (pinned in
+    # test_public_site_has_product_positioning_and_required_sections); the
+    # v1.1 article page keeps its own header asset above.
+    assert "zaxy-v1.1-header.png" not in homepage
 
 
 def test_mcp_docs_show_memory_checkout_consumption_contract() -> None:
