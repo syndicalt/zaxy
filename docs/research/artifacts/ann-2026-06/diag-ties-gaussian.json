@@ -1,0 +1,16 @@
+{
+ "hash_tied_with_top10_in_float32": {
+  "median": 210,
+  "min": 11,
+  "max": 229
+ },
+ "hash_float64_score_gap_rank10_to_rank40": {
+  "median": 0.0,
+  "float32_eps_at_score_scale": 5.960464477539063e-08
+ },
+ "gauss_build_s": 32.5,
+ "gauss_efs200_k40": {
+  "recall": 0.8531,
+  "p50_ms": 17.82
+ }
+}

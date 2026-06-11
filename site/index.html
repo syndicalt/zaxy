@@ -205,6 +205,11 @@
           <h3>Evidence first, claims second</h3>
           <p>Archived reports remain useful for engineering history, but public benchmark claims now route through the benchmark hub.</p>
         </article>
+        <article class="benchmark-card">
+          <span class="benchmark-card-label">Vector search (internal)</span>
+          <h3>Defaults bounded to the measured envelope</h3>
+          <p>The 2.2 ANN engagement rule ships exactly as far as internal lane evidence extends: HNSW engages at 100k+ vectors up to 64 dimensions, where it measured recall 1.0 with 12.9x faster index builds. Above that envelope, exact search remains the recommendation — the negative results ship in the same paper.</p>
+        </article>
       </div>
       <div class="benchmark-comparison" role="region" aria-label="Current benchmark evidence table">
         <div class="benchmark-comparison-heading">
@@ -240,6 +245,7 @@
         <a href="docs/benchmarks.html#harvey-lab"><span>Harvey LAB result</span><small>Full external run and publishable stats</small></a>
         <a href="docs/benchmarks.html#headline-500"><span>Headline 500</span><small>Full checkout diagnostic and claim boundary</small></a>
         <a href="docs/external-validation.html"><span>External verification</span><small>Public request and report contract</small></a>
+        <a href="docs/research/ann-engineering-2026-06.html"><span>ANN engineering paper</span><small>Baseline-gated vector-search optimization, evidence and negative results</small></a>
       </div>
     </section>
 
@@ -278,6 +284,7 @@ zaxy coordinate checkout --mission auth-main</code></pre>
         <a href="docs/coordinate-roadmap.html">Coordinate roadmap</a>
         <a href="docs/benchmarks.html">Benchmarks</a>
         <a href="docs/research/zaxy-memory-fabric-paper.html">Research paper</a>
+        <a href="docs/research/ann-engineering-2026-06.html">ANN engineering paper</a>
         <a href="docs/external-validation.html">External verification request</a>
         <a href="docs/getting-started.html">Getting started</a>
         <a href="docs/mcp-quickstart.html">MCP quickstart</a>

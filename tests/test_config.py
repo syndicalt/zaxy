@@ -403,26 +403,47 @@ def test_logging_uses_stderr_for_mcp_stdio(capsys: pytest.CaptureFixture[str]) -
 
 
 def test_vector_scale_defaults() -> None:
-    """Embedding-scale settings default to exact search and no quantization.
+    """Embedding-scale settings default to the 2.2 lane-backed values.
 
-    The ANN threshold default keeps HNSW effectively opt-in: the vector-scale
-    lane measured the current ANN path below exact search on recall and latency
-    at every size up to 10^5, so no default corpus should auto-engage it.
+    The ANN threshold default is 100_000 per gate G4: the vector-scale lane
+    passed every ANN exit criterion at exactly 10^5 vectors (dimension 64) on
+    two consecutive runs — recall@10 of 1.0 on both the strict and tie-aware
+    metrics, ANN p50 at-or-better than exact in-run, resident bytes improved
+    (docs/research/artifacts/ann-2026-06/ann3-d64-100k-r1.json and -r2.json).
+    The ANN max-dimension default is 64 — the measured envelope of that
+    evidence: at dimension 1536 / 50k gaussian vectors the lane measured HNSW
+    recall@10 of 0.6 at efs 400 while exact answered in 22ms p50
+    (ann3-d1536-50k-gauss-crossover.json), so higher dimensions stay on exact
+    or opted-in int8 search unless the ceiling is raised explicitly.
+    Byte-budget engagement defaults on so an exact float64 matrix never
+    silently exceeds the vector index cache budget at high dimension.
+    The efs default is 400 per the 2.2 lane sweep on a realistic (gaussian)
+    distribution at dimension 1536: recall@10 of 0.8531 at efs 200 versus
+    0.9875 at efs 400 (~2ms p50 cost per step).
     """
     settings = Settings(_env_file=None)
 
-    assert settings.vector_ann_threshold == 1_000_000
+    assert settings.vector_ann_threshold == 100_000
+    assert settings.vector_ann_max_dimension == 64
+    assert settings.vector_ann_byte_budget_engagement is True
+    assert settings.vector_ann_efs == 400
     assert settings.vector_quantization == "none"
 
 
 def test_vector_scale_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("VECTOR_ANN_THRESHOLD", "1234")
+    monkeypatch.setenv("VECTOR_ANN_MAX_DIMENSION", "1536")
+    monkeypatch.setenv("VECTOR_ANN_EFS", "800")
     monkeypatch.setenv("VECTOR_QUANTIZATION", "int8")
+    monkeypatch.setenv("VECTOR_ANN_BYTE_BUDGET_ENGAGEMENT", "false")
 
     settings = Settings(_env_file=None)
 
     assert settings.vector_ann_threshold == 1234
+    assert settings.vector_ann_max_dimension == 1536
+    assert settings.vector_ann_efs == 800
     assert settings.vector_quantization == "int8"
+    assert settings.vector_ann_byte_budget_engagement is False
 
 
 def test_vector_quantization_rejects_unknown_mode() -> None:
@@ -433,3 +454,13 @@ def test_vector_quantization_rejects_unknown_mode() -> None:
 def test_vector_ann_threshold_rejects_non_positive_values() -> None:
     with pytest.raises(ValidationError):
         Settings(_env_file=None, vector_ann_threshold=0)
+
+
+def test_vector_ann_max_dimension_rejects_non_positive_values() -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, vector_ann_max_dimension=0)
+
+
+def test_vector_ann_efs_rejects_non_positive_values() -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, vector_ann_efs=0)

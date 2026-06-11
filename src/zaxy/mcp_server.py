@@ -2707,9 +2707,20 @@ class ZaxyMCPServer:
             current_task=_optional_text(arguments.get("current_task")),
         )
         manifest["profile"] = self._tool_profile_block()
+        # Local import: the capabilities surface reports the embedded store's
+        # cache byte budget without importing its numpy machinery at startup.
+        from zaxy.embedded_graph_store import VECTOR_INDEX_CACHE_MAX_BYTES
+
+        # The effective ANN engagement rule: scopes at or below
+        # ann_max_dimension engage when count >= ann_threshold OR (when
+        # byte-budget engagement is on and quantization is "none") when the
+        # exact float64 matrix would exceed the cache byte budget.
         manifest["vector_search"] = {
             "quantization": self._settings.vector_quantization,
             "ann_threshold": self._settings.vector_ann_threshold,
+            "ann_max_dimension": self._settings.vector_ann_max_dimension,
+            "ann_byte_budget_engagement": self._settings.vector_ann_byte_budget_engagement,
+            "vector_index_cache_max_bytes": VECTOR_INDEX_CACHE_MAX_BYTES,
         }
         return [TextContent(type="text", text=json.dumps(manifest, indent=2))]
 

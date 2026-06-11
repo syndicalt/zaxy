@@ -334,24 +334,49 @@ zaxy graph-scale-lanes --lanes all
   claim about organic multi-hop questions: the bridges, ties, and vocabulary
   are synthetic and constructed to sit inside the walk blend's operating
   window.
-- **Vector-scale lane**: builds deterministic hash-embedded synthetic corpora
-  directly against `EmbeddedGraphStore` (default sizes `1000,10000`;
-  `100000` opt-in via `--scale-sizes` because the Kuzu HNSW shadow sync is
-  insert-bound and takes minutes at 10^5) and measures, per size, the exact
-  float64 path, the Kuzu-native HNSW path (with a lowered
-  `vector_ann_threshold`), and the int8-quantized path: recall@10 versus the
-  exact ground truth, p50/p95 query latency, and resident index bytes.
-  Corpus hashes, exact/quantized recall, and bytes are two-run reproducible;
+- **Vector-scale lane**: builds deterministic synthetic corpora directly
+  against `EmbeddedGraphStore` (default sizes `1000,10000`; `100000` opt-in
+  via `--scale-sizes`) and measures, per size, the exact float64 path, the
+  Kuzu-native HNSW path (with a lowered `vector_ann_threshold`), and the
+  int8-quantized path: recall@10 versus the exact ground truth, p50/p95 query
+  latency, resident index bytes, and the exact matrix's byte-budget fraction
+  against the store's vector-cache ceiling. The lane lowers the count
+  threshold per store but not the 2.2 dimension ceiling, so runs above
+  `--scale-dimension 64` must set `VECTOR_ANN_MAX_DIMENSION` (for example
+  `VECTOR_ANN_MAX_DIMENSION=1536`) for the ANN mode to engage; without it
+  the ANN result block honestly reports `engaged: false` — exactly what a
+  production store would do at that dimension. Two recall metrics are always
+  reported together: `recall_at_k_strict` (identity recall against the exact
+  store's returned top-k — the original metric, kept unconditionally for
+  continuity) and `recall_at_k_tie_aware` (a retrieved vector is a hit when
+  its exact float64 score is >= the k-th true score — the standard
+  ann-benchmarks treatment of tied boundaries). Exit criteria evaluate the
+  tie-aware metric because strict recall is ill-posed on tie-dense corpora:
+  at dimension 1536 the hash-embedding corpus has a measured median of 210
+  corpus vectors *exactly* tied with the true top-10 (rank-10-to-rank-40
+  float64 score gap 0.0), so any top-10 from the tied set is equally
+  correct and even an exact float32 scan caps at 0.5344 strict recall.
+  Tie-aware never rewards a wrong vector; it only stops punishing
+  equally-right ones — and the strict number stays in every result block so
+  the divergence is always visible. `--scale-distribution hash|gaussian`
+  selects the corpus distribution: `hash` (default, comparable with all
+  prior lane evidence) or `gaussian` (seeded unit-normalized standard
+  normal — the deterministic realistic-distribution control and the
+  high-dimension gate corpus, since hash value distributions are
+  adversarially tie-dense at high dimension). Corpus hashes, exact/quantized
+  recall (both metrics), bytes, and byte budgets are two-run reproducible;
   ANN recall is reported under `measurements` because Kuzu's HNSW graph
   construction is not run-to-run reproducible, and all timings are
-  environment-dependent. The roadmap exit criterion (>= 0.95 recall@10 with
-  latency and byte improvements) is defined at 10^5 vectors; smaller runs
-  report `not_evaluated_at_target_scale`. Hash embeddings are not semantic
-  embeddings — this lane measures index mechanics, not retrieval quality.
+  environment-dependent. The roadmap exit criterion (>= 0.95 tie-aware
+  recall@10 with latency and byte improvements) is defined at 10^5 vectors;
+  smaller runs report `not_evaluated_at_target_scale`. Neither hash nor
+  gaussian vectors are semantic embeddings — this lane measures index
+  mechanics, not retrieval quality.
 
-Both lanes use synthetic corpora and the deterministic hash embedding
-provider. Do not report them as external validation and do not combine them
-with the headline 500 or Harvey LAB numbers.
+Both lanes use synthetic corpora and deterministic synthetic vectors (the
+hash embedding provider, or seeded gaussian vectors for the vector-scale
+realistic-distribution control). Do not report them as external validation
+and do not combine them with the headline 500 or Harvey LAB numbers.
 
 ## Claim Boundaries
 

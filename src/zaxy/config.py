@@ -386,17 +386,79 @@ class Settings(BaseSettings):
         default="sentence-transformers/all-MiniLM-L6-v2",
         description="Local sentence-transformers model name for semantic embeddings",
     )
-    # Default raised from 50_000 in 2.1.0: the internal vector-scale lane measured
-    # the HNSW path below the exact matrix on both recall (0.90 vs 1.0 @ 10^5) and
-    # latency, so no default corpus size should auto-engage it until the ANN path
-    # gains per-query projected-graph reuse and recall tuning.
+    # Default lowered from 1_000_000 in 2.2 (gate G4): after the 2.2 query-path
+    # rerank and COPY-based builds, the vector-scale lane passed every ANN exit
+    # criterion at exactly 10^5 vectors (dimension 64) on two consecutive runs —
+    # recall@10 of 1.0 on both the strict and tie-aware metrics, ANN p50
+    # at-or-better than the exact matrix in-run (24.17ms vs 24.20ms, then
+    # 26.67ms vs 30.82ms), resident index bytes improved (0 vs 51.2MB), and
+    # full COPY shadow builds of 92-98s. Evidence:
+    # docs/research/artifacts/ann-2026-06/ann3-d64-100k-r1.json and -r2.json.
     vector_ann_threshold: int = Field(
-        default=1_000_000,
+        default=100_000,
         ge=1,
         description=(
-            "Per-session vector count above which the embedded backend uses a "
-            "Kuzu-native HNSW index instead of the exact dense matrix; the 2.1.0 "
-            "default keeps ANN effectively opt-in"
+            "Per-scope vector count at or above which the embedded backend uses "
+            "a Kuzu-native HNSW index instead of the exact dense matrix, "
+            "provided the scope's vector dimension is at or below "
+            "vector_ann_max_dimension; independently of this count, the ANN "
+            "path also engages when a scope's exact float64 matrix would "
+            "exceed the vector index cache byte budget (see "
+            "vector_ann_byte_budget_engagement), still subject to the same "
+            "dimension ceiling"
+        ),
+    )
+    # The 64 default is the measured envelope of the G4 evidence: the lane's
+    # ALL-criteria double pass exists only at dimension 64 (10^5 vectors), and
+    # the same lane shows the conclusion does not transfer upward — at
+    # dimension 1536 / 50k gaussian vectors, HNSW recall@10 is 0.6 even at
+    # efs 400 while the exact matrix answers in 22ms p50 despite sitting 2.4x
+    # over the cache byte budget (the eviction design always keeps the newest
+    # matrix resident, so a single large scope never thrashes; the budget
+    # bounds multi-scope cache totals only). Evidence:
+    # docs/research/artifacts/ann-2026-06/ann3-d64-100k-r1.json, -r2.json, and
+    # ann3-d1536-50k-gauss-crossover.json.
+    vector_ann_max_dimension: int = Field(
+        default=64,
+        ge=1,
+        description=(
+            "Maximum vector dimension at which the embedded backend's ANN "
+            "(Kuzu HNSW) path may engage; scopes with higher-dimensional "
+            "vectors always use exact float64 (or explicitly opted-in int8) "
+            "search regardless of corpus size. The default is the dimension "
+            "the vector-scale lane proved ANN better at; raise it only with "
+            "lane evidence for your dimension and distribution"
+        ),
+    )
+    vector_ann_byte_budget_engagement: bool = Field(
+        default=True,
+        description=(
+            "Engage the embedded ANN path whenever a scope's exact float64 "
+            "matrix (count x dimension x 8 bytes) would exceed the 256 MiB "
+            "vector index cache byte budget, regardless of "
+            "vector_ann_threshold but still only at or below "
+            "vector_ann_max_dimension. An explicit VECTOR_QUANTIZATION=int8 "
+            "opt-in takes precedence below the count threshold. The byte "
+            "budget bounds the cache total across scopes — the newest matrix "
+            "always stays resident, so a single over-budget scope degrades to "
+            "a cache of one rather than thrashing — which is why exact search "
+            "above budget remains viable and is the measured high-dimension "
+            "recommendation"
+        ),
+    )
+    # Default raised from 200 in 2.2: the vector-scale lane's efs sweep on a
+    # realistic (gaussian) distribution at dimension 1536 measured recall@10 of
+    # 0.8531 at efs 200, 0.9875 at efs 400, and 1.0 at efs 800, with ~2ms of
+    # added p50 per step. 400 is the evidence-backed high-dimension default;
+    # 800 remains the maximum-recall recommendation.
+    vector_ann_efs: int = Field(
+        default=400,
+        ge=1,
+        description=(
+            "Query-time HNSW candidate-list size (efs) for the embedded ANN "
+            "vector path; the primary recall knob — higher values trade "
+            "latency for recall. The effective value is never below the "
+            "oversampled candidate count the query requests from the index"
         ),
     )
     vector_quantization: Literal["none", "int8"] = Field(

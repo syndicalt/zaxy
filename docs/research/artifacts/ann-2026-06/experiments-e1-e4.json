@@ -1,0 +1,55 @@
+{
+ "unwind_load_s": 8.16,
+ "copy_load_s": 0.08,
+ "copy_index_build_s": 6.25,
+ "q_direct_table": {
+  "efs200": {
+   "recall": 1.0,
+   "p50_ms": 6.557,
+   "p95_ms": 10.116
+  },
+  "efs400": {
+   "recall": 1.0,
+   "p50_ms": 7.861,
+   "p95_ms": 9.315
+  },
+  "efs800": {
+   "recall": 1.0,
+   "p50_ms": 8.809,
+   "p95_ms": 11.14
+  }
+ },
+ "q_pg_reused": {
+  "efs200": {
+   "recall": 1.0,
+   "p50_ms": 7.932,
+   "p95_ms": 8.969
+  },
+  "efs400": {
+   "recall": 1.0,
+   "p50_ms": 7.929,
+   "p95_ms": 10.251
+  }
+ },
+ "q_pg_per_query_efs200": {
+  "recall": 1.0,
+  "p50_ms": 6.948,
+  "p95_ms": 8.915
+ },
+ "determinism": {
+  "st": {
+   "runs": [
+    1.0,
+    1.0
+   ],
+   "identical": true
+  },
+  "mt": {
+   "runs": [
+    1.0,
+    1.0
+   ],
+   "identical": true
+  }
+ }
+}

@@ -1,0 +1,160 @@
+{
+  "lanes": {
+    "vector_scale": {
+      "config": {
+        "ann_threshold": 256,
+        "dimension": 64,
+        "embedding_version_tag": "hash@99329f18-dim64",
+        "latency_passes": 3,
+        "query_count": 32,
+        "recall_floor": 0.95,
+        "sizes": [
+          1000,
+          10000
+        ],
+        "target_scale": 100000,
+        "top_k": 10
+      },
+      "deterministic": {
+        "note": "Corpus hashes, exact/quantized recall, group types, and resident bytes are exactly reproducible across runs.",
+        "sizes": {
+          "1000": {
+            "corpus_sha256": "befb75bdca08c4e1e3f9fbb7a68a35c1feee2aa2301224bbf6ff341d609f3b3d",
+            "modes": {
+              "ann": {
+                "bytes_vs_exact_ratio": 0.0,
+                "engaged": true,
+                "group_type": "ann",
+                "resident_index_bytes": 0
+              },
+              "exact": {
+                "engaged": true,
+                "group_type": "dense",
+                "recall_at_k": 1.0,
+                "recall_note": "exact mode is the ground truth; recall@k is 1.0 by definition",
+                "resident_index_bytes": 512000
+              },
+              "quantized": {
+                "bytes_vs_exact_ratio": 0.1406,
+                "engaged": true,
+                "group_type": "quantized",
+                "recall_at_k": 0.9938,
+                "resident_index_bytes": 72000
+              }
+            },
+            "vector_count": 1000
+          },
+          "10000": {
+            "corpus_sha256": "a4673fe6ddfbb8fea99ba2c70903a9c3dba77b8730adb29aa6d7035645d0f760",
+            "modes": {
+              "ann": {
+                "bytes_vs_exact_ratio": 0.0,
+                "engaged": true,
+                "group_type": "ann",
+                "resident_index_bytes": 0
+              },
+              "exact": {
+                "engaged": true,
+                "group_type": "dense",
+                "recall_at_k": 1.0,
+                "recall_note": "exact mode is the ground truth; recall@k is 1.0 by definition",
+                "resident_index_bytes": 5120000
+              },
+              "quantized": {
+                "bytes_vs_exact_ratio": 0.1406,
+                "engaged": true,
+                "group_type": "quantized",
+                "recall_at_k": 0.9906,
+                "resident_index_bytes": 720000
+              }
+            },
+            "vector_count": 10000
+          }
+        }
+      },
+      "exit_criteria": {
+        "evaluated_at_size": 10000,
+        "evaluated_at_target_scale": false,
+        "modes": {
+          "ann": {
+            "all_criteria_met": false,
+            "bytes_improved": true,
+            "engaged": true,
+            "latency_improved_p50": false,
+            "recall_at_k": 0.9906,
+            "recall_pass": true
+          },
+          "quantized": {
+            "all_criteria_met": true,
+            "bytes_improved": true,
+            "engaged": true,
+            "latency_improved_p50": true,
+            "recall_at_k": 0.9906,
+            "recall_pass": true
+          }
+        },
+        "note": "quantized recall_pass and bytes_improved are deterministic; ann recall_pass varies slightly per run (HNSW rebuild nondeterminism) and latency_improved_p50 depends on the host machine. The roadmap criterion is defined at 10^5 vectors; smaller runs report not_evaluated_at_target_scale.",
+        "status": "not_evaluated_at_target_scale"
+      },
+      "lane": "vector_scale",
+      "measurement": "recall@k vs exact float64 ground truth, p50/p95 query latency, and resident index bytes for the embedded store's exact, Kuzu-HNSW, and int8-quantized vector modes over deterministic hash-embedded synthetic corpora. Timings are environment-dependent.",
+      "measurements": {
+        "note": "Environment- or run-dependent values; excluded from determinism comparisons. ann_recall_at_k lives here because Kuzu's HNSW graph construction is not run-to-run reproducible: rebuilding the same corpus yields slightly different recall.",
+        "sizes": {
+          "1000": {
+            "ann_backing_store_bytes": 7979008,
+            "ann_recall_at_k": 0.9938,
+            "latency_ms": {
+              "ann": {
+                "first_query_ms": 2565.206,
+                "p50_ms": 3.376,
+                "p95_ms": 3.714,
+                "samples": 96
+              },
+              "exact": {
+                "first_query_ms": 27.22,
+                "p50_ms": 0.141,
+                "p95_ms": 0.15,
+                "samples": 96
+              },
+              "quantized": {
+                "first_query_ms": 25.826,
+                "p50_ms": 0.647,
+                "p95_ms": 0.669,
+                "samples": 96
+              }
+            }
+          },
+          "10000": {
+            "ann_backing_store_bytes": 13524992,
+            "ann_recall_at_k": 0.9906,
+            "latency_ms": {
+              "ann": {
+                "first_query_ms": 55965.05,
+                "p50_ms": 9.006,
+                "p95_ms": 10.632,
+                "samples": 96
+              },
+              "exact": {
+                "first_query_ms": 133.361,
+                "p50_ms": 6.048,
+                "p95_ms": 10.01,
+                "samples": 96
+              },
+              "quantized": {
+                "first_query_ms": 232.908,
+                "p50_ms": 1.215,
+                "p95_ms": 1.409,
+                "samples": 96
+              }
+            }
+          }
+        }
+      },
+      "validation": "internal",
+      "version": "vector-scale-lane-v1"
+    }
+  },
+  "validation": "internal",
+  "version": "graph-scale-lanes-v1"
+}

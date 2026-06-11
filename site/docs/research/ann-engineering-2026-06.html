@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Evidence-Bounded Approximate Search: Engineering the Zaxy 2.2 ANN Path Against a Frozen Upstream - Zaxy Docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,600&family=Inter:wght@400;550;650;750;850&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../style.css" />
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['\\(', '\\)']],
+        displayMath: [['\\[', '\\]'], ['$$', '$$']],
+        processEscapes: true
+      },
+      options: {
+        skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+      }
+    };
+  </script>
+  <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../../index.html">Overview</a>
+      <a href="../../docs/coordinate-roadmap.html">Coordinate</a>
+      <a href="../../docs/why-zaxy.html">Why Zaxy</a>
+      <a href="../../docs/benchmarks.html">Benchmarks</a>
+      <a href="../getting-started.html">Start</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="evidence-bounded-approximate-search-engineering-the-zaxy-22-ann-path-against-a-frozen-upstream">Evidence-Bounded Approximate Search: Engineering the Zaxy 2.2 ANN Path Against a Frozen Upstream</h1>
+      <ul>
+        <li>Author: Zaxy project</li>
+        <li>Status: Research draft (engineering report)</li>
+        <li>Version context: Zaxy 2.2.0 (Unreleased at time of writing)</li>
+        <li>Artifact root: <code>docs/research/artifacts/ann-2026-06/</code></li>
+      </ul>
+      <h2 id="abstract">Abstract</h2>
+      <p>Zaxy 2.1 shipped an approximate nearest-neighbor (ANN) vector path — a Kuzu-native HNSW index — that its own benchmark lane measured as worse than exact brute-force search on every axis that mattered: recall@10 of 0.9062 at 10^4 vectors and 0.8969 at 10^5 (dimension 64) against a 0.95 floor, p50 latency of 37.9 ms against 17.0 ms exact at 10^5, and a ~20-minute index build. The release response was not to remove the feature or to tune it against the gate; it was to raise <code>VECTOR_ANN_THRESHOLD</code> to 1,000,000 so the path stayed opt-in, and to record the lane evidence as the bar any future default change must clear.</p>
+      <p>This report documents the 2.2 engineering effort that cleared that bar — and the exact boundary at which the evidence stops. After a baseline-first measurement campaign, four decisive experiments, and a diagnostic episode that exonerated the index and indicted the evaluation corpus, the shipped path is a clean double pass at the target scale: two consecutive vector-scale lane runs at exactly 10^5 vectors, dimension 64, with recall@10 of 1.0 on both the strict and tie-aware metrics, ANN p50 at-or-better than exact in-run (24.17 ms vs 24.20 ms, then 26.67 ms vs 30.82 ms), resident index bytes of 0 versus 51.2 MB, and full <code>COPY</code>-based builds of 92–98 s — roughly 13x faster than the 1,180 s build the same lane measured before the build-path rework (<code>ann3-d64-100k-r1.json</code>, <code>ann3-d64-100k-r2.json</code>, <code>after-dim64-100k.json</code>). A confirmatory run reproduced the pass (<code>ann4-d64-100k-confirm.json</code>).</p>
+      <p>The default moved exactly as far as the evidence extends and no further: ANN engagement now requires vector count &gt;= 100,000 AND dimension &lt;= 64. At dimension 1536 with 50k Gaussian vectors the identical machinery measured HNSW recall@10 of 0.6 at <code>efs</code> 400 and only 0.8438 at <code>efs</code> 800 — with the <code>efs</code> increase eroding the latency advantage faster than it repaired recall — while exact float64 search stayed serviceable at 22–26 ms p50 despite a matrix 2.29x over the vector-cache byte budget (<code>ann3-d1536-50k-gauss-crossover.json</code>, <code>ann4-d1536-50k-gauss-efs800.json</code>, <code>ann4-d1536-50k-dimension-gated.json</code>). Those negative results shipped in the documentation alongside the positive ones. The thesis of this report is methodological as much as technical: a feature default is a claim, and the claim boundary should be drawn by the benchmark lane that measured it.</p>
+      <p>All numbers in this report are internal same-machine lane measurements over synthetic corpora (see <code>docs/benchmarks.md</code> claim boundaries and <code>docs/external-validation.md</code>). They measure index mechanics, not retrieval quality, and they are not public benchmark claims.</p>
+      <h2 id="1-background-and-problem-statement">1. Background and Problem Statement</h2>
+      <p>Zaxy&#x27;s embedded projection store (<code>src/zaxy/embedded_graph_store.py</code>) serves vector similarity search over projected entity embeddings. Three execution modes exist for a (session, embedding-version, dimension) vector scope:</p>
+      <ol>
+        <li><strong>Exact</strong>: a unit-normalized float64 dense matrix; one BLAS matrix-vector product per query. Ground truth by construction.</li>
+        <li><strong>Quantized (int8, opt-in)</strong>: int8 matrix with per-vector scales; integer-dot-product candidate selection followed by exact float64 rerank.</li>
+        <li><strong>ANN</strong>: a Kuzu-native HNSW index over a shadow table; the subject of this report.</li>
+      </ol>
+      <p>The 2.1 vector-scale lane (<code>zaxy_benchmarks/vector_scale_lane.py</code>, runnable via <code>zaxy graph-scale-lanes --lanes vector-scale</code>) measured the ANN mode below exact search on recall, latency, and build cost, so 2.1 shipped with the path effectively disabled by threshold. The 2.2 charter (<code>docs/superpowers/specs/2026-06-11-zaxy-2-2-ann-engineering-plan.md</code>) was to make the ANN path genuinely better than exact search where exact search stops being viable, and to lower the threshold only when the lane proves it:</p>
+      <blockquote>Defaults move on lane evidence, not on assertion.</blockquote>
+      <p>Two constraints shaped everything below. First, the upstream is frozen: Kuzu 0.11.3 (2025-10-10) is the final release of an archived repository, so every defect found is permanent and must be designed around rather than reported. Second, no development was permitted before a measured baseline existed (<code>BASELINE.md</code>); every subsequent change is judged as a delta against it.</p>
+      <h2 id="2-related-work-and-theory">2. Related Work and Theory</h2>
+      <h3 id="21-hnsw-layered-proximity-graphs">2.1 HNSW: layered proximity graphs</h3>
+      <p>Hierarchical Navigable Small World graphs (Malkov &amp; Yashunin, arXiv:1603.09320) organize the corpus as a multi-layer proximity graph. Each element is assigned a maximum layer \(l\) drawn from an exponentially decaying distribution (\(l = \lfloor -\ln(u) \cdot m_L \rfloor\) for uniform \(u\)), so the expected number of layers is \(O(\log n)\) and each upper layer is an exponentially sparser sample of the one below. A search greedily descends from the top layer: within a layer, greedy routing over a bounded-degree graph (degree controlled by \(M\)) takes an expected number of hops that the authors argue is bounded by a constant under the small-world construction, giving overall search complexity that scales logarithmically with \(n\). Two candidate-list sizes govern the quality/latency trade: <code>efConstruction</code> during build and <code>ef</code> (<code>efs</code> in Kuzu&#x27;s surface) during search. Recall increases monotonically with <code>ef</code> at linear latency cost — <code>ef</code> is the canonical recall knob, and that is the theoretical basis for treating <code>efs</code> as the first tuning lever in Section 5.</p>
+      <h3 id="22-navix-kuzus-vector-index">2.2 NaviX: Kuzu&#x27;s vector index</h3>
+      <p>Kuzu&#x27;s vector extension implements NaviX (Sehgal &amp; Salihoglu, arXiv:2506.23397), a disk-based HNSW designed for graph DBMSs with predicate-agnostic filtered search: the selection subquery runs first, producing a selected-set mask, and the HNSW search consults it through adaptive per-iteration heuristics (one-hop, directed, blind) switched by local selectivity. Two properties of the paper matter directly here:</p>
+      <ul>
+        <li><strong>The efs-driven recall methodology.</strong> The paper&#x27;s evaluation fixes construction parameters (upper/lower max degree approximately Kuzu&#x27;s <code>mu=30</code>/<code>ml=60</code> defaults, <code>efc=200</code>, 5% upper-layer sampling) and reaches a 95% recall target per dataset purely by raising <code>efs</code>. Kuzu&#x27;s own authors tune recall at query time, not build time — Zaxy&#x27;s lane adopted the same posture.</li>
+        <li><strong>Acknowledged build nondeterminism.</strong> Construction is parallel: worker threads concurrently scan morsels of vectors and update shared CSR structures with acknowledged, unsynchronized data races, justified because HNSW is already approximate. There is no seed parameter anywhere in the 0.11.3 surface or source. Identical data therefore yields different graphs and slightly different recall on every rebuild. This is why the lane reports ANN recall under run-dependent <code>measurements</code> rather than the <code>deterministic</code> block, and why every decision gate requires two consecutive passing runs rather than one.</li>
+      </ul>
+      <h3 id="23-recallk-and-tie-handling">2.3 Recall@k and tie handling</h3>
+      <p>The ann-benchmarks methodology (Aumüller, Bernhardsson &amp; Faithfull, arXiv:1807.05614) defines recall@k by counting returned points whose distance to the query is no worse than the distance of the k-th true neighbor, precisely so that ties at the boundary do not penalize an answer that is equally correct. Section 3.1 formalizes the variant Zaxy&#x27;s lane ships and shows, with measured tie statistics, why strict identity recall is ill-posed on the lane&#x27;s high-dimension hash corpus.</p>
+      <h2 id="3-mathematics">3. Mathematics</h2>
+      <h3 id="31-tie-aware-recall-and-the-ill-posedness-of-strict-recall">3.1 Tie-aware recall and the ill-posedness of strict recall</h3>
+      <p>Let \(V\) be the corpus, \(|V| = n\), and let \(s(q, v) = \langle \hat{q}, \hat{v} \rangle\) be the exact float64 cosine score of corpus vector \(v\) against query \(q\) (unit-normalized exactly as the production dense path normalizes — the lane&#x27;s ground-truth scores are bit-identical to production scores; see <code>exact_score_matrix</code> in <code>zaxy_benchmarks/vector_scale_lane.py</code>). Let \(s_k(q)\) be the k-th largest value of \(s(q, \cdot)\) over \(V\), and let \(T_k(q)\) be a true top-k set (any k-subset consistent with the score ordering).</p>
+      <p><strong>Strict recall</strong> of a returned set \(R_k\) is \(|R_k \cap T_k| / k\) where \(T_k\) is the particular top-k the exact store returned — identity matching against one arbitrary tie-break.</p>
+      <p><strong>Tie-aware recall</strong> declares a returned vector a hit when it scores at least the k-th true score:</p>
+      <div class="math-block">\[
+\operatorname{hit}(v) \;:=\; s_{\mathrm{f64}}(q, v) \,\ge\, s_k(q),
+\qquad
+\operatorname{recall}^{\mathrm{tie}}_{@k}(R_k)
+= \frac{\bigl|\{\, v \in R_k : \operatorname{hit}(v) \,\}\bigr|}{k}.
+\]</div>
+      <p>The comparison is exact — no epsilon — because both sides are drawn from the same float64 score matrix (<code>tie_aware_recall_at_k</code> in <code>zaxy_benchmarks/vector_scale_lane.py</code>). Two properties follow directly:</p>
+      <ol>
+        <li><strong>It never rewards a wrong vector.</strong> Any \(v\) with \(s(q,v) \ge s_k(q)\) belongs to some valid top-k under the true ordering, so every counted hit is a correct answer.</li>
+        <li><strong>It reduces to strict recall on tie-free corpora</strong>, where the top-k set is unique.</li>
+      </ol>
+      <p>Strict recall becomes ill-posed when the boundary tie class \(B_k(q) := \{\, v : s(q,v) = s_k(q) \,\}\) is large: the true top-k set is then non-unique, and an answer drawn entirely from \(\{v : s(q,v) \ge s_k(q)\}\) — equally correct by score — is penalized for disagreeing with the exact store&#x27;s storage-order tie-break. This is not a hypothetical on the lane&#x27;s corpus. Measured at dimension 1536 on the hash embedding corpus (<code>diag-ties-gaussian.json</code>):</p>
+      <ul>
+        <li>a <strong>median of 210 corpus vectors</strong> (min 11, max 229) are <em>exactly tied</em> with the true top-10 per query;</li>
+        <li>the <strong>float64 score gap between rank 10 and rank 40 is exactly 0.0</strong> (median) — the ties are real values, not rounding artifacts;</li>
+        <li>the float32 machine epsilon at score scale is \(5.96 \times 10^{-8}\) (\(2^{-24}\)), so any float32 representation of these scores is constitutionally unable to order the tie class.</li>
+      </ul>
+      <p>The consequence is measurable as a ceiling: an <strong>exact float32 brute-force scan</strong> over the same corpus achieves strict recall of only <strong>0.5344</strong> against float64 ground truth, at candidate depths k=40, k=100, and k=200 alike (<code>diag-d1536-f32-ceiling.json</code>). No index whose stored vectors are float32 — Kuzu&#x27;s HNSW stores <code>FLOAT[]</code> — can beat a number that exact float32 search itself cannot beat. Storing float64 in the index does not help either: a float64-stored HNSW measured 0.5219–0.5406 on the same corpus (<code>diag-d1536-f32-ceiling.json</code>, <code>f64_*</code> entries), because the ties exist in float64 too. The 2.1-era recall numbers at dimension 1536 (0.5156 ANN, 0.6094 int8; <code>baseline-dim1536.json</code>) were therefore substantially a property of the metric-times-corpus, not of the index — a diagnosis the Gaussian control in Section 4.4 confirms.</p>
+      <p>The shipped lane reports both metrics unconditionally (<code>recall_at_k_strict</code>, <code>recall_at_k_tie_aware</code>) and gates on the tie-aware one, so the divergence is always visible and nothing is hidden (<code>docs/benchmarks.md</code>, vector-scale lane section).</p>
+      <h3 id="32-oversample-and-rerank-confining-approximation-to-candidate-selection">3.2 Oversample-and-rerank: confining approximation to candidate selection</h3>
+      <p>Both approximate modes share one pipeline (Section 5.1): a selector produces a candidate set \(C\) with \(|C| = \min(n,\, m \cdot k)\), where \(m\) is the oversample multiplier (<code>VECTOR_SEARCH_OVERSAMPLE = 4</code> in <code>src/zaxy/embedded_graph_store.py</code>), and the final result is the exact-score top-k of \(C\):</p>
+      <div class="math-block">\[
+R_k \;=\; \operatorname*{arg\,top\text{-}k}_{v \in C}\; s_{\mathrm{f64}}(q, v).
+\]</div>
+      <p>Because the rerank ordering within \(C\) is exact, the final strict recall is purely a function of candidate selection:</p>
+      <div class="math-block">\[
+\operatorname{recall}_{@k}(R_k)
+\;=\; \frac{|C \cap T_k|}{k}
+\qquad\text{(since } |C \cap T_k| \le |T_k| = k\text{)}.
+\]</div>
+      <p>Every true top-k member that reaches the candidate set is restored to its correct position; a member is lost only if the selector&#x27;s error displaces it below the \(mk\)-th approximate rank. This eliminates the dominant measured error class of the unreranked path: the shadow table stores float32, and near-ties that flip at the \(2^{-24}\) precision boundary land within the \(mk\) slack and are re-ordered exactly. Experiment E3 (Section 4.3) measured recall 1.0 at every <code>efs</code> under float32-consistent ground truth — demonstrating the deficit was the precision boundary, not HNSW search quality — and the same rerank is what makes recall robust to HNSW build variance: it is the determinism mitigation that costs nothing at build time. The float64 rerank reads vectors already resident on the indexed entities, so it adds no duplicate storage (<code>_exact_rerank_results</code> in <code>src/zaxy/embedded_graph_store.py</code>). Reranked results still report <code>exact: false</code>, because the candidate set remains approximate even though the final ordering is exact.</p>
+      <h3 id="33-the-byte-model-and-the-cache-of-one-property">3.3 The byte model and the cache-of-one property</h3>
+      <p>Resident bytes per scope of \(n\) vectors at dimension \(d\):</p>
+      <div class="math-block">\[
+\mathrm{bytes}_{\mathrm{exact}}(n, d) = 8nd
+\qquad
+\mathrm{bytes}_{\mathrm{int8}}(n, d) = nd + 8n
+\qquad
+\mathrm{bytes}_{\mathrm{ann}}(n, d) = 0.
+\]</div>
+      <p>Exact stores float64; int8 stores one byte per component plus one float64 scale per vector (ratios confirm: \(72n/512n = 0.1406\) at d=64, \(1544n/12288n = 0.1257\) at d=1536, matching every lane artifact&#x27;s <code>bytes_vs_exact_ratio</code>); the ANN mode keeps vectors in the database&#x27;s buffer-managed shadow table, so process-resident index bytes are zero (the lane separately reports the on-disk backing store, e.g. 67.5 MB at 10^5 x 64, <code>ann3-d64-100k-r1.json</code>).</p>
+      <p>The store budgets process-resident vector matrices at \(B = 256\,\mathrm{MiB} = 2^{28}\) bytes across all scopes (<code>VECTOR_INDEX_CACHE_MAX_BYTES</code>). Engagement clause (b) (Section 3.4) fires when a single scope&#x27;s exact matrix would exceed it, \(8nd &gt; B \Leftrightarrow n &gt; 2^{25}/d\): 524,288 rows at d=64, 21,845 at d=1536 (<code>docs/configuration.md</code>).</p>
+      <p>A single over-budget scope does not thrash, by an explicit eviction invariant: the LRU byte eviction never evicts the newest index, even alone over budget (<code>_evict_vector_indexes_over_budget</code>, <code>src/zaxy/embedded_graph_store.py</code>). One over-budget session therefore degrades to a cache of one — built once, resident thereafter — and the budget bounds <em>multi-scope</em> totals. This is measured, not asserted: at 50k x 1536 the exact matrix is 614.4 MB, 2.29x the budget (<code>budget_fraction: 2.288818</code>), and exact search still answered at 22.4–25.8 ms p50 across runs (<code>ann3-d1536-50k-gauss-crossover.json</code>, <code>ann4-d1536-50k-dimension-gated.json</code>). Only workloads alternating across several jointly over-budget scopes pay a rebuild per switch.</p>
+      <h3 id="34-the-engagement-predicate-as-shipped">3.4 The engagement predicate as shipped</h3>
+      <p>With defaults \(D = 64\) (<code>VECTOR_ANN_MAX_DIMENSION</code>), \(T = 100{,}000\) (<code>VECTOR_ANN_THRESHOLD</code>), \(B = 2^{28}\), quantization setting \(Q\), and byte-clause flag \(\beta\) (<code>VECTOR_ANN_BYTE_BUDGET_ENGAGEMENT</code>), a scope of \(n\) vectors at dimension \(d\) engages the ANN path iff</p>
+      <div class="math-block">\[
+\operatorname{engage}(n, d) \;\Longleftrightarrow\;
+d \le D \;\wedge\;
+\Bigl( n \ge T \;\vee\; \bigl( Q \ne \mathrm{int8} \wedge \beta \wedge 8nd &gt; B \bigr) \Bigr).
+\]</div>
+      <p>The dimension ceiling is a hard precondition; the count clause (a) is the lane-proven default; the byte clause (b) is defense-in-depth within the ceiling (at d=64 the count clause fires first — clause (b) protects if the count threshold is raised or the budget lowered). An explicit int8 opt-in keeps its precedence below the count threshold and is exempt from clause (b) because it already resolves the memory problem it guards against. This predicate is implemented at a single choke point (<code>_ann_engagement_reason</code>, <code>src/zaxy/embedded_graph_store.py</code>) through which both query-time strategy choice and shadow rebuild triggers pass, so no shadow generation is ever built for a scope that would not be queried through it. <code>memory_capabilities</code> reports the effective rule.</p>
+      <h2 id="4-method-baseline-first-then-decisive-experiments">4. Method: Baseline First, Then Decisive Experiments</h2>
+      <h3 id="41-baseline-2026-06-11-master-post-210">4.1 Baseline (2026-06-11, master @ post-2.1.0)</h3>
+      <p>No development happened before <code>BASELINE.md</code> existed. The lane ran at dimensions 64 and 1536 (sizes 10^3, 10^4; query_count 32, latency_passes 3, top_k 10, lane-lowered ann_threshold 256, hash embeddings), with the 10^5 dim-64 reference taken from the identical released 2.1.0 code. Raw lane JSON: <code>baseline-dim64.json</code>, <code>baseline-dim1536.json</code>.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th>dim 64, 10k</th>
+            <th>dim 64, 100k (2.1 ref)</th>
+            <th>dim 1536, 10k</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>ANN recall@10 (strict)</td>
+            <td>0.9062</td>
+            <td>0.8969</td>
+            <td>0.5156</td>
+          </tr>
+          <tr>
+            <td>ANN p50 vs exact</td>
+            <td>9.8 ms vs 6.1 ms</td>
+            <td>37.9 ms vs 17.0 ms</td>
+            <td>26.5 ms vs 8.9 ms</td>
+          </tr>
+          <tr>
+            <td>ANN build (first query)</td>
+            <td>53.3 s</td>
+            <td>~20.6 min</td>
+            <td>196.3 s</td>
+          </tr>
+          <tr>
+            <td>int8 recall@10</td>
+            <td>0.9906</td>
+            <td>0.9938</td>
+            <td>0.6094</td>
+          </tr>
+          <tr>
+            <td>int8 p50 vs exact</td>
+            <td>1.1 ms vs 6.1 ms</td>
+            <td>9.5 ms vs 17.0 ms</td>
+            <td>35.6 ms vs 8.9 ms</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>Three findings reframed the plan (<code>BASELINE.md</code>):</p>
+      <ol>
+        <li><strong>Dimension is the dominant variable.</strong> At production-scale dimension (1536), ANN recall collapsed to 0.52 and int8 — the 2.1 promotion candidate — to 0.61. The dim-64 lane had been the easy case.</li>
+        <li><strong>At high dimension the fight is memory, not latency.</strong> Exact float64 was 8.9 ms p50 at 10k x 1536, but 100k x 1536 x 8 B is roughly 1.23 GB against the 256 MiB cache budget. Approximate methods must win on resident bytes first, recall second, latency third.</li>
+        <li><strong>int8&#x27;s collapse is candidate selection, not rerank.</strong> The float rerank is exact; at high dimension the true top-10 fell outside the fixed k x 4 int8 candidate set — later traced (Section 4.4) to the same tie pathology that depressed ANN strict recall.</li>
+      </ol>
+      <h3 id="42-external-research-the-kuzu-reality">4.2 External research: the Kuzu reality</h3>
+      <p>Parallel research (sources in Section References) established the frozen context: 0.11.3 is the final release of an archived repository; <code>efs</code> is the primary recall knob per the NaviX methodology; <code>COPY FROM</code> is the documented bulk path while CREATE/MERGE-style loads (Zaxy&#x27;s batched UNWIND) are documented for small sporadic additions only; the index should be created after bulk load (<code>SET</code> on indexed properties is rejected, kuzu#5965, and bulk mutation under a live index is the historically buggiest upstream path, kuzu#5694/#5695/#5898); build nondeterminism is by design with no seed; and three open defects had to be designed around permanently — #6047 (sequential HNSW load can block DB open), #6040 (<code>DROP_VECTOR_INDEX</code> metadata corruption), #6012 (prefer Arrow over Pandas for loads). Comparable embedded systems serve this workload at &gt;= 0.95 recall in 1–2 ms (ann-benchmarks), and NaviX itself reports 95% recall at 5–40 ms on 1M x 960-dim filtered search — so the bar was known reachable in principle.</p>
+      <h3 id="43-four-decisive-experiments-10k-dim-64-experiments-e1-e4json">4.3 Four decisive experiments (10k, dim 64; <code>experiments-e1-e4.json</code>)</h3>
+      <ul>
+        <li><strong>E1, bulk load</strong>: batched UNWIND 8.16 s vs <code>COPY FROM</code> parquet</li>
+      </ul>
+      <p><strong>0.08 s — roughly 100x</strong> — plus 6.25 s post-copy index build. The 20-minute 100k sync was fully explained and fully fixable. Two defects surfaced en route: <code>COPY FROM</code> an <em>in-memory</em> Arrow table with a fixed-size-list column segfaults 0.11.3 (a parquet file is the safe path), and an unbound <code>$param</code> in any query segfaults rather than raising (Section 5.4).</p>
+      <ul>
+        <li><strong>E2, query pattern</strong>: direct-table 6.56 ms p50, per-query projected graph 6.95 ms, reused projected graph 7.93 ms — projected-graph create/drop is <em>not</em> the dominant overhead at 10k. The lane&#x27;s 100k latency gap had to live elsewhere; profiling at 10^5 (<code>profiling-a2.json</code>) located it: direct-table 8.0 ms p50 versus 24.3 ms through a <em>reused</em> projected graph versus 28.3 ms creating one per query (k=10). The per-query prefilter mask scan over the session/version predicate costs about 16.3 ms (reused-graph minus direct), the create/drop pair only about 4.0 ms (per-query minus reused). The fix is therefore not graph hygiene but predicate elimination: make the shadow table per-scope so the common case is an unfiltered direct-table query (Section 5.1).</li>
+        <li><strong>E3, recall</strong>: <strong>1.0 at every efs (200/400/800)</strong> with float32-consistent ground truth, on the same corpus scale where the production lane measured 0.9062. The recall deficit was not HNSW search quality but the float32 precision boundary between the shadow table and the float64 ground truth — the class the oversample + float64 rerank eliminates entirely (Section 3.2). <code>efs</code> tuning was demoted to a secondary lever.</li>
+        <li><strong>E4, determinism</strong>: inconclusive at saturated recall (all runs 1.0, single- and multi-threaded). Robustness comes from the rerank, not from chasing build determinism.</li>
+      </ul>
+      <h3 id="44-post-ann1-diagnostics-the-dimension-1536-root-cause">4.4 Post-ann.1 diagnostics: the dimension-1536 root cause</h3>
+      <p>The first increment&#x27;s gate runs passed recall at dim 64 but still failed at dim 1536 — 0.55 and 0.6125 strict at 10k <em>with</em> the float64 rerank (<code>after-dim1536-r1.json</code>, <code>after-dim1536-r2.json</code>). The follow-up diagnostics isolated the cause and exonerated the index:</p>
+      <ul>
+        <li>the float32 brute-force ceiling on the lane corpus is 0.5344 — even exact float32 search cannot exceed it against float64 ground truth (<code>diag-d1536-f32-ceiling.json</code>);</li>
+        <li>a float64-stored HNSW scores in the same 0.52–0.54 band, so storage precision is not the cause either (<code>diag-d1536-f32-ceiling.json</code>);</li>
+        <li>the tie analysis (Section 3.1): median 210 corpus vectors exactly tied with the true top-10, rank-10-to-rank-40 float64 gap exactly 0.0 (<code>diag-ties-gaussian.json</code>) — strict recall@10 is ill-posed on this corpus;</li>
+        <li>a Gaussian-distribution control on the identical index machinery: recall@10 of <strong>0.8531 at efs 200, 0.9875 at efs 400, 1.0 at efs 800</strong> (k=40 and k=100 alike), at p50 of 17.98/19.90/19.92 ms (<code>diag-gauss-efs-sweep.json</code>). With a realistic distribution the index is healthy, and efs 400 is the evidence-backed high-dimension default.</li>
+      </ul>
+      <p>Three consequences shipped: the lane gained the tie-aware metric reported alongside strict (Section 3.1); the seeded Gaussian variant (<code>--scale-distribution gaussian</code>, PCG64 seeds 20260611/20260612, <code>zaxy_benchmarks/vector_scale_lane.py</code>) became the high-dimension gate corpus; and the <code>VECTOR_ANN_EFS</code> default moved from 200 to 400 on the sweep evidence.</p>
+      <h2 id="5-engineering-narrative">5. Engineering Narrative</h2>
+      <p>The work landed as three lane-gated increments plus a threshold decision, each green on lint, strict typing, full tests, and site freshness before the next started.</p>
+      <h3 id="51-increment-ann1-strategy-consolidation-and-the-exact-rerank">5.1 Increment ann.1: strategy consolidation and the exact rerank</h3>
+      <p>The store had carried three parallel search paths (dense float64, <code>_AnnVectorGroup</code>, <code>_QuantizedVectorGroup</code>) with duplicated selection, scoring, and cache accounting. They were consolidated behind one strategy pipeline — candidate selection, then a shared exact float64 rerank — so subsequent work landed as strategy implementations rather than more branching (<code>search_vector</code> and <code>_exact_rerank_results</code> in <code>src/zaxy/embedded_graph_store.py</code>). Dense selection already scores exactly and returns <code>exact: true</code>; the HNSW and int8 selectors produce oversampled candidates and stay <code>exact: false</code> through the rerank.</p>
+      <p>The query path also eliminated the profiled predicate cost: each (session, version, dimension) scope owns its own shadow table, queried directly by name through <code>QUERY_VECTOR_INDEX</code> — no session/version predicate, no projected graph, no per-query mask scan (<code>_ann_candidate_entity_indexes</code>). <code>VECTOR_ANN_EFS</code> became a setting, with the effective value never below the oversampled candidate count a query requests.</p>
+      <p>Lane effect at dim 64: strict recall@10 moved from 0.9062 to 0.9906 at 10k (<code>after-dim64-r1.json</code> through <code>-r3.json</code>), and from 0.8969 (2.1 reference) to 0.9906 at 10^5 (<code>after-dim64-100k.json</code>) — clearing the 0.95 floor. Latency at 10^5 remained adverse in that run (ANN 16.3 ms vs exact 13.3 ms p50), and the build remained the open wound: 1,179.8 s first-query cost at 10^5 (<code>after-dim64-100k.json</code>).</p>
+      <h3 id="52-increment-ann2-copy-based-generation-swap-builds">5.2 Increment ann.2: COPY-based generation-swap builds</h3>
+      <p>Full rebuilds now bulk-load a fresh generation table via <code>COPY FROM</code> and build the HNSW index after the load completes — the documented fast path, avoiding the historically buggiest upstream path (bulk mutation under a live index). The swap into store state is atomic (a single assignment of the generation record) before superseded generations are reclaimed (<code>_try_build_ann_group</code>, <code>_ann_bulk_load</code>, <code>src/zaxy/embedded_graph_store.py</code>).</p>
+      <p>Build cost at 10^5/dim 64 fell from 1,179.8 s (<code>after-dim64-100k.json</code>) to 91.8–97.9 s in the G4 runs (<code>ann3-d64-100k-r1.json</code>, <code>-r2.json</code>) — a 12.9x improvement, with the confirmatory run at 62.5 s (<code>ann4-d64-100k-confirm.json</code>). The components at 10^5: the <code>COPY</code> itself is 0.86 s; the post-load index build is 54.7 s (<code>profiling-a2.json</code>); the lane&#x27;s first-query figure additionally includes corpus sync and parquet serialization. At 10k the first-query cost fell from 53.3 s (baseline) to 5.5 s (<code>ann2-d64-10k-postcopy.json</code>).</p>
+      <p>Small deltas avoid rebuilds entirely: when the new corpus is a digest-verified pure extension of the resident generation and the delta is at most 10% of the resident count, the new rows ride live-index inserts (reflected in queries on the pinned 0.11.3). The 10% boundary is measured: live-index inserts cost ~6.9 ms/row at 10k/dim 64 versus ~0.63 ms/row for a COPY load plus post-load index build, so raw build time crosses over near a 9% delta; the boundary sits at 10% because incremental inserts also preserve the resident HNSW graph (no rebuild recall variance) and add no superseded generation table (<code>_ANN_DELTA_REBUILD_FRACTION</code>, <code>src/zaxy/embedded_graph_store.py</code>).</p>
+      <h3 id="53-increment-ann3ann4-metric-correction-efs-400-and-the-gates">5.3 Increment ann.3/ann.4: metric correction, efs 400, and the gates</h3>
+      <p>The lane shipped the tie-aware metric beside strict recall, the Gaussian distribution control, and the byte-budget block per size; <code>VECTOR_ANN_EFS</code> defaulted to 400 on the sweep evidence. The G1/G2/G4 evidence then accumulated at 10^5/dim 64 (Section 6.1) and the G3 high-dimension evidence at 10k–50k/dim 1536 (Section 6.2), culminating in the engagement predicate of Section 3.4.</p>
+      <h3 id="54-three-frozen-upstream-defects-designed-around">5.4 Three frozen-upstream defects, designed around</h3>
+      <p>Engineering against an archived dependency means defects are permanent facts, not bug reports. Three were found and designed around, all re-verified against the pinned 0.11.3:</p>
+      <ol>
+        <li><strong>In-memory Arrow COPY segfault.</strong> <code>COPY FROM</code> an in-memory Arrow table with a fixed-size-list column (the natural encoding of a vector column) segfaults the process. Bulk loads therefore round-trip through a parquet tempfile, which is safe and still ~100x faster than UNWIND; absence of pyarrow degrades to the batched-UNWIND load rather than failing (<code>_ann_bulk_load</code>).</li>
+        <li><strong>Unbound-parameter segfault.</strong> A query referencing an unbound <code>$parameter</code> segfaults instead of raising. Every store query now passes through a single execution choke point that rejects unbound parameters before they reach the runtime (<code>_QUERY_PARAMETER_RE</code>, <code>src/zaxy/embedded_graph_store.py</code>).</li>
+        <li><strong>No safe teardown of a live index.</strong> Mutating a live index in place (delete + reinsert) silently breaks subsequent direct-table searches; <code>DROP_VECTOR_INDEX</code> leaves un-checkpointed index metadata (kuzu#6040); and <code>DROP TABLE</code> is rejected by the binder while an index references the table. Rebuilds are therefore <strong>drop-free generation swaps</strong>: each rebuild creates <code>ZaxyVectorAnnShadow{dim}_{scope}_g{n+1}</code>, builds a fresh index over it, swaps atomically, and <em>empties</em> (never drops) superseded generation tables — never queried again, near-zero load cost at database open, the maximum reclaim the frozen runtime allows (<code>_try_build_ann_group</code>).</li>
+      </ol>
+      <p>The strategic consequence is recorded for 2.3: frozen-Kuzu HNSW measured inadequate exactly where approximate search matters most (high dimension, large N), so evaluating the LadybugDB fork or an alternative embedded ANN backend is formally on the 2.3 agenda, with this corpus of lane evidence as the acceptance bar (<code>docs/superpowers/specs/2026-06-11-zaxy-2-2-ann-engineering-plan.md</code>).</p>
+      <h2 id="6-results">6. Results</h2>
+      <h3 id="61-target-scale-dimension-64-before-and-after">6.1 Target scale, dimension 64: before and after</h3>
+      <p>All runs at 10^5 vectors, dimension 64, hash corpus (<code>corpus_sha256: 7f1465…f37f3</code>, identical across runs), top_k 10, 96 latency samples per mode.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Run (artifact)</th>
+            <th>ANN recall@10 strict</th>
+            <th>tie-aware</th>
+            <th>ANN p50 vs exact p50</th>
+            <th>Build (first query)</th>
+            <th>ANN resident bytes vs exact</th>
+            <th>Gate status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>2.1 reference (<code>BASELINE.md</code>)</td>
+            <td>0.8969</td>
+            <td>— (metric did not exist)</td>
+            <td>37.9 ms vs 17.0 ms</td>
+            <td>~20.6 min</td>
+            <td>0 vs 51.2 MB</td>
+            <td>fail</td>
+          </tr>
+          <tr>
+            <td>Post-ann.1 (<code>after-dim64-100k.json</code>)</td>
+            <td>0.9906</td>
+            <td>—</td>
+            <td>16.3 ms vs 13.3 ms</td>
+            <td>1,179.8 s</td>
+            <td>0 vs 51.2 MB</td>
+            <td>recall pass, latency fail</td>
+          </tr>
+          <tr>
+            <td>G4 run 1 (<code>ann3-d64-100k-r1.json</code>)</td>
+            <td>1.0</td>
+            <td>1.0</td>
+            <td>24.17 ms vs 24.20 ms</td>
+            <td>91.8 s</td>
+            <td>0 vs 51.2 MB</td>
+            <td><strong>pass, all criteria</strong></td>
+          </tr>
+          <tr>
+            <td>G4 run 2 (<code>ann3-d64-100k-r2.json</code>)</td>
+            <td>1.0</td>
+            <td>1.0</td>
+            <td>26.67 ms vs 30.82 ms</td>
+            <td>97.9 s</td>
+            <td>0 vs 51.2 MB</td>
+            <td><strong>pass, all criteria</strong></td>
+          </tr>
+          <tr>
+            <td>Confirmatory (<code>ann4-d64-100k-confirm.json</code>)</td>
+            <td>1.0</td>
+            <td>1.0</td>
+            <td>16.48 ms vs 38.27 ms</td>
+            <td>62.5 s</td>
+            <td>0 vs 51.2 MB</td>
+            <td><strong>pass, all criteria</strong></td>
+          </tr>
+        </tbody>
+      </table>
+      <p>The two consecutive G4 passes are the evidence behind lowering <code>VECTOR_ANN_THRESHOLD</code> from 1,000,000 to 100,000 (gate G4; the lane&#x27;s two-consecutive-run rule is the documented posture for HNSW build nondeterminism). The confirmatory run reproduced the pass; its exact-path p50 of 38.27 ms (p95 107.6 ms) against 24.2/30.8 ms in the G4 runs on the byte-identical corpus also illustrates the host-noise band discussed in Section 7.2 — which is why latency criteria are evaluated in-run (paired), never across runs.</p>
+      <h3 id="62-high-dimension-the-honest-negative-results">6.2 High dimension: the honest negative results</h3>
+      <p>At dimension 1536 the same machinery, including the rerank and efs 400, does not transfer. All 50k runs use the seeded Gaussian corpus (<code>corpus_sha256: 5356e5a9…28588</code>), the realistic-distribution control:</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Run (artifact)</th>
+            <th>Config</th>
+            <th>ANN recall@10 (strict = tie-aware)</th>
+            <th>ANN p50 vs exact p50</th>
+            <th>int8 p50 (recall)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>ann3-d1536-10k-gauss-r1.json</code></td>
+            <td>10k, efs 400</td>
+            <td>0.9844</td>
+            <td>40.8 ms vs 17.3 ms</td>
+            <td>76.2 ms (1.0)</td>
+          </tr>
+          <tr>
+            <td><code>ann3-d1536-10k-gauss-r2.json</code></td>
+            <td>10k, efs 400</td>
+            <td>0.975</td>
+            <td>23.6 ms vs 12.0 ms</td>
+            <td>46.3 ms (1.0)</td>
+          </tr>
+          <tr>
+            <td><code>ann3-d1536-50k-gauss-crossover.json</code></td>
+            <td>50k, efs 400</td>
+            <td><strong>0.6</strong></td>
+            <td>45.3 ms vs 22.4 ms</td>
+            <td>223.7 ms (1.0)</td>
+          </tr>
+          <tr>
+            <td><code>ann4-d1536-50k-gauss-r2.json</code></td>
+            <td>50k, efs 400 (rerun)</td>
+            <td><strong>0.6344</strong></td>
+            <td>45.2 ms vs 55.6 ms</td>
+            <td>256.5 ms (1.0)</td>
+          </tr>
+          <tr>
+            <td><code>ann4-d1536-50k-gauss-efs800.json</code></td>
+            <td>50k, efs 800</td>
+            <td><strong>0.8438</strong></td>
+            <td>69.8 ms vs 37.5 ms</td>
+            <td>234.2 ms (1.0)</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>Three conclusions, each disqualifying for a default:</p>
+      <ol>
+        <li><strong>efs does not transfer across scale at high dimension.</strong> efs 400 delivers 0.975–0.9844 at 10k but collapses to 0.6–0.6344 at 50k on the same distribution. Doubling to efs 800 recovered recall only to 0.8438 while p50 rose to 69.8 ms against exact&#x27;s 37.5 ms — tuning erodes the latency advantage faster than it repairs recall.</li>
+        <li><strong>int8 hits a latency cliff at high-dimension scale</strong>: recall 1.0 deterministic and an 8x byte advantage (77.2 MB vs 614.4 MB resident), but 223.7–256.5 ms p50 at 50k x 1536 — the integer matmul plus rerank loses an order of magnitude to one float64 BLAS matmul. int8 remains opt-in for memory-tightest deployments, latency-honest in the docs.</li>
+        <li><strong>Exact remains the high-dimension recommendation.</strong> Despite sitting 2.29x over the byte budget, the exact matrix answered at 22.4–25.8 ms p50 under cache-of-one residency (Section 3.3).</li>
+      </ol>
+      <p>The G4 confirmatory run for the shipped predicate (<code>ann4-d1536-50k-dimension-gated.json</code>) ran the same 50k x 1536 corpus with the production dimension ceiling in force: the ANN mode honestly reports <code>engaged: false</code> and falls back to the dense path (strict recall 1.0 by construction, exact p50 25.8 ms) — the engagement rule refusing exactly the configuration the lane measured as disqualifying.</p>
+      <p>On the hash corpus at dimension 1536, the metric correction is visible in one row: strict 0.525 versus tie-aware 0.9938 for the identical result sets (<code>ann3-d1536-10k-hash-r1.json</code>; the record run <code>ann3-d1536-10k-hash-record.json</code> measured 0.5625 strict / 1.0 tie-aware, and int8 0.6094 strict / 1.0 tie-aware). The 0.52–0.61 &quot;failures&quot; of the baseline era were the metric being ill-posed on a tie-dense corpus (Section 3.1), to the extent the tie-aware metric quantifies.</p>
+      <h3 id="63-the-gate-ledger">6.3 The gate ledger</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Gate</th>
+            <th>Evidence required (plan)</th>
+            <th>Outcome</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>G1 query path</td>
+            <td>10^5/dim 64: recall &gt;= 0.95 AND p50 &lt; exact</td>
+            <td>Pass (Section 6.1, G4 runs; recall via rerank, latency via direct-table scoped shadow tables)</td>
+          </tr>
+          <tr>
+            <td>G2 build path</td>
+            <td>Full rebuild at 10^5 in single-digit minutes; generation-swap cycle survives stress</td>
+            <td>Pass (91.8–97.9 s builds; drop-free swap cycle under test)</td>
+          </tr>
+          <tr>
+            <td>G3 high-dim</td>
+            <td>&gt;= 0.95 recall with bytes &lt; exact at dim 1536</td>
+            <td><strong>Fail</strong> — exact remains the high-dim recommendation; memory ceiling documented (Section 6.2)</td>
+          </tr>
+          <tr>
+            <td>G4 threshold</td>
+            <td>G1+G2 with margin on two consecutive runs</td>
+            <td>Pass — threshold 1,000,000 → 100,000, scoped by the dimension ceiling at 64</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>The G3 failure is load-bearing: it is why the threshold move carries a dimension ceiling. The defaults moved exactly as far as the evidence extends — count &gt;= 100,000 AND dimension &lt;= 64 — and the over-ceiling posture (exact, or opted-in int8) is itself measured, not residual.</p>
+      <h2 id="7-threats-to-validity">7. Threats to Validity</h2>
+      <h3 id="71-corpus-distribution">7.1 Corpus distribution</h3>
+      <p>The lane&#x27;s default hash-embedding corpus is adversarially tie-dense at high dimension (the measured 210-way boundary ties, Section 3.1). Every high-dimension conclusion is therefore gated on the seeded Gaussian control instead, and the diagnosis that separated metric pathology from index pathology is itself artifact-backed (<code>diag-ties-gaussian.json</code>, <code>diag-gauss-efs-sweep.json</code>, <code>diag-d1536-f32-ceiling.json</code>). Neither distribution is a semantic embedding: the lane measures index mechanics, not retrieval quality, and says so in its own <code>measurement</code> field.</p>
+      <h3 id="72-single-machine-latency-noise-and-the-contaminated-run-episode">7.2 Single-machine latency noise and the contaminated-run episode</h3>
+      <p>All timings come from one local development machine and are environment-dependent — the lane labels them so and excludes them from its determinism comparisons. The artifact record contains a concrete contamination episode: on the byte-identical 50k x 1536 Gaussian corpus, the exact path — a deterministic float64 matmul — measured 22.4 ms p50 in one run and 55.6 ms p50 (p95 116.4 ms) in another (<code>ann3-d1536-50k-gauss-crossover.json</code> vs <code>ann4-d1536-50k-gauss-r2.json</code>); at dim 64/10^5 the same spread appears as 24.2/30.8/38.3 ms across the three passing runs. Since the workload is fixed, the spread is host load. Three protocol rules absorb it: latency runs execute on an otherwise quiet machine and visibly load-contaminated runs are rerun rather than averaged; the latency criterion is evaluated <em>within</em> a run (ANN and exact measured back-to-back over the same 96 samples), never across runs; and no gate is judged on a single run. The recall conclusions are unaffected — recall is computed from result sets, not timings, and the deterministic blocks (corpus hashes, exact/quantized recall, bytes) are exactly reproducible across all runs cited here.</p>
+      <h3 id="73-internal-validation-labels">7.3 Internal validation labels</h3>
+      <p>Every artifact in this report carries <code>&quot;validation&quot;: &quot;internal&quot;</code> and the lane version <code>vector-scale-lane-v1</code>. Per <code>docs/external-validation.md</code> and the claim boundaries in <code>docs/benchmarks.md</code>, these are same-harness, same-machine internal measurements: they justify Zaxy&#x27;s own defaults and are not public benchmark claims, comparisons with other systems, or statements about semantic retrieval quality.</p>
+      <h3 id="74-the-dimension-envelope-is-two-points-not-a-curve">7.4 The dimension envelope is two points, not a curve</h3>
+      <p>The evidence covers dimension 64 (the double pass) and dimension 1536 (the measured failure). Nothing between was measured: the ceiling default of 64 is the conservative edge of the measured envelope, not an estimated crossover. The clause-(b) row counts quoted for intermediate dimensions (e.g. 87,381 at d=384 in <code>docs/configuration.md</code>) are arithmetic over the byte model, not measurements. Raising <code>VECTOR_ANN_MAX_DIMENSION</code> is documented as requiring lane evidence for the user&#x27;s own dimension and distribution.</p>
+      <h3 id="75-build-nondeterminism">7.5 Build nondeterminism</h3>
+      <p>HNSW construction on the pinned runtime is not run-to-run reproducible (Section 2.2), so any single recall number for the ANN mode carries rebuild variance. The mitigations are structural — the exact rerank makes final recall insensitive to graph variance up to candidate-set membership, and gates require two consecutive passes — but a pathological rebuild below the candidate-slack margin remains possible in principle and would be caught by the lane, not prevented by the store.</p>
+      <h2 id="8-conclusion-evidence-bounded-defaults-as-a-release-discipline">8. Conclusion: Evidence-Bounded Defaults as a Release Discipline</h2>
+      <p>The 2.2 ANN effort is a case study in treating a default as a falsifiable claim. The same benchmark lane that kept the feature opt-in in 2.1 — by measuring it worse than brute force — defined the bar for promoting it in 2.2, adjudicated every increment against a frozen baseline, exposed that part of the original failure was the evaluation metric rather than the index, and finally drew the boundary of the new default at exactly the envelope it had measured: count &gt;= 100,000 AND dimension &lt;= 64, with the high-dimension negative results shipped in the same documentation as the positive ones.</p>
+      <p>Three transferable lessons:</p>
+      <ol>
+        <li><strong>Confine approximation to candidate selection.</strong> The oversample + exact-rerank decomposition (Section 3.2) converted both a precision- boundary recall deficit and an upstream nondeterminism liability into a bounded candidate-selection problem, at zero build-time cost.</li>
+        <li><strong>Audit the metric before tuning the system.</strong> The float32 ceiling and tie analysis showed a 0.52 &quot;recall failure&quot; that no index could have fixed; the tie-aware metric (with strict recall reported alongside, permanently) made the lane well-posed without hiding the divergence.</li>
+        <li><strong>A frozen upstream changes the engineering contract.</strong> Against an archived dependency, defects are design constraints. The drop-free generation swap, the parquet round-trip, and the unbound-parameter choke point are all permanent accommodations — and the measured limit of the frozen index at high dimension is now the recorded acceptance bar for any 2.3 backend evaluation.</li>
+      </ol>
+      <p>The threshold will move again — upward, downward, or across the dimension ceiling — when, and only when, a lane measures it.</p>
+      <h2 id="references">References</h2>
+      <h3 id="internal-artifacts-versioned-in-this-repository">Internal artifacts (versioned in this repository)</h3>
+      <p>All lane artifacts under <code>docs/research/artifacts/ann-2026-06/</code>:</p>
+      <ul>
+        <li>Baseline record and reframing findings: <code>BASELINE.md</code>; raw lane runs <code>baseline-dim64.json</code>, <code>baseline-dim1536.json</code>.</li>
+        <li>Decisive experiments E1–E4: <code>experiments-e1-e4.json</code>.</li>
+        <li>Query-path profiling at 10^5: <code>profiling-a2.json</code>.</li>
+        <li>Dimension-1536 diagnostics: <code>diag-d1536-f32-ceiling.json</code>, <code>diag-ties-gaussian.json</code>, <code>diag-gauss-efs-sweep.json</code>.</li>
+        <li>Post-ann.1 gate runs: <code>after-dim64-r1.json</code>, <code>after-dim64-r2.json</code>, <code>after-dim64-r3.json</code>, <code>after-dim64-100k.json</code>, <code>after-dim1536-r1.json</code>, <code>after-dim1536-r2.json</code>.</li>
+        <li>Post-COPY build run: <code>ann2-d64-10k-postcopy.json</code>.</li>
+        <li>G4 double pass and high-dimension evidence: <code>ann3-d64-100k-r1.json</code>, <code>ann3-d64-100k-r2.json</code>, <code>ann3-d1536-10k-hash-r1.json</code>, <code>ann3-d1536-10k-hash-record.json</code>, <code>ann3-d1536-10k-gauss-r1.json</code>, <code>ann3-d1536-10k-gauss-r2.json</code>, <code>ann3-d1536-50k-gauss-crossover.json</code>.</li>
+        <li>G4 confirmatory runs: <code>ann4-d64-100k-confirm.json</code>, <code>ann4-d1536-50k-gauss-r2.json</code>, <code>ann4-d1536-50k-gauss-efs800.json</code>, <code>ann4-d1536-50k-dimension-gated.json</code>.</li>
+      </ul>
+      <p>Other internal references:</p>
+      <ul>
+        <li>2.2 ANN engineering plan: <code>docs/superpowers/specs/2026-06-11-zaxy-2-2-ann-engineering-plan.md</code>.</li>
+        <li>Lane implementation (tie-aware metric, Gaussian control, byte budget): <code>zaxy_benchmarks/vector_scale_lane.py</code>.</li>
+        <li>Store implementation (engagement predicate, strategy pipeline, generation swaps, defect accommodations): <code>src/zaxy/embedded_graph_store.py</code>.</li>
+        <li>Shipped behavior: <code>docs/configuration.md</code>, <code>docs/embeddings.md</code>, <code>docs/migration.md</code> (&quot;2.2: ANN engagement defaults&quot;), <code>CHANGELOG.md</code> Unreleased (2.2.0).</li>
+        <li>Claim boundaries and validation labels: <code>docs/benchmarks.md</code>, <code>docs/external-validation.md</code>.</li>
+      </ul>
+      <h3 id="external-references">External references</h3>
+      <ul>
+        <li>Yu. A. Malkov and D. A. Yashunin, &quot;Efficient and robust approximate nearest neighbor search using Hierarchical Navigable Small World graphs&quot;, 2016: &lt;https://arxiv.org/abs/1603.09320&gt;.</li>
+        <li>Gaurav Sehgal and Semih Salihoglu, &quot;NaviX: A Native Vector Index Design for Graph DBMSs With Robust Predicate-Agnostic Search Performance&quot;, 2025: &lt;https://arxiv.org/abs/2506.23397&gt;.</li>
+        <li>Martin Aumüller, Erik Bernhardsson, and Alexander Faithfull, &quot;ANN-Benchmarks: A Benchmarking Tool for Approximate Nearest Neighbor Algorithms&quot;, 2018: &lt;https://arxiv.org/abs/1807.05614&gt;. Benchmark site: &lt;https://ann-benchmarks.com/&gt;.</li>
+        <li>Kuzu repository (archived 2025-10-10; 0.11.3 is the final release): &lt;https://github.com/kuzudb/kuzu&gt;; releases: &lt;https://github.com/kuzudb/kuzu/releases&gt;.</li>
+        <li>Kuzu documentation source (the archived docs repository; the hosted docs site is offline): vector extension &lt;https://github.com/kuzudb/docs/blob/main/src/content/docs/extensions/vector.mdx&gt;; import guidance &lt;https://github.com/kuzudb/docs/blob/main/src/content/docs/import/index.mdx&gt;; projected-graph lifecycle &lt;https://github.com/kuzudb/docs/blob/main/src/content/docs/extensions/algo/index.mdx&gt;.</li>
+        <li>Kuzu 0.11.3 vector-index source (build parameters, insert path, deleted- node handling): &lt;https://github.com/kuzudb/kuzu/blob/v0.11.3/extension/vector/src/include/index/hnsw_config.h&gt;, &lt;https://github.com/kuzudb/kuzu/blob/v0.11.3/extension/vector/src/index/hnsw_index.cpp&gt;.</li>
+        <li>Kuzu frozen-upstream defects designed around or guarded: #5965 (SET on indexed property rejected) &lt;https://github.com/kuzudb/kuzu/issues/5965&gt;; #6040 (DROP_VECTOR_INDEX metadata corruption) &lt;https://github.com/kuzudb/kuzu/issues/6040&gt;; #6047 (sequential HNSW load at database open) &lt;https://github.com/kuzudb/kuzu/issues/6047&gt;; #6012 (memory growth on Pandas LOAD) &lt;https://github.com/kuzudb/kuzu/issues/6012&gt;.</li>
+        <li>LadybugDB, the community continuation fork (recorded as the 2.3 evaluation candidate): &lt;https://github.com/LadybugDB/ladybug&gt;.</li>
+      </ul>
+    </article>
+  </main>
+</body>
+</html>

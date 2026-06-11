@@ -1556,7 +1556,17 @@ def graph_scale_lanes(
         64,
         "--scale-dimension",
         min=1,
-        help="Hash-embedding dimension for the vector-scale corpora",
+        help="Embedding dimension for the vector-scale corpora",
+    ),
+    scale_distribution: str = typer.Option(
+        "hash",
+        "--scale-distribution",
+        help=(
+            "Vector distribution for the vector-scale corpora: hash "
+            "(deterministic hash embeddings, the comparability baseline) or "
+            "gaussian (seeded unit-normalized standard normal, the "
+            "realistic-distribution control used for high-dimension gates)"
+        ),
     ),
     ann_threshold: int = typer.Option(
         256,
@@ -1606,6 +1616,7 @@ def graph_scale_lanes(
                     Path(tmp) / "vector-scale",
                     sizes=sizes,
                     dimension=scale_dimension,
+                    distribution=scale_distribution,
                     ann_threshold=ann_threshold,
                     query_count=query_count,
                     latency_passes=latency_passes,

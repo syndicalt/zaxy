@@ -2641,13 +2641,18 @@ async def test_embedded_store_ann_search_matches_exact_above_threshold(tmp_path:
 
 @pytest.mark.asyncio
 async def test_embedded_store_ann_threshold_boundary_keeps_exact_path(tmp_path: Path) -> None:
-    """Counts at or below the threshold stay on the exact dense path."""
+    """Counts below the threshold stay exact; the threshold itself engages ANN.
+
+    The 2.2 G4 count clause is inclusive (count >= threshold) so the lane
+    evidence recorded at exactly 10^5 vectors covers corpora of exactly the
+    default threshold size.
+    """
     dimension = 8
     embeddings = _seeded_unit_embeddings(3, dimension, seed=3)
     store = EmbeddedGraphStore(
         tmp_path / "embedded.kuzu",
         active_embedding_version="v1",
-        vector_ann_threshold=3,
+        vector_ann_threshold=4,
     )
     await store.connect()
     await store.init_schema()
@@ -2671,6 +2676,281 @@ async def test_embedded_store_ann_threshold_boundary_keeps_exact_path(tmp_path: 
     crossed = await store.search_vector(embeddings[0], limit=3, session_id="agent-1")
     assert crossed and all(result.exact is False for result in crossed)
     await store.close()
+
+
+def test_embedded_store_ann_engagement_matrix_at_shipped_defaults() -> None:
+    """Pin the shipped engagement rule at the 2.2 defaults.
+
+    HNSW engages only when count >= VECTOR_ANN_THRESHOLD (default 100_000,
+    lane-proven at exactly 10^5 / dim 64 on two consecutive ALL-criteria
+    runs) AND dimension <= VECTOR_ANN_MAX_DIMENSION (default 64, the measured
+    envelope: at dim 1536 / 50k gaussian the lane measured HNSW recall@10 of
+    0.6 at efs 400 while exact answered in 22ms p50). Both boundaries are
+    inclusive on the engaging side.
+    """
+    store = EmbeddedGraphStore(Path("unused.kuzu"))
+
+    assert store._ann_engagement_reason(count=99_999, dimension=64) is None
+    assert store._ann_engagement_reason(count=100_000, dimension=64) == "count"
+    assert store._ann_engagement_reason(count=100_000, dimension=65) is None
+    assert store._ann_engagement_reason(count=100_000, dimension=1536) is None
+
+
+def test_embedded_store_ann_byte_budget_clause_requires_dimension_ceiling() -> None:
+    """The byte clause never overrides the dimension ceiling.
+
+    Clause (b) — the exact float64 matrix (count * dimension * 8 bytes) would
+    exceed VECTOR_INDEX_CACHE_MAX_BYTES — only applies at or below
+    VECTOR_ANN_MAX_DIMENSION: the d1536-50k crossover measured exact search
+    at 22ms p50 while 2.4x over budget (the newest matrix always stays
+    resident; the budget bounds multi-scope cache totals), against HNSW
+    recall@10 of 0.6. The clause arithmetic is pinned with the real constant
+    on a store whose ceiling is explicitly raised to cover dim 1536.
+    """
+    store = EmbeddedGraphStore(Path("unused.kuzu"))
+
+    # Over budget at dim 1536 (22_000 * 1536 * 8 > 256 MiB) stays exact under
+    # the shipped ceiling of 64.
+    assert store._ann_engagement_reason(count=22_000, dimension=1536) is None
+
+    # With the ceiling explicitly raised, the byte clause engages exactly one
+    # row past the budget boundary: VECTOR_INDEX_CACHE_MAX_BYTES // (1536 * 8)
+    # float64 rows fit, one more crosses.
+    raised = EmbeddedGraphStore(Path("unused-raised.kuzu"), vector_ann_max_dimension=1536)
+    boundary = embedded_graph_store.VECTOR_INDEX_CACHE_MAX_BYTES // (1536 * 8)
+    assert boundary == 21_845
+    assert raised._ann_engagement_reason(count=boundary, dimension=1536) is None
+    assert raised._ann_engagement_reason(count=boundary + 1, dimension=1536) == "byte_budget"
+    assert raised._ann_engagement_reason(count=20_000, dimension=1536) is None
+    assert raised._ann_engagement_reason(count=22_000, dimension=1536) == "byte_budget"
+
+
+def test_embedded_store_ann_explicit_threshold_is_absolute_for_count_clause() -> None:
+    """An explicit threshold override owns clause (a); clause (b) still applies.
+
+    Setting VECTOR_ANN_THRESHOLD very high silences the count clause at any
+    corpus size, but within the dimension ceiling the byte clause engages
+    independently — the documented full opt-out is the byte-budget engagement
+    flag.
+    """
+    store = EmbeddedGraphStore(Path("unused.kuzu"), vector_ann_threshold=10**9)
+
+    # Far above the shipped default, the raised override keeps the count
+    # clause silent while the matrix stays under budget (dim 8 rows are 64
+    # bytes; 4M rows are 256_000_000 bytes, just under the 256 MiB budget).
+    assert store._ann_engagement_reason(count=4_000_000, dimension=8) is None
+    # The same count at dim 64 is 2.048 GB of float64 — the byte clause
+    # engages regardless of the explicit threshold.
+    assert store._ann_engagement_reason(count=4_000_000, dimension=64) == "byte_budget"
+
+    lowered = EmbeddedGraphStore(Path("unused-low.kuzu"), vector_ann_threshold=50)
+    assert lowered._ann_engagement_reason(count=50, dimension=8) == "count"
+    assert lowered._ann_engagement_reason(count=49, dimension=8) is None
+
+
+def test_embedded_store_ann_byte_budget_engagement_escape_hatch() -> None:
+    """VECTOR_ANN_BYTE_BUDGET_ENGAGEMENT=false disables clause (b) only.
+
+    The ceiling is raised to dim 1536 in both stores so the flag — not the
+    dimension guard — is what the assertions exercise.
+    """
+    store = EmbeddedGraphStore(
+        Path("unused.kuzu"),
+        vector_ann_threshold=10**9,
+        vector_ann_max_dimension=1536,
+        vector_ann_byte_budget_engagement=False,
+    )
+    # 22_000 * 1536 * 8 bytes exceeds the budget, but the flag forces exact.
+    assert store._ann_engagement_reason(count=22_000, dimension=1536) is None
+
+    counted = EmbeddedGraphStore(
+        Path("unused-count.kuzu"),
+        vector_ann_threshold=100,
+        vector_ann_max_dimension=1536,
+        vector_ann_byte_budget_engagement=False,
+    )
+    # The count clause is unaffected by the flag.
+    assert counted._ann_engagement_reason(count=100, dimension=1536) == "count"
+
+
+def test_embedded_store_ann_engagement_preserves_quantized_precedence() -> None:
+    """int8 opt-in keeps its pre-G4 precedence against the new byte clause.
+
+    Below the count threshold an explicit VECTOR_QUANTIZATION=int8 wins even
+    over budget (int8 keeps ~1/8 of the float64 bytes resident); at or above
+    the count threshold the ANN path is tried first, exactly as before 2.2 G4.
+    Ceilings are raised to dim 1536 so the precedence — not the dimension
+    guard — is what the assertions exercise.
+    """
+    quantized = EmbeddedGraphStore(
+        Path("unused.kuzu"),
+        vector_ann_threshold=10**9,
+        vector_ann_max_dimension=1536,
+        vector_quantization="int8",
+    )
+    assert quantized._ann_engagement_reason(count=22_000, dimension=1536) is None
+
+    above_count = EmbeddedGraphStore(
+        Path("unused-count.kuzu"),
+        vector_ann_threshold=100,
+        vector_ann_max_dimension=1536,
+        vector_quantization="int8",
+    )
+    assert above_count._ann_engagement_reason(count=100, dimension=1536) == "count"
+
+
+def test_embedded_store_quantized_opt_in_is_orthogonal_to_dimension_ceiling() -> None:
+    """int8 stays the strategy above the ceiling — quantization is orthogonal.
+
+    Above the count threshold AND above the dimension ceiling, the ANN path
+    never engages, so an explicit int8 opt-in builds the quantized group it
+    would have built anyway (the high-dimension posture: exact or opted-in
+    int8, never HNSW, unless the ceiling is raised explicitly).
+    """
+    store = EmbeddedGraphStore(
+        Path("unused.kuzu"),
+        active_embedding_version="v1",
+        vector_ann_threshold=4,
+        vector_quantization="int8",
+    )
+    assert store._ann_engagement_reason(count=100_000, dimension=1536) is None
+
+    dimension = 65
+    store._current_entity_index_cache["agent-1"] = [
+        _versioned_vector_entity(f"entity-{position}", vector, "v1")
+        for position, vector in enumerate(_seeded_unit_embeddings(6, dimension, seed=13))
+    ]
+    group = store._vector_index("agent-1", None).groups[(dimension, "v1")]
+    assert isinstance(group, embedded_graph_store._QuantizedVectorGroup)
+
+
+@pytest.mark.asyncio
+async def test_embedded_store_dimension_ceiling_boundary_selects_group_type(tmp_path: Path) -> None:
+    """At the same engaged count, dim 64 builds the ANN group and dim 65 stays exact.
+
+    Both groups live in one store and one session so the only difference the
+    strategy selection sees is the vector dimension against the shipped
+    ceiling (boundary inclusive at 64, exclusive at 65).
+    """
+    store = EmbeddedGraphStore(
+        tmp_path / "embedded.kuzu",
+        active_embedding_version="v1",
+        vector_ann_threshold=5,
+    )
+    await store.connect()
+    await store.init_schema()
+    at_ceiling = _seeded_unit_embeddings(5, 64, seed=17)
+    above_ceiling = _seeded_unit_embeddings(5, 65, seed=19)
+    store._current_entity_index_cache["agent-1"] = [
+        _versioned_vector_entity(f"at-ceiling-{position}", vector, "v1")
+        for position, vector in enumerate(at_ceiling)
+    ] + [
+        _versioned_vector_entity(f"above-ceiling-{position}", vector, "v1")
+        for position, vector in enumerate(above_ceiling)
+    ]
+
+    groups = store._vector_index("agent-1", None).groups
+    assert isinstance(groups[(64, "v1")], embedded_graph_store._AnnVectorGroup)
+    assert isinstance(groups[(65, "v1")], embedded_graph_store._VectorGroup)
+    await store.close()
+
+
+@pytest.mark.asyncio
+async def test_embedded_store_no_shadow_build_above_dimension_ceiling(tmp_path: Path) -> None:
+    """Rebuild triggers never build a shadow generation above the ceiling.
+
+    The dimension guard sits in the single strategy-selection choke point, so
+    the lazy rebuild path (read-cache invalidation followed by a vector-index
+    rebuild over a grown corpus) must not create any HNSW shadow table for an
+    above-ceiling scope — an index that would never be queried.
+    """
+    dimension = 65
+    store = EmbeddedGraphStore(
+        tmp_path / "embedded.kuzu",
+        active_embedding_version="v1",
+        vector_ann_threshold=4,
+    )
+    await store.connect()
+    await store.init_schema()
+    embeddings = _seeded_unit_embeddings(12, dimension, seed=23)
+    entities = [
+        _versioned_vector_entity(f"entity-{position}", vector, "v1")
+        for position, vector in enumerate(embeddings)
+    ]
+
+    store._current_entity_index_cache["agent-1"] = entities[:8]
+    group = store._vector_index("agent-1", None).groups[(dimension, "v1")]
+    assert isinstance(group, embedded_graph_store._VectorGroup)
+
+    # The rebuild trigger: a projection change clears read caches and the
+    # next query rebuilds the vector index over the grown corpus.
+    store._clear_read_caches("agent-1")
+    store._current_entity_index_cache["agent-1"] = entities
+    rebuilt = store._vector_index("agent-1", None).groups[(dimension, "v1")]
+    assert isinstance(rebuilt, embedded_graph_store._VectorGroup)
+
+    assert store._ann_generation_states == {}
+    table_names = [
+        str(row[0]) for row in store._execute("CALL SHOW_TABLES() RETURN name").get_all()
+    ]
+    assert not any(
+        name.startswith(embedded_graph_store._ANN_SHADOW_TABLE_PREFIX) for name in table_names
+    )
+    results = await store.search_vector(embeddings[0], limit=3, session_id="agent-1")
+    assert results and all(result.exact is True for result in results)
+    await store.close()
+
+
+@pytest.mark.asyncio
+async def test_embedded_store_byte_budget_clause_builds_ann_group(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Over-budget scopes build ANN groups below the count threshold; int8 stays quantized.
+
+    The budget is monkeypatched to exactly 15 float64 rows at dim 8 so the
+    16-row corpus crosses the ceiling with the real count * dimension * 8
+    arithmetic.
+    """
+    dimension = 8
+    row_bytes = dimension * 8
+    monkeypatch.setattr(embedded_graph_store, "VECTOR_INDEX_CACHE_MAX_BYTES", 15 * row_bytes)
+    embeddings = _seeded_unit_embeddings(16, dimension, seed=41)
+    entities = [
+        _versioned_vector_entity(f"entity-{position}", vector, "v1")
+        for position, vector in enumerate(embeddings)
+    ]
+
+    store = EmbeddedGraphStore(
+        tmp_path / "embedded.kuzu",
+        active_embedding_version="v1",
+        vector_ann_threshold=10**9,
+    )
+    await store.connect()
+    await store.init_schema()
+    store._current_entity_index_cache["agent-1"] = entities
+    over_budget_group = store._vector_index("agent-1", None).groups[(dimension, "v1")]
+    assert isinstance(over_budget_group, embedded_graph_store._AnnVectorGroup)
+    results = await store.search_vector(embeddings[0], limit=3, session_id="agent-1")
+    assert results and all(result.exact is False for result in results)
+
+    # Exactly at budget (15 rows * 64 bytes) the exact dense path is kept.
+    store._clear_read_caches("agent-1")
+    store._current_entity_index_cache["agent-1"] = entities[:15]
+    at_budget_group = store._vector_index("agent-1", None).groups[(dimension, "v1")]
+    assert isinstance(at_budget_group, embedded_graph_store._VectorGroup)
+    await store.close()
+
+    # An explicit int8 opt-in takes precedence over the byte clause.
+    quantized_store = EmbeddedGraphStore(
+        tmp_path / "quantized.kuzu",
+        active_embedding_version="v1",
+        vector_ann_threshold=10**9,
+        vector_quantization="int8",
+    )
+    quantized_store._current_entity_index_cache["agent-1"] = entities
+    quantized_group = quantized_store._vector_index("agent-1", None).groups[(dimension, "v1")]
+    assert isinstance(quantized_group, embedded_graph_store._QuantizedVectorGroup)
 
 
 @pytest.mark.asyncio
@@ -2745,6 +3025,450 @@ async def test_embedded_store_ann_capability_probe_falls_back_to_exact(
     )
     assert results and all(result.exact is True for result in results)
     await store.close()
+
+
+class _RecordingConnection:
+    """Pass-through connection wrapper that records every executed query."""
+
+    def __init__(self, real_connection: object) -> None:
+        self._real_connection = real_connection
+        self.queries: list[str] = []
+
+    def execute(self, query: str, parameters: dict[str, object] | None = None) -> object:
+        self.queries.append(query)
+        if parameters is None:
+            return self._real_connection.execute(query)  # type: ignore[attr-defined]
+        return self._real_connection.execute(query, parameters)  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_embedded_store_ann_query_is_direct_table_without_projected_graph(tmp_path: Path) -> None:
+    """ANN search hits the per-scope shadow table directly with the configured efs.
+
+    No PROJECT_GRAPH/DROP_PROJECTED_GRAPH may run on the query path: the
+    per-(session, version) shadow table makes the common query unfiltered,
+    and per-query projected graphs paid a prefilter mask scan per search.
+    """
+    dimension = 8
+    store = EmbeddedGraphStore(
+        tmp_path / "embedded.kuzu",
+        active_embedding_version="v1",
+        vector_ann_threshold=2,
+    )
+    await store.connect()
+    await store.init_schema()
+    embeddings = _seeded_unit_embeddings(30, dimension, seed=13)
+    store._current_entity_index_cache["agent-1"] = [
+        _versioned_vector_entity(f"entity-{position}", vector, "v1")
+        for position, vector in enumerate(embeddings)
+    ]
+    group = store._vector_index("agent-1", None).groups[(dimension, "v1")]
+    assert isinstance(group, embedded_graph_store._AnnVectorGroup)
+
+    recording = _RecordingConnection(store._require_connection())
+    store._connection = recording
+    results = await store.search_vector(embeddings[0], limit=10, session_id="agent-1")
+
+    assert results and all(result.exact is False for result in results)
+    assert all("PROJECT_GRAPH" not in query for query in recording.queries)
+    vector_queries = [query for query in recording.queries if "QUERY_VECTOR_INDEX" in query]
+    assert len(vector_queries) == 1
+    assert f"'{group.table_name}'" in vector_queries[0]
+    assert f"'{group.index_name}'" in vector_queries[0]
+    # Pins the Settings.vector_ann_efs default (400 since the 2.2 efs sweep).
+    assert "efs := 400" in vector_queries[0]
+    await store.close()
+
+
+@pytest.mark.asyncio
+async def test_embedded_store_ann_efs_override_reaches_query(tmp_path: Path) -> None:
+    """The efs override is inlined into the HNSW query, floored at the oversampled k."""
+    dimension = 8
+    store = EmbeddedGraphStore(
+        tmp_path / "embedded.kuzu",
+        active_embedding_version="v1",
+        vector_ann_threshold=2,
+        vector_ann_efs=333,
+    )
+    await store.connect()
+    await store.init_schema()
+    embeddings = _seeded_unit_embeddings(60, dimension, seed=19)
+    store._current_entity_index_cache["agent-1"] = [
+        _versioned_vector_entity(f"entity-{position}", vector, "v1")
+        for position, vector in enumerate(embeddings)
+    ]
+    store._vector_index("agent-1", None)
+
+    recording = _RecordingConnection(store._require_connection())
+    store._connection = recording
+    assert await store.search_vector(embeddings[0], limit=10, session_id="agent-1")
+    assert any("efs := 333" in query for query in recording.queries)
+
+    # efs can never sit below the candidate count requested from the index.
+    store._vector_ann_efs_override = 1
+    recording.queries.clear()
+    assert await store.search_vector(embeddings[0], limit=10, session_id="agent-1")
+    oversampled_k = 10 * embedded_graph_store.VECTOR_SEARCH_OVERSAMPLE
+    assert any(f"efs := {oversampled_k}" in query for query in recording.queries)
+    await store.close()
+
+
+@pytest.mark.asyncio
+async def test_embedded_store_ann_rerank_matches_exact_when_oversample_covers_corpus(tmp_path: Path) -> None:
+    """When k*oversample spans the corpus, the float64 rerank reproduces exact order."""
+    dimension = 16
+    embeddings = _seeded_unit_embeddings(30, dimension, seed=37)
+    entities = [
+        _versioned_vector_entity(f"entity-{position}", vector, "v1")
+        for position, vector in enumerate(embeddings)
+    ]
+    exact_store = EmbeddedGraphStore(
+        tmp_path / "exact.kuzu",
+        active_embedding_version="v1",
+        vector_ann_threshold=10_000,
+    )
+    exact_store._current_entity_index_cache["agent-1"] = entities
+    ann_store = EmbeddedGraphStore(
+        tmp_path / "ann.kuzu",
+        active_embedding_version="v1",
+        vector_ann_threshold=2,
+    )
+    await ann_store.connect()
+    await ann_store.init_schema()
+    ann_store._current_entity_index_cache["agent-1"] = entities
+
+    for query in _seeded_unit_embeddings(5, dimension, seed=41):
+        exact_results = await exact_store.search_vector(query, limit=10, session_id="agent-1")
+        ann_results = await ann_store.search_vector(query, limit=10, session_id="agent-1")
+        assert [result.entity.name for result in ann_results] == [
+            result.entity.name for result in exact_results
+        ]
+        # Same float64 inputs, but matrix-product vs per-row dot rounding can
+        # differ in the last bits; ordering equality above is the real claim.
+        assert [result.score for result in ann_results] == pytest.approx(
+            [result.score for result in exact_results],
+            abs=1e-12,
+        )
+        assert all(result.exact is False for result in ann_results)
+    await ann_store.close()
+
+
+@pytest.mark.asyncio
+async def test_embedded_store_ann_rebuild_writes_fresh_generation(tmp_path: Path) -> None:
+    """Rebuilds write a fresh insert-only generation table and empty the old one.
+
+    In-place delete + reinsert under a live HNSW index silently breaks
+    subsequent direct-table searches on the pinned Kuzu 0.11.3, and both drop
+    paths are closed upstream (DROP_VECTOR_INDEX corrupts metadata, DROP TABLE
+    is rejected while indexed), so generation swap + emptying is the only
+    rebuild cycle the frozen runtime supports.
+    """
+    dimension = 8
+    store = EmbeddedGraphStore(
+        tmp_path / "embedded.kuzu",
+        active_embedding_version="v1",
+        vector_ann_threshold=2,
+    )
+    await store.connect()
+    await store.init_schema()
+    store._current_entity_index_cache["agent-1"] = [
+        _versioned_vector_entity(f"first-{position}", vector, "v1")
+        for position, vector in enumerate(_seeded_unit_embeddings(5, dimension, seed=5))
+    ]
+    first_group = store._vector_index("agent-1", None).groups[(dimension, "v1")]
+    assert isinstance(first_group, embedded_graph_store._AnnVectorGroup)
+    assert first_group.table_name.endswith("_g0")
+
+    store._clear_read_caches("agent-1")
+    second_vectors = _seeded_unit_embeddings(5, dimension, seed=6)
+    store._current_entity_index_cache["agent-1"] = [
+        _versioned_vector_entity(f"second-{position}", vector, "v1")
+        for position, vector in enumerate(second_vectors)
+    ]
+    second_group = store._vector_index("agent-1", None).groups[(dimension, "v1")]
+    assert isinstance(second_group, embedded_graph_store._AnnVectorGroup)
+    assert second_group.table_name.endswith("_g1")
+
+    rebuilt = await store.search_vector(second_vectors[0], limit=3, session_id="agent-1")
+    assert rebuilt and all(result.entity.name.startswith("second-") for result in rebuilt)
+    old_rows = store._execute(f"MATCH (n:{first_group.table_name}) RETURN count(n)").get_all()
+    assert old_rows == [[0]]
+
+    # A second session above the threshold owns its own shadow scope.
+    store._current_entity_index_cache["agent-2"] = [
+        _versioned_vector_entity(f"other-{position}", vector, "v1", session_id="agent-2")
+        for position, vector in enumerate(_seeded_unit_embeddings(5, dimension, seed=7))
+    ]
+    other_group = store._vector_index("agent-2", None).groups[(dimension, "v1")]
+    assert isinstance(other_group, embedded_graph_store._AnnVectorGroup)
+    assert other_group.table_name != second_group.table_name
+    assert other_group.table_name.endswith("_g0")
+    await store.close()
+
+
+@pytest.mark.asyncio
+async def test_embedded_store_ann_copy_and_unwind_loads_are_equivalent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The COPY-from-parquet load and the UNWIND fallback must serve identical results.
+
+    pyarrow is a transitive (not guaranteed) dependency, so the bulk loader
+    degrades to batched UNWIND when it is absent; both loads store the same
+    float32 rows and must answer the same queries identically.
+    """
+    dimension = 16
+    embeddings = _seeded_unit_embeddings(60, dimension, seed=23)
+    entities = [
+        _versioned_vector_entity(f"entity-{position}", vector, "v1")
+        for position, vector in enumerate(embeddings)
+    ]
+
+    copy_store = EmbeddedGraphStore(
+        tmp_path / "copy.kuzu",
+        active_embedding_version="v1",
+        vector_ann_threshold=2,
+    )
+    await copy_store.connect()
+    await copy_store.init_schema()
+    copy_store._current_entity_index_cache["agent-1"] = entities
+    copy_recording = _RecordingConnection(copy_store._require_connection())
+    copy_store._connection = copy_recording
+    copy_group = copy_store._vector_index("agent-1", None).groups[(dimension, "v1")]
+    assert isinstance(copy_group, embedded_graph_store._AnnVectorGroup)
+    assert any(query.startswith("COPY ") for query in copy_recording.queries)
+    assert not any("UNWIND $rows" in query for query in copy_recording.queries)
+
+    real_find_spec = importlib.util.find_spec
+
+    def hide_pyarrow(name: str, package: str | None = None) -> object | None:
+        if name == "pyarrow":
+            return None
+        return real_find_spec(name, package)
+
+    monkeypatch.setattr(importlib.util, "find_spec", hide_pyarrow)
+    unwind_store = EmbeddedGraphStore(
+        tmp_path / "unwind.kuzu",
+        active_embedding_version="v1",
+        vector_ann_threshold=2,
+    )
+    await unwind_store.connect()
+    await unwind_store.init_schema()
+    unwind_store._current_entity_index_cache["agent-1"] = entities
+    unwind_recording = _RecordingConnection(unwind_store._require_connection())
+    unwind_store._connection = unwind_recording
+    unwind_group = unwind_store._vector_index("agent-1", None).groups[(dimension, "v1")]
+    assert isinstance(unwind_group, embedded_graph_store._AnnVectorGroup)
+    assert not any(query.startswith("COPY ") for query in unwind_recording.queries)
+    assert any("UNWIND $rows" in query for query in unwind_recording.queries)
+
+    for query in _seeded_unit_embeddings(10, dimension, seed=29):
+        copy_results = await copy_store.search_vector(query, limit=10, session_id="agent-1")
+        unwind_results = await unwind_store.search_vector(query, limit=10, session_id="agent-1")
+        assert [result.entity.name for result in copy_results] == [
+            result.entity.name for result in unwind_results
+        ]
+        assert [result.score for result in copy_results] == [
+            result.score for result in unwind_results
+        ]
+    await copy_store.close()
+    await unwind_store.close()
+
+
+@pytest.mark.asyncio
+async def test_embedded_store_ann_generation_swap_stress(tmp_path: Path) -> None:
+    """Consecutive rebuilds must swap generations cleanly, surviving reopen.
+
+    Three full corpus replacements in one process, then a reopen (which
+    drops the in-memory generation state) followed by another rebuild: every
+    stage must answer queries from the fresh generation only, and every
+    superseded generation must be left empty.
+    """
+    dimension = 8
+    path = tmp_path / "embedded.kuzu"
+    store = EmbeddedGraphStore(path, active_embedding_version="v1", vector_ann_threshold=2)
+    await store.connect()
+    await store.init_schema()
+
+    seen_tables: list[str] = []
+    for round_index in range(3):
+        corpus = [
+            _versioned_vector_entity(f"round{round_index}-{position}", vector, "v1")
+            for position, vector in enumerate(
+                _seeded_unit_embeddings(12, dimension, seed=100 + round_index)
+            )
+        ]
+        store._clear_read_caches("agent-1")
+        store._current_entity_index_cache["agent-1"] = corpus
+        group = store._vector_index("agent-1", None).groups[(dimension, "v1")]
+        assert isinstance(group, embedded_graph_store._AnnVectorGroup)
+        assert group.table_name.endswith(f"_g{round_index}")
+        seen_tables.append(group.table_name)
+        query = corpus[0].properties["embedding"]
+        assert isinstance(query, list)
+        results = await store.search_vector(query, limit=5, session_id="agent-1")
+        assert results and all(
+            result.entity.name.startswith(f"round{round_index}-") for result in results
+        )
+        for old_table in seen_tables[:-1]:
+            counts = store._execute(f"MATCH (n:{old_table}) RETURN count(n)").get_all()
+            assert counts == [[0]]
+
+    await store.close()
+    await store.connect()
+    await store.init_schema()
+    reopened_corpus = [
+        _versioned_vector_entity(f"reopen-{position}", vector, "v1")
+        for position, vector in enumerate(_seeded_unit_embeddings(12, dimension, seed=200))
+    ]
+    store._current_entity_index_cache["agent-1"] = reopened_corpus
+    reopened_group = store._vector_index("agent-1", None).groups[(dimension, "v1")]
+    assert isinstance(reopened_group, embedded_graph_store._AnnVectorGroup)
+    assert reopened_group.table_name.endswith("_g3")
+    query = reopened_corpus[0].properties["embedding"]
+    assert isinstance(query, list)
+    results = await store.search_vector(query, limit=5, session_id="agent-1")
+    assert results and all(result.entity.name.startswith("reopen-") for result in results)
+    for old_table in seen_tables:
+        counts = store._execute(f"MATCH (n:{old_table}) RETURN count(n)").get_all()
+        assert counts == [[0]]
+    await store.close()
+
+
+@pytest.mark.asyncio
+async def test_embedded_store_ann_delta_policy_boundary(tmp_path: Path) -> None:
+    """The delta policy must pick reuse, incremental insert, or swap correctly.
+
+    An unchanged corpus reuses the resident generation with zero writes; an
+    extension at the fraction boundary inserts only the delta into the live
+    index; one row past the boundary triggers a full COPY generation swap.
+    """
+    dimension = 8
+    store = EmbeddedGraphStore(
+        tmp_path / "embedded.kuzu",
+        active_embedding_version="v1",
+        vector_ann_threshold=2,
+    )
+    await store.connect()
+    await store.init_schema()
+    vectors = _seeded_unit_embeddings(67, dimension, seed=31)
+    entities = [
+        _versioned_vector_entity(f"entity-{position}", vector, "v1")
+        for position, vector in enumerate(vectors)
+    ]
+
+    store._current_entity_index_cache["agent-1"] = entities[:50]
+    first_group = store._vector_index("agent-1", None).groups[(dimension, "v1")]
+    assert isinstance(first_group, embedded_graph_store._AnnVectorGroup)
+    assert first_group.table_name.endswith("_g0")
+
+    # Unchanged corpus: the resident generation is reused with zero writes.
+    store._clear_read_caches("agent-1")
+    store._current_entity_index_cache["agent-1"] = entities[:50]
+    recording = _RecordingConnection(store._require_connection())
+    store._connection = recording
+    reused_group = store._vector_index("agent-1", None).groups[(dimension, "v1")]
+    assert isinstance(reused_group, embedded_graph_store._AnnVectorGroup)
+    assert reused_group.table_name == first_group.table_name
+    assert not any(
+        "CREATE NODE TABLE" in query or query.startswith("COPY ") or "UNWIND $rows" in query
+        for query in recording.queries
+    )
+
+    # Boundary extension (delta == 10% of 50): incremental insert, same table.
+    store._clear_read_caches("agent-1")
+    store._current_entity_index_cache["agent-1"] = entities[:55]
+    recording.queries.clear()
+    incremental_group = store._vector_index("agent-1", None).groups[(dimension, "v1")]
+    assert isinstance(incremental_group, embedded_graph_store._AnnVectorGroup)
+    assert incremental_group.table_name == first_group.table_name
+    assert incremental_group.vector_count == 55
+    assert any("UNWIND $rows" in query for query in recording.queries)
+    assert not any(
+        "CREATE NODE TABLE" in query or query.startswith("COPY ") for query in recording.queries
+    )
+    newest = vectors[54]
+    results = await store.search_vector(newest, limit=3, session_id="agent-1")
+    assert results and results[0].entity.name == "entity-54"
+
+    # One past the boundary (delta 6 > 10% of 55): full COPY generation swap.
+    store._clear_read_caches("agent-1")
+    store._current_entity_index_cache["agent-1"] = entities[:61]
+    recording.queries.clear()
+    swapped_group = store._vector_index("agent-1", None).groups[(dimension, "v1")]
+    assert isinstance(swapped_group, embedded_graph_store._AnnVectorGroup)
+    assert swapped_group.table_name.endswith("_g1")
+    assert any("CREATE NODE TABLE" in query for query in recording.queries)
+    assert any(query.startswith("COPY ") for query in recording.queries)
+    old_counts = store._execute(f"MATCH (n:{first_group.table_name}) RETURN count(n)").get_all()
+    assert old_counts == [[0]]
+    results = await store.search_vector(vectors[60], limit=3, session_id="agent-1")
+    assert results and results[0].entity.name == "entity-60"
+
+    # A small delta that mutates resident rows is not an extension: swap.
+    mutated = list(entities[:61])
+    mutated[0] = _versioned_vector_entity("entity-0", vectors[66], "v1")
+    store._clear_read_caches("agent-1")
+    store._current_entity_index_cache["agent-1"] = mutated
+    mutated_group = store._vector_index("agent-1", None).groups[(dimension, "v1")]
+    assert isinstance(mutated_group, embedded_graph_store._AnnVectorGroup)
+    assert mutated_group.table_name.endswith("_g2")
+    results = await store.search_vector(vectors[66], limit=3, session_id="agent-1")
+    assert results and results[0].entity.name == "entity-0"
+    await store.close()
+
+
+@pytest.mark.asyncio
+async def test_embedded_store_rerank_skips_embedding_mutated_after_admission() -> None:
+    """The shared rerank tolerates a candidate embedding mutated after indexing.
+
+    Group admission validates embeddings, so the rerank bulk-converts them in
+    one pass; if a property was mutated to garbage afterwards it must fall
+    back to per-candidate validation and skip the row rather than fail the
+    search.
+    """
+    store = EmbeddedGraphStore(
+        Path("unused.kuzu"),
+        active_embedding_version="v1",
+        vector_quantization="int8",
+    )
+    entities = [
+        _versioned_vector_entity("kept-a", [1.0, 0.0], "v1"),
+        _versioned_vector_entity("mutated", [0.9, 0.1], "v1"),
+        _versioned_vector_entity("kept-b", [0.5, 0.5], "v1"),
+    ]
+    store._current_entity_index_cache["agent-1"] = entities
+    store._vector_index("agent-1", None)
+    entities[1].properties["embedding"] = "garbage"
+
+    results = await store.search_vector([1.0, 0.0], limit=3, session_id="agent-1")
+
+    assert [result.entity.name for result in results] == ["kept-a", "kept-b"]
+    assert all(result.exact is False for result in results)
+
+
+def test_embedded_store_execute_rejects_unbound_parameters() -> None:
+    """The query choke point must refuse placeholders without bindings.
+
+    Kuzu 0.11.3 segfaults instead of raising on an unbound $parameter, so the
+    statement must never reach the runtime.
+    """
+    store = EmbeddedGraphStore(Path("unused.kuzu"))
+    connection = _CountingConnection()
+    store._connection = connection
+
+    with pytest.raises(RuntimeError, match=r"unbound parameters.*session_id"):
+        store._execute(
+            "MATCH (e:Entity) WHERE e.session_id = $session_id RETURN e.name",
+            {"wrong_name": "agent-1"},
+        )
+    assert connection.queries == []
+
+    store._execute(
+        "MATCH (e:Entity) WHERE e.session_id = $session_id RETURN e.name",
+        {"session_id": "agent-1"},
+    )
+    assert len(connection.queries) == 1
 
 
 def test_embedded_store_ann_capability_probe_detects_vector_support(tmp_path: Path) -> None:
