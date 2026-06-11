@@ -55,6 +55,17 @@ python -m zaxy doctor
 
 # Emit machine-readable setup diagnostics
 python -m zaxy doctor --json
+```
+
+Beyond onboarding posture, `zaxy doctor` verifies the active session log's
+hash chain (full verify on small logs, bounded tail verify on large ones),
+compares embedded projection state against the event log signature, confirms
+the embedding provider builds and agrees with `EMBEDDING_DIMENSION`, reports
+mixed embedding-version corpora (remediated with `zaxy memory re-embed`), and
+reports vector index cache budget headroom. Every failing check prints a
+one-line remediation.
+
+```bash
 
 # Start MCP over SSE for daemon mode
 python -m zaxy serve --transport sse --port 8080

@@ -36,6 +36,55 @@ graph-neighbor evidence in play, and `temporal` gives as-of freshness a stronger
 role. Callers can also pass a custom `ScoringProfile` or override individual
 fusion weights for advanced deployments.
 
+## The cognitive retrieval profile
+
+`RETRIEVAL_PROFILE=cognitive` is a named profile that layers cognitive-memory
+policy over the same local retrieval stack as `local_fast`. It is the default
+since 2.1.0, promoted by the internal forgetting lane: exact cold-start
+parity (zero-reinforcement corpora rank byte-identically to plain retrieval),
+no-recall-loss 1.0 for attenuated memories, pin/authority exemptions 1.0, and
+ranking lift 1.0 vs 0.0. The plain profiles remain available — set
+`RETRIEVAL_PROFILE=local_fast` to restore the pre-2.1.0 default — and every
+plain profile keeps byte-identical pre-cognitive behavior. The cognitive
+profile enables three flags:
+
+- **Salience-blended ranking** (`salience_ranking`). Checkout relevance is
+  multiplied by normalized salience from the reinforcement ledger:
+  `m = clamp(score / base, [0.01, 10.0])`. A never-reinforced memory keeps
+  the implicit base salience `1.0` and ranks exactly as before; reinforced
+  memories rise and invalidated memories sink. Memories whose replayed
+  salience falls below `SALIENCE_FLOOR` (default `0.15`) leave default
+  checkout ranking entirely and are listed — labeled `attenuated`, with
+  their scores — in `diagnostics.attenuation`. Attenuation is projection
+  policy only: the events are untouched, and the memories stay fully
+  reachable through explicit `memory_query`/`memory_replay`, which never
+  route through the blend. Authority-bearing state (accepted review status
+  or accepted-authority scope) and events appended with `"pinned": true`
+  payload metadata are exempt from the floor and reported as exempt.
+- **Cue blending** (`cue_blending`). Appends may carry a `cues` payload
+  record with optional `mission`, `workspace`, `tool`, and `phase` string
+  fields (the Codex capture path records `workspace` and `tool`
+  automatically). Checkout and `memory_query` accept an optional `cues`
+  argument; the Jaccard overlap between query cues and stored cues is
+  blended as a bounded bonus of `0.25 * jaccard` (at most `0.25` for a
+  perfect match). Missing cues on either side contribute nothing.
+- **Graph walk** (`graph_walk`). When the projection backend exposes an
+  adjacency snapshot (`fetch_adjacency`), retrieval seeds a bounded
+  personalized PageRank (`alpha=0.85`, 20 iterations) from query-matched
+  entities and folds max-normalized walk mass into the fused candidate
+  scores as `(1 - 0.2) * fused + 0.2 * walk`. The walk re-weights existing
+  candidates (it never invents uncited ones), is deterministic, and is
+  cached per `(snapshot signature, seed set)` so repeated queries replay
+  the cached walk until the projected graph changes.
+
+The write-time encoding gate (`ENCODING_GATE_ENABLED`, default off) and
+interference detection complement the profile: gate tags
+(`novel`/`reinforcing`/`redundant`) ride in event payload metadata without
+ever dropping an event, redundant appends emit a weak reinforcement toward
+the duplicated memory, and a novel append that contradicts an above-floor
+memory on the same entity's scalar property emits a review-pending
+`memory_propose_belief_update` proposal citing both events.
+
 Purpose profiles make the retrieval-time ontology explicit. Memory Checkout
 accepts `purpose` as a preset (`coding`, `review`, `release`, `security`,
 `research`, or `coordinate`) or as a structured profile with role, task, risk,

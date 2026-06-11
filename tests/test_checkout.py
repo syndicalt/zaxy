@@ -5,14 +5,18 @@ from __future__ import annotations
 from zaxy.checkout import (
     _compact_synthesis_summary,
     _merge_answer_candidates,
+    apply_checkout_budget,
     build_checkout_diagnostics,
     build_checkout_guidance,
     build_checkout_quality,
     build_compact_answer_contexts,
+    checkout_prompt_sections,
+    checkout_stable_prefix_chars,
     format_memory_checkout_prompt,
 )
-from zaxy.context import Context
+from zaxy.context import Context, render_prompt_sections
 from zaxy.core import ContextAssembly, build_memory_checkout
+from zaxy.token_budget import estimate_tokens
 from zaxy_benchmarks.benchmark import BenchmarkCase, expected_terms_recall
 
 
@@ -1734,3 +1738,235 @@ def test_compact_synthesis_summary_preserves_assistant_recall_answer() -> None:
 
     assert "assistant_recall_answer=Admon was assigned to the 8 am - 4 pm (Day Shift) on Sundays." in summary
     assert "assistant_recall_source_id=answer-1" in summary
+
+
+def _tiered_assembly_prompt() -> str:
+    return "\n".join(
+        [
+            "# Active Memory Working Set",
+            "- decision: Deploy uses blue-green rollout (eventloom://agent-1/events/3#cccccccccccc)",
+            "",
+            "# Recent Events",
+            "[3] decision.recorded by assistant",
+            "Deploy uses blue-green rollout",
+            "",
+            "# Retrieved Context",
+            "- Deploy uses blue-green rollout (eventloom://agent-1/events/3#cccccccccccc)",
+        ]
+    )
+
+
+def _mixed_tier_assembly(*, extra_skill: bool = False) -> ContextAssembly:
+    """Build an assembly with consolidated (skill), session, and volatile content."""
+    contexts = [
+        Context(
+            content="Deploy uses blue-green rollout",
+            source="keyword",
+            score=0.9,
+            metadata={"citation": "eventloom://agent-1/events/3#cccccccccccc"},
+        ),
+        Context(
+            content="release checklist skill for deploy",
+            source="keyword",
+            score=0.8,
+            metadata={
+                "entity_type": "skill_version",
+                "skill_id": "release-checklist",
+                "version": "2",
+                "status": "validated",
+                "summary": "Release checklist for deploy",
+                "procedure": ["run tests", "tag release"],
+                "applicability": ["deploy"],
+                "citation": "eventloom://agent-1/events/2#bbbbbbbbbbbb",
+            },
+        ),
+    ]
+    if extra_skill:
+        contexts.append(
+            Context(
+                content="hotfix rollback skill for deploy",
+                source="keyword",
+                score=0.7,
+                metadata={
+                    "entity_type": "skill_version",
+                    "skill_id": "hotfix-rollback",
+                    "version": "1",
+                    "status": "validated",
+                    "summary": "Hotfix rollback for deploy",
+                    "procedure": ["revert release"],
+                    "applicability": ["deploy"],
+                    "citation": "eventloom://agent-1/events/4#dddddddddddd",
+                },
+            )
+        )
+    return ContextAssembly(
+        session_id="agent-1",
+        prompt=_tiered_assembly_prompt(),
+        contexts=contexts,
+        replay_event_count=1,
+    )
+
+
+def test_checkout_prompt_renders_stability_tiers_in_order() -> None:
+    """Consolidated skills render first, session state second, query-specific last."""
+    checkout = build_memory_checkout(query="how do we deploy?", assembly=_mixed_tier_assembly())
+    prompt = checkout.prompt
+
+    expected_order = [
+        "# Memory Checkout",
+        "## Applicable Skills",
+        "# Active Memory Working Set",
+        "# Recent Events",
+        "Query: how do we deploy?",
+        "## Current Facts",
+        "## Evidence",
+        "## Checkout Quality",
+        "## Checkout Guidance",
+        "## Checkout Diagnostics",
+        "# Retrieved Context",
+    ]
+    positions = [prompt.index(marker) for marker in expected_order]
+    assert positions == sorted(positions)
+    assert prompt.startswith("# Memory Checkout")
+
+
+def test_checkout_prompt_sections_round_trip_through_render() -> None:
+    """Splitting a rendered checkout prompt must reproduce it byte for byte."""
+    checkout = build_memory_checkout(query="how do we deploy?", assembly=_mixed_tier_assembly())
+
+    sections = checkout_prompt_sections(checkout.prompt)
+
+    assert render_prompt_sections(sections) == checkout.prompt
+    kinds = [section.kind for section in sections]
+    assert kinds.index("applicable_skills") < kinds.index("working_set")
+    assert kinds.index("working_set") < kinds.index("checkout_query")
+
+
+def test_repeated_checkouts_share_byte_identical_stable_prefix() -> None:
+    """With no intervening append, the consolidated prefix is byte-identical."""
+    first = build_memory_checkout(query="how do we deploy?", assembly=_mixed_tier_assembly())
+    second = build_memory_checkout(query="how do we deploy?", assembly=_mixed_tier_assembly())
+
+    prefix_chars = checkout_stable_prefix_chars(first.prompt)
+    assert prefix_chars > len("# Memory Checkout")
+    assert first.prompt == second.prompt
+    assert first.prompt[:prefix_chars] == second.prompt[:prefix_chars]
+
+
+def test_stable_prefix_is_query_independent() -> None:
+    """The consolidated prefix contains no query text, so prompt caches can hit."""
+    first = build_memory_checkout(query="how do we deploy?", assembly=_mixed_tier_assembly())
+    second = build_memory_checkout(query="deploy rollout status?", assembly=_mixed_tier_assembly())
+
+    prefix_chars = checkout_stable_prefix_chars(first.prompt)
+    assert prefix_chars == checkout_stable_prefix_chars(second.prompt)
+    assert first.prompt[:prefix_chars] == second.prompt[:prefix_chars]
+    assert first.prompt != second.prompt
+
+
+def test_appending_consolidated_memory_changes_stable_prefix() -> None:
+    """A new accepted skill invalidates the consolidated prefix by construction."""
+    before = build_memory_checkout(query="how do we deploy?", assembly=_mixed_tier_assembly())
+    after = build_memory_checkout(
+        query="how do we deploy?",
+        assembly=_mixed_tier_assembly(extra_skill=True),
+    )
+
+    before_prefix = before.prompt[: checkout_stable_prefix_chars(before.prompt)]
+    after_prefix = after.prompt[: checkout_stable_prefix_chars(after.prompt)]
+    assert before_prefix != after_prefix
+    assert "hotfix-rollback" in after_prefix
+
+
+def test_consolidated_skills_render_with_stable_sort_keys() -> None:
+    """Consolidated skill rows are canonically ordered for cache stability."""
+    checkout = build_memory_checkout(
+        query="how do we deploy?",
+        assembly=_mixed_tier_assembly(extra_skill=True),
+    )
+
+    prefix = checkout.prompt[: checkout_stable_prefix_chars(checkout.prompt)]
+    assert prefix.index("hotfix-rollback") < prefix.index("release-checklist")
+
+
+def test_apply_checkout_budget_without_budget_only_adds_stable_prefix_chars() -> None:
+    """Callers that pass no budget see identical content plus the cache diagnostic."""
+    payload = build_memory_checkout(query="how do we deploy?", assembly=_mixed_tier_assembly()).to_dict()
+    original_prompt = payload["prompt"]
+    original_token_efficiency = dict(payload["token_efficiency"])
+
+    result = apply_checkout_budget(payload, max_tokens=None)
+
+    assert result["prompt"] == original_prompt
+    assert result["token_efficiency"] == original_token_efficiency
+    diagnostics = result["diagnostics"]
+    assert diagnostics["stable_prefix_chars"] == checkout_stable_prefix_chars(original_prompt)
+    assert "budget_requested" not in diagnostics
+    assert "budget_used" not in diagnostics
+    assert "elided" not in diagnostics
+
+
+def test_apply_checkout_budget_zero_budget_keeps_trust_contract_only() -> None:
+    """A zero budget yields the mandatory header and trust-contract sections."""
+    payload = build_memory_checkout(query="how do we deploy?", assembly=_mixed_tier_assembly()).to_dict()
+
+    result = apply_checkout_budget(payload, max_tokens=0)
+
+    prompt = result["prompt"]
+    assert prompt.startswith("# Memory Checkout")
+    assert "Query: how do we deploy?" in prompt
+    assert "## Checkout Quality" in prompt
+    assert "## Checkout Guidance" in prompt
+    assert "## Current Facts" not in prompt
+    assert "# Recent Events" not in prompt
+    diagnostics = result["diagnostics"]
+    assert diagnostics["budget_requested"] == 0
+    assert diagnostics["budget_used"] > 0
+    assert diagnostics["elided"]["count"] > 0
+    assert "current_facts" in diagnostics["elided"]["kinds"]
+    for record in diagnostics["elided"]["sections"]:
+        assert set(record) == {"section_id", "kind", "estimated_tokens"}
+
+
+def test_checkout_budget_never_changes_cited_payload_fields() -> None:
+    """Citation coverage is budget-invariant: packing trims the prompt only."""
+    baseline = build_memory_checkout(query="how do we deploy?", assembly=_mixed_tier_assembly()).to_dict()
+    for budget in (0, 60, 100_000):
+        payload = build_memory_checkout(query="how do we deploy?", assembly=_mixed_tier_assembly()).to_dict()
+        result = apply_checkout_budget(payload, max_tokens=budget)
+        assert result["current_facts"] == baseline["current_facts"]
+        assert result["evidence"] == baseline["evidence"]
+        assert result["provenance"] == baseline["provenance"]
+        assert result["diagnostics"]["citation_count"] == baseline["diagnostics"]["citation_count"]
+        assert (
+            result["diagnostics"]["current_citation_count"]
+            == baseline["diagnostics"]["current_citation_count"]
+        )
+
+
+def test_apply_checkout_budget_refreshes_token_efficiency() -> None:
+    """A packed prompt re-reports its estimated token footprint."""
+    payload = build_memory_checkout(query="how do we deploy?", assembly=_mixed_tier_assembly()).to_dict()
+    unbudgeted_tokens = payload["token_efficiency"]["prompt_tokens"]
+
+    result = apply_checkout_budget(payload, max_tokens=120)
+
+    refreshed = result["token_efficiency"]
+    assert refreshed["prompt_tokens"] < unbudgeted_tokens
+    assert refreshed["prompt_tokens"] == estimate_tokens(result["prompt"])
+    assert refreshed["current_fact_count"] == len(result["current_facts"])
+
+
+def test_checkout_budget_inclusion_is_monotone() -> None:
+    """Raising the checkout budget never elides a previously included section."""
+    previous_kinds: set[str] | None = None
+    all_kinds: set[str] = set()
+    for budget in range(0, 1200, 40):
+        payload = build_memory_checkout(query="how do we deploy?", assembly=_mixed_tier_assembly()).to_dict()
+        if not all_kinds:
+            all_kinds = {section.kind for section in checkout_prompt_sections(payload["prompt"])}
+        result = apply_checkout_budget(payload, max_tokens=budget)
+        included = all_kinds - set(result["diagnostics"]["elided"]["kinds"])
+        if previous_kinds is not None:
+            assert previous_kinds <= included
+        previous_kinds = included

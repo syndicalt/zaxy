@@ -314,6 +314,12 @@ def memory_checkout(
     replay_from_seq: int = typer.Option(1, min=1, help="Replay start sequence"),
     limit: int = typer.Option(10, min=1, help="Maximum retrieved context items"),
     max_recent_events: int = typer.Option(20, min=1, help="Maximum recent replay events"),
+    max_tokens: int | None = typer.Option(
+        None,
+        "--max-tokens",
+        min=0,
+        help="Optional prompt token budget; elided sections are reported in diagnostics",
+    ),
     neo4j_uri: str | None = typer.Option(None, help="Neo4j Bolt URI"),
     neo4j_user: str | None = typer.Option(None, help="Neo4j username"),
     neo4j_password: str | None = typer.Option(None, help="Neo4j password"),
@@ -385,8 +391,10 @@ def memory_checkout(
             return payload
 
     payload = asyncio.run(_checkout())
+    from zaxy.checkout import apply_checkout_budget
     from zaxy.memory_persistence import record_memory_activity
 
+    payload = apply_checkout_budget(payload, max_tokens=max_tokens)
     record_memory_activity(
         eventloom_path,
         session_id=session_id,
@@ -963,6 +971,121 @@ def memory_consolidation_status(
         )
 
 
+@memory_app.command("mine-procedures")
+def memory_mine_procedures(
+    session_id: list[str] | None = typer.Option(  # noqa: B008
+        None,
+        "--session-id",
+        help="Session ID (Eventloom thread) to mine; repeatable, default all sessions",
+    ),
+    min_support: int = typer.Option(
+        2,
+        "--min-support",
+        min=2,
+        help="Minimum distinct supporting sessions per mined procedure",
+    ),
+    max_length: int = typer.Option(
+        8,
+        "--max-length",
+        min=2,
+        help="Maximum mined procedure length in steps",
+    ),
+    actor: str = typer.Option("zaxy-procedure-miner", "--actor", help="Actor writing candidate events"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Mine recurring successful tool sequences into review-pending procedure candidates."""
+    from zaxy.event import EventLog
+    from zaxy.procedure_mining import build_procedure_proposal, mine_and_propose
+
+    log_paths = sorted(eventloom_path.glob("*.jsonl"))
+    logs_payload: list[dict[str, Any]] = []
+    candidate_lines: list[str] = []
+    total_mined = 0
+    total_appended = 0
+    total_skipped = 0
+    for log_path in log_paths:
+        try:
+            summary = mine_and_propose(
+                EventLog(log_path),
+                session_ids=session_id or None,
+                min_support=min_support,
+                max_length=max_length,
+                actor=actor,
+            )
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        appended_by_id = {proposal.candidate_id: proposal for proposal in summary.appended}
+        skipped_ids = set(summary.skipped_candidate_ids)
+        candidates: list[dict[str, Any]] = []
+        for procedure in summary.mined:
+            proposal = build_procedure_proposal(procedure)
+            payload = proposal.to_candidate_event(actor=actor)["payload"]
+            candidate_id = str(payload["candidate_id"])
+            if candidate_id in appended_by_id:
+                status = "proposed"
+            elif candidate_id in skipped_ids:
+                status = "skipped_duplicate"
+            else:  # pragma: no cover - mine_and_propose appends or skips every candidate
+                status = "unknown"
+            candidate: dict[str, Any] = {
+                "candidate_id": candidate_id,
+                "title": proposal.title,
+                "status": status,
+                "support": procedure.support,
+                "support_sessions": list(procedure.support_sessions),
+            }
+            appended = appended_by_id.get(candidate_id)
+            if appended is not None:
+                candidate["seq"] = appended.seq
+                candidate["hash"] = appended.hash
+                candidate["session_id"] = appended.session_id
+            candidates.append(candidate)
+            candidate_lines.append(
+                f"  - [{status}] {proposal.title} (support={procedure.support})"
+            )
+        logs_payload.append(
+            {
+                "log": log_path.name,
+                "session_ids": list(summary.session_ids),
+                "mined_count": summary.mined_count,
+                "appended_count": summary.appended_count,
+                "skipped_duplicate_count": summary.skipped_duplicate_count,
+                "candidates": candidates,
+            }
+        )
+        total_mined += summary.mined_count
+        total_appended += summary.appended_count
+        total_skipped += summary.skipped_duplicate_count
+
+    if json_output:
+        payload = {
+            "eventloom_path": str(eventloom_path),
+            "actor": actor,
+            "min_support": min_support,
+            "max_length": max_length,
+            "session_ids": list(session_id) if session_id else None,
+            "logs": logs_payload,
+            "totals": {
+                "mined": total_mined,
+                "proposed": total_appended,
+                "skipped_duplicates": total_skipped,
+            },
+        }
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+        return
+    if not log_paths:
+        typer.echo(f"No Eventloom logs found in {eventloom_path}")
+        return
+    noun = "log" if len(log_paths) == 1 else "logs"
+    typer.echo(
+        f"Mined {total_mined} procedure candidates from {len(log_paths)} {noun}: "
+        f"proposed={total_appended}, skipped_duplicates={total_skipped}"
+    )
+    for line in candidate_lines:
+        typer.echo(line)
+
+
 @app.command("refresh-context")
 def refresh_context(
     path: Path = typer.Argument(..., help="Document/codebase root to refresh"),  # noqa: B008
@@ -1073,6 +1196,11 @@ def serve(
     transport: str = typer.Option("stdio", help="Transport: stdio or sse"),
     host: str = typer.Option("127.0.0.1", help="Host for SSE transport"),
     port: int = typer.Option(8080, help="Port for SSE transport"),
+    profile: str | None = typer.Option(
+        None,
+        "--profile",
+        help="MCP tool listing profile: core or full (default from MCP_TOOL_PROFILE)",
+    ),
 ) -> None:
     """Start the MCP server (stdio or sse)."""
     import asyncio
@@ -1080,11 +1208,17 @@ def serve(
     from zaxy import mcp_server
     from zaxy.domain import derive_domain, domain_default_session
     from zaxy.mcp_runtime import EmbeddedMcpRuntimeCoordinator
+    from zaxy.tool_profiles import resolve_profile
 
     workspace_root = Path.cwd()
     resolved_eventloom_path = eventloom_path or os.getenv("EVENTLOOM_PATH") or str(workspace_root / ".eventloom")
     resolved_session_id = os.getenv("EVENTLOOM_THREAD") or domain_default_session(derive_domain(workspace_root))
     settings = _status_settings(workspace_root)
+    resolved_tool_profile = profile or settings.mcp_tool_profile
+    try:
+        resolve_profile(resolved_tool_profile)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--profile") from exc
     embedded_graph_path = Path(settings.embedded_graph_path)
     if eventloom_path is not None and embedded_graph_path == Path(".eventloom/projections/embedded.kuzu"):
         embedded_graph_path = Path(resolved_eventloom_path) / "projections" / "embedded.kuzu"
@@ -1118,6 +1252,7 @@ def serve(
         latticedb_path=Path(settings.latticedb_path),
         workspace_root=workspace_root,
         default_session_id=resolved_session_id,
+        tool_profile=resolved_tool_profile,
     )
 
     if transport == "sse":

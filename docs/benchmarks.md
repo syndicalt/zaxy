@@ -220,6 +220,139 @@ This beta.2 guardrail is an internal release-quality check and readiness signal.
 It is not external validation and must not be merged into the headline
 LongMemEval-compatible or Harvey LAB results.
 
+## Agent Experience Lanes (Internal)
+
+Zaxy 2.1 Phase 1 adds three deterministic agent-experience lanes in
+`zaxy_benchmarks/agent_experience_lanes.py`. They are project-defined internal
+lanes labeled `"validation": "internal"` in every report. Run them with:
+
+```bash
+zaxy agent-experience-lanes --lanes all
+```
+
+- **Tool-adoption lane**: static MCP listing-surface metrics for the `core`
+  versus `full` tool profiles — listed tool count, serialized schema bytes and
+  estimated tokens (`estimate_tokens`), the 1-based listing rank of the
+  `memory_checkout` front door, and the fraction of other listed tool
+  descriptions that reference it. It does NOT simulate agent transcripts and
+  makes no claim about tool-selection accuracy or turns-to-first-checkout;
+  those require scripted-agent runs that have not been performed.
+- **Budget lane**: seeds a real in-temp-dir fabric through the production
+  write path, runs one real `memory_checkout`, and sweeps
+  `apply_checkout_budget` across token budgets (default
+  `256,512,1024,2048,4096,8192,unlimited`). It reports the raw curve
+  (`budget_used`, elided section count and kinds, packed prompt tokens) and
+  passes or fails the graceful-degradation contract: citation-bearing payload
+  fields (`evidence`, `current_facts`, `provenance`, citation counts) survive
+  every budget, and elisions are monotone non-increasing as the budget grows.
+  It does NOT measure recall@k or answer quality under budgets.
+- **Cache lane**: same seeded fabric; repeats checkouts without agent appends
+  and verifies the consolidated stable prefix is byte-identical across
+  repeats, then appends a consolidated-tier validated skill and verifies the
+  prefix changes. Full-prompt identity across repeats is reported as an
+  informational bool only: checkout records salience reinforcement events
+  whose replay lands in the volatile tail. The lane reports stable-prefix
+  length, prefix/total ratio, and an `estimated_provider_cache_hit_fraction`
+  (`stable_prefix_tokens / prompt_tokens`). That fraction is arithmetic over
+  Zaxy's own token estimator — it is NOT a measured provider cache-hit rate.
+
+All three lanes are deterministic (hash embeddings, embedded projection, fixed
+seed content, no LLM calls). Do not report them as external validation and do
+not combine them with the headline 500 or Harvey LAB numbers.
+
+## Cognitive Lanes (Internal)
+
+Zaxy 2.2 adds two deterministic cognitive-memory lanes in
+`zaxy_benchmarks/forgetting_lane.py` and
+`zaxy_benchmarks/fok_calibration_lane.py`. They produce the mechanism-level
+evidence behind the 2.3-rc.1 default-flip decisions (cognitive retrieval
+profile, salience-on) and are labeled `"validation": "internal"` in every
+report. Run them with:
+
+```bash
+zaxy cognitive-lanes --lanes all
+```
+
+- **Forgetting lane**: seeds real embedded fabrics through the production
+  write path and synthesizes reinforcement histories by appending real
+  `memory.reinforcement` events (built with the `zaxy.salience` builders) at
+  fixed timestamps, with a fixed `now` for every salience replay. It measures
+  four flip-safety properties of salience attenuation under the cognitive
+  retrieval profile versus plain: cold-start parity (zero reinforcement
+  events must leave checkout facts/evidence content and order identical, at
+  the checkout-ranking layer and end to end), no recall loss (every
+  below-floor attenuated memory stays reachable via explicit `memory_query`
+  and `memory_replay` and is labeled `attenuated` in diagnostics), ranking
+  lift (the confirmed-reinforced member of an equally relevant pair ranks
+  first under cognitive, not under plain), and exemption correctness (pinned
+  and authority-accepted below-floor memories still surface). It does NOT use
+  LongMemBench-style probes and makes no claim about retrieval quality on
+  organic usage.
+- **FoK calibration lane**: seeds deterministic word-composition corpora at
+  several sizes (default `50,200`, larger sweeps via `--fok-sizes`), builds
+  the feeling-of-knowing index exactly like the MCP
+  `memory_feeling_of_knowing` handler (projected active entity names only),
+  and scores raw FoK predictions against ground truth produced by the real
+  explicit-query retrieval path — a query is positive only if retrieval
+  returns a context containing one of its topic terms. It reports the FoK
+  Brier score against the base-rate predictor's Brier score (the roadmap exit
+  criterion), verdict-bucket hit/miss rates, and false-positive/negative
+  rates per corpus size. Template query phrasings over synthetic corpora —
+  this is NOT a measurement of organic-usage calibration.
+
+Both lanes are deterministic (hash embeddings, embedded projection, fixed
+word tables and timestamps, no LLM calls): two runs produce identical
+reports. They are mechanism-level engineering evidence, not external
+validation, and must not be merged into the headline 500 or Harvey LAB
+numbers.
+
+## Graph-walk and vector-scale lanes (internal)
+
+Zaxy 2.2/2.3 adds two more deterministic lanes in
+`zaxy_benchmarks/graph_walk_lane.py` and
+`zaxy_benchmarks/vector_scale_lane.py`, labeled `"validation": "internal"` in
+every report. Run them with:
+
+```bash
+zaxy graph-scale-lanes --lanes all
+```
+
+- **Graph-walk (PPR) lane**: seeds one real embedded fabric through the
+  production write path with multi-hop entity-bridge clusters: the correct
+  memory is connected to the query-matched anchor only via 1-2 intermediate
+  hops, while a distractor memory carries an *exactly tied* lexical signal
+  (same matched query terms, same token counts) and no graph path to the
+  anchor. It compares two identical `QueryRouter` arms over the same store,
+  differing only in `graph_walk_enabled` — the seam the cognitive retrieval
+  profile arms. Because the lexical scores tie exactly, the plain arm's
+  target/distractor score margin is zero (the tie resolves by storage order);
+  the walk arm must produce a strictly positive margin, attributable to graph
+  evidence alone. The lane also checks single-hop non-regression (direct hits
+  keep their rank), two-pass ranking identity, and that repeated walks are
+  served from the signature-keyed walk cache. It does NOT measure full
+  cognitive checkouts (salience decay is wall-clock-dependent) and makes no
+  claim about organic multi-hop questions: the bridges, ties, and vocabulary
+  are synthetic and constructed to sit inside the walk blend's operating
+  window.
+- **Vector-scale lane**: builds deterministic hash-embedded synthetic corpora
+  directly against `EmbeddedGraphStore` (default sizes `1000,10000`;
+  `100000` opt-in via `--scale-sizes` because the Kuzu HNSW shadow sync is
+  insert-bound and takes minutes at 10^5) and measures, per size, the exact
+  float64 path, the Kuzu-native HNSW path (with a lowered
+  `vector_ann_threshold`), and the int8-quantized path: recall@10 versus the
+  exact ground truth, p50/p95 query latency, and resident index bytes.
+  Corpus hashes, exact/quantized recall, and bytes are two-run reproducible;
+  ANN recall is reported under `measurements` because Kuzu's HNSW graph
+  construction is not run-to-run reproducible, and all timings are
+  environment-dependent. The roadmap exit criterion (>= 0.95 recall@10 with
+  latency and byte improvements) is defined at 10^5 vectors; smaller runs
+  report `not_evaluated_at_target_scale`. Hash embeddings are not semantic
+  embeddings — this lane measures index mechanics, not retrieval quality.
+
+Both lanes use synthetic corpora and the deterministic hash embedding
+provider. Do not report them as external validation and do not combine them
+with the headline 500 or Harvey LAB numbers.
+
 ## Claim Boundaries
 
 - Use **LongMemEval-compatible checkout** for the headline 500 diagnostic.

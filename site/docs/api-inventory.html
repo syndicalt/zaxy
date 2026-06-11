@@ -69,6 +69,21 @@
             <td>Procedural Skill Memory lifecycle helper.</td>
           </tr>
           <tr>
+            <td><code>memory_consolidation</code>, <code>memory_confidence</code></td>
+            <td><code>Beta</code></td>
+            <td>Umbrella tools dispatching to the existing consolidation and confidence handlers; the single-purpose tool names remain available.</td>
+          </tr>
+          <tr>
+            <td><code>memory_feeling_of_knowing</code></td>
+            <td><code>Experimental</code></td>
+            <td>Metamemory pre-check; verdicts are predictions, never memory answers or evidence.</td>
+          </tr>
+          <tr>
+            <td><code>MCP_TOOL_PROFILE</code> listing profiles (<code>core</code> default since 2.1.0, <code>full</code>)</td>
+            <td><code>Beta</code></td>
+            <td>Profiles change tool listing only; every tool stays callable by name. <code>MCP_TOOL_PROFILE=full</code> restores the pre-2.1.0 listing.</td>
+          </tr>
+          <tr>
             <td><code>coordination_start</code>, <code>coordination_worker_create</code>, <code>coordination_assign</code></td>
             <td><code>Beta</code></td>
             <td>Coordinate mission setup tools.</td>
@@ -105,6 +120,11 @@
             <td><code>MemoryFabric</code>, <code>MemoryCheckout</code>, <code>QueryPage</code></td>
             <td><code>Beta</code></td>
             <td>Primary orchestration and retrieval result surfaces.</td>
+          </tr>
+          <tr>
+            <td><code>RETRIEVAL_PROFILE</code> named profiles (<code>cognitive</code> default since 2.1.0; <code>local_fast</code>, <code>local_sota</code>, <code>hosted_sota</code>, <code>custom</code>)</td>
+            <td><code>Beta</code></td>
+            <td>Named retrieval profile resolution. <code>RETRIEVAL_PROFILE=local_fast</code> restores the pre-2.1.0 plain ranking.</td>
           </tr>
           <tr>
             <td><code>Context</code>, <code>ContextAssemblyPolicy</code></td>
@@ -215,6 +235,21 @@
             <td>Benchmark report inventory and guardrail helpers. Public claims are scoped by <a href="benchmarks.html">benchmarks.md</a>.</td>
           </tr>
           <tr>
+            <td><code>zaxy memory re-embed</code></td>
+            <td><code>Beta</code></td>
+            <td>Batch migration of projected vectors to the active embedding version tag; Eventloom events are never rewritten.</td>
+          </tr>
+          <tr>
+            <td><code>zaxy memory mine-procedures</code></td>
+            <td><code>Experimental</code></td>
+            <td>Mines recurring successful tool sequences into review-pending procedure candidates.</td>
+          </tr>
+          <tr>
+            <td><code>zaxy agent-experience-lanes</code></td>
+            <td><code>Beta</code></td>
+            <td>Internal-validation lanes for tool-adoption, budget, and cache measurements. Claims are scoped by <a href="benchmarks.html">benchmarks.md</a>.</td>
+          </tr>
+          <tr>
             <td>Backend candidate options such as <code>PROJECTION_BACKEND=pggraph</code> or <code>latticedb</code></td>
             <td><code>Experimental</code></td>
             <td>Candidate backends stay behind explicit configuration.</td>
@@ -271,6 +306,11 @@
             <td>Skill Memory</td>
             <td><code>Experimental</code></td>
             <td><code>skill.proposed</code>, <code>skill.validated</code>, <code>skill.revised</code>, <code>skill.deprecated</code>, <code>skill.contradicted</code>, <code>skill.applied</code>, <code>skill.outcome_recorded</code>.</td>
+          </tr>
+          <tr>
+            <td>Salience and metacognition markers</td>
+            <td><code>Experimental</code></td>
+            <td><code>memory.reinforcement</code> (surfaced/confirmed/promoted/invalidated), <code>metacognition.fok.predicted</code>, <code>hook.session_resumed</code>; non-authoritative observability state, additive payload conventions <code>cues</code>, <code>pinned</code>, <code>encoding</code>.</td>
           </tr>
         </tbody>
       </table>

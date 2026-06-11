@@ -8,7 +8,13 @@ from typing import Any
 
 @dataclass(frozen=True)
 class RetrievalProfile:
-    """Resolved retrieval configuration used by core query paths."""
+    """Resolved retrieval configuration used by core query paths.
+
+    The cognitive flags (``salience_ranking``, ``cue_blending``,
+    ``graph_walk``) default to ``False`` on every plain profile so
+    plain-profile behavior is byte-identical to the pre-cognitive contract;
+    only the ``cognitive`` profile (the 2.1.0 default) enables them.
+    """
 
     name: str
     embedding_provider: str
@@ -19,10 +25,23 @@ class RetrievalProfile:
     lanes: tuple[str, ...]
     hosted: bool = False
     experimental: bool = False
+    #: Multiply checkout relevance by replayed salience and apply the
+    #: attenuation floor (cognitive profile only).
+    salience_ranking: bool = False
+    #: Blend encoding-specificity cue overlap into ranking (cognitive only).
+    cue_blending: bool = False
+    #: Run the bounded personalized-PageRank stage over graph candidates
+    #: (cognitive profile only, and only when the store exposes adjacency).
+    graph_walk: bool = False
 
     def to_diagnostics(self) -> dict[str, Any]:
-        """Return a stable diagnostics representation."""
-        return {
+        """Return a stable diagnostics representation.
+
+        The ``cognitive`` block is emitted only when at least one cognitive
+        flag is enabled, keeping diagnostics for pre-existing profiles
+        byte-identical to the pre-cognitive contract.
+        """
+        diagnostics: dict[str, Any] = {
             "name": self.name,
             "embedding_provider": self.embedding_provider,
             "embedding_model": self.embedding_model,
@@ -33,12 +52,31 @@ class RetrievalProfile:
             "hosted": self.hosted,
             "experimental": self.experimental,
         }
+        if self.salience_ranking or self.cue_blending or self.graph_walk:
+            diagnostics["cognitive"] = {
+                "salience_ranking": self.salience_ranking,
+                "cue_blending": self.cue_blending,
+                "graph_walk": self.graph_walk,
+            }
+        return diagnostics
 
 
 def resolve_retrieval_profile(settings: Any) -> RetrievalProfile:
     """Resolve configured retrieval knobs into a named profile."""
     name = str(getattr(settings, "retrieval_profile", "local_fast")).casefold().replace("-", "_")
     if name == "local_fast" and _has_explicit_non_profile_settings(settings):
+        return _custom_profile(settings, name="custom")
+    if (
+        name == "cognitive"
+        and _retrieval_profile_defaulted(settings)
+        and _has_explicit_non_profile_settings(settings)
+    ):
+        # The 2.1.0 default flip to "cognitive" must not override explicitly
+        # configured embedding/reranker/scoring knobs. When the profile field
+        # itself was left unset, customized knobs keep resolving to the
+        # "custom" profile exactly as they did when the default was
+        # local_fast. An explicit RETRIEVAL_PROFILE=cognitive still wins over
+        # the knobs, matching every other named profile.
         return _custom_profile(settings, name="custom")
     if name == "local_fast":
         return RetrievalProfile(
@@ -73,10 +111,26 @@ def resolve_retrieval_profile(settings: Any) -> RetrievalProfile:
             hosted=True,
             experimental=True,
         )
+    if name == "cognitive":
+        # Promoted to the settings default in 2.1.0 (and out of experimental
+        # status) backed by the internal forgetting lane: exact cold-start
+        # parity with local_fast, no-recall-loss 1.0, exemptions 1.0.
+        return RetrievalProfile(
+            name="cognitive",
+            embedding_provider="hash",
+            embedding_model=None,
+            embedding_dimension=1536,
+            reranker_provider="lexical",
+            scoring_profile="balanced",
+            lanes=("bm25", "hash_vector", "verbatim", "graph", "graph_walk", "lexical_rerank"),
+            salience_ranking=True,
+            cue_blending=True,
+            graph_walk=True,
+        )
     if name == "custom":
         return _custom_profile(settings, name="custom")
     raise ValueError(
-        "RETRIEVAL_PROFILE must be one of: local_fast, local_sota, hosted_sota, custom"
+        "RETRIEVAL_PROFILE must be one of: cognitive, local_fast, local_sota, hosted_sota, custom"
     )
 
 
@@ -111,6 +165,20 @@ def _custom_profile(settings: Any, *, name: str) -> RetrievalProfile:
         hosted=_custom_hosted(settings),
         experimental=True,
     )
+
+
+def _retrieval_profile_defaulted(settings: Any) -> bool:
+    """Return True when the settings object left ``retrieval_profile`` unset.
+
+    Pydantic models expose explicitly provided fields (including values from
+    environment sources) through ``model_fields_set``. Duck-typed settings
+    objects without that attribute are treated as explicit so a stated
+    profile name is always honored.
+    """
+    fields_set = getattr(settings, "model_fields_set", None)
+    if fields_set is None:
+        return False
+    return "retrieval_profile" not in fields_set
 
 
 def _has_explicit_non_profile_settings(settings: Any) -> bool:

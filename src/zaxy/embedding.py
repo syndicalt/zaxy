@@ -29,6 +29,10 @@ class EmbeddingProvider(Protocol):
     def embed(self, text: str) -> list[float]:
         """Return an embedding vector for text."""
 
+    @property
+    def version_tag(self) -> str:
+        """Return the stable version tag stamped onto stored vectors."""
+
 
 class SentenceTransformerModel(Protocol):
     """Minimal protocol for sentence-transformers compatible models."""
@@ -44,6 +48,79 @@ class SentenceTransformerFactory(Protocol):
         """Build a local sentence-transformers model."""
 
 
+# Canonical description of the hash provider's embedding algorithm. Any change
+# to the algorithm in HashEmbeddingProvider.embed or _tokens MUST be reflected
+# here so the content-derived version tag changes with it.
+_HASH_ALGORITHM_SPEC = "tokenizer=casefold-whitespace;hash=sha256;index-bytes=0:4;sign-byte=4;norm=l2"
+_HASH_ALGORITHM_FINGERPRINT = hashlib.sha256(_HASH_ALGORITHM_SPEC.encode("utf-8")).hexdigest()[:8]
+
+# Contract version of the hosted/local provider adapters in this module.
+_PROVIDER_ADAPTER_VERSION = "1.0.0"
+
+
+def hash_embedding_version_tag(dimension: int) -> str:
+    """Return the content-derived version tag for the deterministic hash provider."""
+    return f"hash@{_HASH_ALGORITHM_FINGERPRINT}-dim{dimension}"
+
+
+def provider_version_tag(provider: object) -> str | None:
+    """Return a provider's version tag, or None for tag-less duck-typed providers."""
+    tag = getattr(provider, "version_tag", None)
+    return tag if isinstance(tag, str) and tag else None
+
+
+def active_embedding_version_tag(settings: Any) -> str | None:
+    """Derive the configured provider's version tag without building the provider.
+
+    This mirrors ``build_embedding_provider`` branch-for-branch but never
+    constructs network clients or validates credentials, so callers (the
+    embedded vector index, doctor) can resolve the active tag cheaply. Returns
+    None when embeddings are disabled or the provider name is unknown.
+    """
+    if not settings.embedding_enabled:
+        return None
+    provider = str(settings.embedding_provider).casefold()
+    dimension = int(settings.embedding_dimension)
+    if provider == "hash":
+        return hash_embedding_version_tag(dimension)
+    if provider == "openai":
+        return _model_version_tag("openai", settings.openai_embedding_model, dimension)
+    if provider in {"local-http", "local_http", "http"}:
+        return _model_version_tag("local-http", settings.embedding_http_model, dimension)
+    if provider in {
+        "sentence-transformers",
+        "sentence_transformers",
+        "sentence-transformer",
+        "sentence_transformer",
+        "local-model",
+        "local_model",
+    }:
+        return _model_version_tag(
+            "sentence-transformers",
+            settings.embedding_sentence_transformer_model,
+            dimension,
+        )
+    return None
+
+
+def resolved_active_embedding_version_tag() -> str | None:
+    """Resolve the active version tag the way production write paths do.
+
+    ``MemoryFabric`` builds its provider from retrieval-profile-applied
+    settings, so the read-side tag resolution must apply the same profile.
+    """
+    from zaxy.config import get_settings
+    from zaxy.retrieval_profile import apply_retrieval_profile, resolve_retrieval_profile
+
+    settings = get_settings()
+    resolved = apply_retrieval_profile(settings, resolve_retrieval_profile(settings))
+    return active_embedding_version_tag(resolved)
+
+
+def _model_version_tag(provider_name: str, model: str | None, dimension: int) -> str:
+    return f"{provider_name}:{model or 'unspecified'}@{_PROVIDER_ADAPTER_VERSION}-dim{dimension}"
+
+
 class HashEmbeddingProvider:
     """Deterministic feature-hashing embedding provider.
 
@@ -56,6 +133,11 @@ class HashEmbeddingProvider:
         if dimension <= 0:
             raise ValueError("embedding dimension must be positive")
         self.dimension = dimension
+
+    @property
+    def version_tag(self) -> str:
+        """Return the content-derived embedding algorithm version tag."""
+        return hash_embedding_version_tag(self.dimension)
 
     def embed(self, text: str) -> list[float]:
         """Embed text into a sparse, unit-normalized vector."""
@@ -111,6 +193,11 @@ class OpenAIEmbeddingProvider:
         self._max_retries = max_retries
         self._retry_backoff_seconds: float = retry_backoff_seconds
         self._rate_limit_backoff_seconds: float = rate_limit_backoff_seconds
+
+    @property
+    def version_tag(self) -> str:
+        """Return the model-derived embedding version tag."""
+        return _model_version_tag("openai", self.model, self.dimension)
 
     def embed(self, text: str) -> list[float]:
         """Embed text with OpenAI's embeddings API."""
@@ -225,6 +312,11 @@ class LocalHTTPEmbeddingProvider:
         self._api_key = api_key
         self._client = client or httpx.Client(timeout=30.0)
 
+    @property
+    def version_tag(self) -> str:
+        """Return the model-derived embedding version tag."""
+        return _model_version_tag("local-http", self.model, self.dimension)
+
     def embed(self, text: str) -> list[float]:
         """Embed text with a local HTTP endpoint."""
         request: dict[str, Any] = {"input": text}
@@ -280,6 +372,11 @@ class SentenceTransformersEmbeddingProvider:
         self.dimension = dimension
         self.model_name = model_name
         self._model = model or _load_sentence_transformer(model_name)
+
+    @property
+    def version_tag(self) -> str:
+        """Return the model-derived embedding version tag."""
+        return _model_version_tag("sentence-transformers", self.model_name, self.dimension)
 
     def embed(self, text: str) -> list[float]:
         """Embed text with a local sentence-transformers model."""
@@ -385,12 +482,32 @@ def build_embedding_provider(settings: Any) -> EmbeddingProvider | None:
     )
 
 
+def embedding_text(name: str, entity_type: str, summary: str | None) -> str:
+    """Return stable text used to embed an entity identity."""
+    base = f"{name} ({entity_type})"
+    if summary:
+        return f"{base} {summary}"
+    return base
+
+
 def entity_embedding_text(entity: ExtractedEntity) -> str:
     """Return stable text used to embed an extracted entity."""
-    base = f"{entity.name} ({entity.entity_type})"
-    if entity.summary:
-        return f"{base} {entity.summary}"
-    return base
+    return embedding_text(entity.name, entity.entity_type, entity.summary)
+
+
+def _embedded_entity(
+    entity: ExtractedEntity,
+    vector: list[float],
+    version_tag: str | None,
+) -> ExtractedEntity:
+    """Return an entity with its embedding filled and version-tagged."""
+    if version_tag is None:
+        return replace(entity, embedding=vector)
+    return replace(
+        entity,
+        embedding=vector,
+        properties={**(entity.properties or {}), "embedding_version": version_tag},
+    )
 
 
 def embed_extraction(
@@ -398,10 +515,11 @@ def embed_extraction(
     provider: EmbeddingProvider,
 ) -> ExtractionResult:
     """Return an extraction result with embeddings filled for entities."""
+    version_tag = provider_version_tag(provider)
     entities = [
         entity
         if entity.embedding is not None
-        else replace(entity, embedding=provider.embed(entity_embedding_text(entity)))
+        else _embedded_entity(entity, provider.embed(entity_embedding_text(entity)), version_tag)
         for entity in result.entities
     ]
     return ExtractionResult(
@@ -420,15 +538,17 @@ async def embed_extraction_async(
     provider: Any,
 ) -> ExtractionResult:
     """Return an extraction result with embeddings filled without blocking the event loop."""
+    version_tag = provider_version_tag(provider)
     entities = []
     for entity in result.entities:
         if entity.embedding is not None:
             entities.append(entity)
             continue
         entities.append(
-            replace(
+            _embedded_entity(
                 entity,
-                embedding=await provider.embed_async(entity_embedding_text(entity)),
+                await provider.embed_async(entity_embedding_text(entity)),
+                version_tag,
             )
         )
     return ExtractionResult(

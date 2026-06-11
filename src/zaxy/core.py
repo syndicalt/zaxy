@@ -17,10 +17,12 @@ Example::
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from contextlib import suppress
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -94,6 +96,29 @@ from zaxy.retrieval_profile import (
     apply_retrieval_profile,
     resolve_retrieval_profile,
 )
+from zaxy.salience import (
+    CUE_MATCH_WEIGHT,
+    REINFORCEMENT_EVENT_TYPE,
+    SALIENCE_BASE,
+    SALIENCE_HALF_LIFE_DAYS,
+    SALIENCE_MAX,
+    SALIENCE_MIN,
+    EncodingDecision,
+    EventRef,
+    SalienceLedger,
+    SalienceState,
+    build_confirmed_reinforcement_event,
+    build_invalidated_reinforcement_event,
+    build_reinforcement_event,
+    build_surfaced_reinforcement_event,
+    classify_append,
+    cue_overlap,
+    cue_pairs,
+    event_ref_index,
+    reinforcement_targets_from_citations,
+    resolve_citation_target,
+    target_ref,
+)
 from zaxy.security import (
     MAX_QUERY_LIMIT,
     validate_limit,
@@ -143,6 +168,10 @@ class ContextAssembly:
     context_counts: dict[str, int] = field(default_factory=dict)
     working_set: dict[str, object] = field(default_factory=dict)
     recall: RecallCandidateSet = field(default_factory=empty_recall_candidate_set)
+    #: Full as-of-filtered replay the assembly was computed against. Carried so
+    #: checkout can resolve citations to sealed event refs and replay salience
+    #: without re-reading the log; never serialized into payloads.
+    replay_events: list[Any] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -349,7 +378,11 @@ class MemoryFabric:
             scoring_profile=resolved_settings.query_scoring_profile,
             reranker=build_reranker(resolved_settings),
             retention_policy=build_retention_policy(resolved_settings),
+            graph_walk_enabled=retrieval_profile.graph_walk,
         )
+        self._salience_half_life_days = float(resolved_settings.salience_half_life_days)
+        self._salience_floor = float(resolved_settings.salience_floor)
+        self._encoding_gate_enabled = bool(resolved_settings.encoding_gate_enabled)
         self.embedding_provider = build_embedding_provider(resolved_settings)
         self.tracer = MemoryTracer(
             base_url=pathlight_url or resolved_settings.pathlight_url,
@@ -372,6 +405,8 @@ class MemoryFabric:
             packet_memory_slots=resolved_settings.context_packet_memory_slots,
         )
         self._verbatim_index_cache: dict[str, tuple[tuple[int, int], VerbatimIndex]] = {}
+        self._event_ref_index_cache: dict[str, tuple[tuple[int, int], dict[int, tuple[str, str]]]] = {}
+        self._session_cue_index_cache: dict[str, tuple[tuple[int, int], dict[int, frozenset[str]]]] = {}
         self._query_page_cache: dict[
             tuple[str, str, str | None, tuple[float, ...] | None],
             tuple[float, int, tuple[int, int] | None, list[Context]],
@@ -397,6 +432,8 @@ class MemoryFabric:
         await self.graph.close()
         await self.tracer.close()
         self._verbatim_index_cache = {}
+        self._event_ref_index_cache = {}
+        self._session_cue_index_cache = {}
         self._query_page_cache = {}
         self._warmed_projection_sessions = set()
         self._connected = False
@@ -1148,6 +1185,14 @@ class MemoryFabric:
         safe_payload = validate_payload(payload or {})
         eventlog = self.session_manager.get(sid).eventlog
 
+        encoding = None
+        if self._encoding_classification_active() and _encoding_gate_eligible(event_type, safe_payload):
+            encoding = await self._classify_append_encoding(safe_payload, session_id=sid)
+            if encoding is not None and self._encoding_gate_enabled:
+                # Tag only: the event is always appended and hash-chained;
+                # the tag rides inside the sealed payload so it is replayable.
+                safe_payload = {**safe_payload, "encoding": encoding.tag_payload()}
+
         event = eventlog.append(
             event_type,
             actor=actor,
@@ -1155,9 +1200,23 @@ class MemoryFabric:
             thread=sid,
         )
 
+        interference = None
+        if encoding is not None and encoding.classification == "novel":
+            # Detected against the pre-append projection state, before this
+            # event's own extraction is upserted.
+            interference = await self._detect_interference(event, session_id=sid)
+
         await self._project_event(event, session_id=sid)
         await self._append_generated_inferences(eventlog, source_event=event, session_id=sid)
         self._invalidate_query_page_cache(sid)
+        if (
+            encoding is not None
+            and encoding.classification == "redundant"
+            and self._encoding_gate_enabled
+        ):
+            await self._record_redundant_reinforcement(event, encoding, session_id=sid)
+        if interference is not None:
+            await self._propose_interference_update(interference, session_id=sid)
         return event
 
     async def _project_event(self, event: Any, *, session_id: str) -> None:
@@ -1199,6 +1258,241 @@ class MemoryFabric:
                 thread=session_id,
             )
             await self._project_event(event, session_id=session_id)
+
+    def _encoding_classification_active(self) -> bool:
+        """Return whether append-time encoding classification should run.
+
+        The write-time gate tags payloads only when ``ENCODING_GATE_ENABLED``;
+        interference detection additionally runs under the cognitive
+        retrieval profile (classification is its novelty signal). With both
+        off, appends are byte-identical to the pre-gate contract.
+        """
+        return self._encoding_gate_enabled or self.retrieval_profile.salience_ranking
+
+    async def _classify_append_encoding(
+        self,
+        payload: dict[str, Any],
+        *,
+        session_id: str,
+    ) -> EncodingDecision | None:
+        """Classify one append against pre-append memory state, best-effort.
+
+        Signals (no embedding calls): token Jaccard between the payload's
+        canonical text and the closest existing verbatim-index chunk, plus
+        the fraction of payload-declared entity names already projected.
+        Returns ``None`` when signals cannot be computed; a failure here
+        never fails the append itself.
+        """
+        try:
+            content = _encoding_classification_content(payload)
+            if not content:
+                return None
+            content_tokens = _encoding_tokens(content)
+            if not content_tokens:
+                return None
+            best_overlap = 0.0
+            duplicate_of: str | None = None
+            index = self._verbatim_index(session_id)
+            payloads_by_seq: dict[int, dict[str, Any]] | None = None
+            for hit in index.query(content[:2000], limit=5):
+                # Compare against the source payload's canonical content when
+                # resolvable so earlier gate/cue metadata never dilutes the
+                # duplicate signal; fall back to the raw chunk text.
+                hit_tokens: set[str] | None = None
+                hit_seq, _hit_hash = _citation_event_identity(hit.citation)
+                if hit_seq is not None:
+                    if payloads_by_seq is None:
+                        payloads_by_seq = _payloads_by_seq(
+                            self.session_manager.get(session_id).eventlog.read_all()
+                        )
+                    hit_payload = payloads_by_seq.get(hit_seq)
+                    if isinstance(hit_payload, dict):
+                        hit_tokens = _encoding_tokens(
+                            _encoding_classification_content(hit_payload)
+                        )
+                if hit_tokens is None:
+                    hit_tokens = _encoding_tokens(hit.content)
+                overlap = _token_jaccard(content_tokens, hit_tokens)
+                if overlap > best_overlap:
+                    best_overlap = overlap
+                    duplicate_of = hit.citation
+            entity_overlap = await self._encoding_entity_overlap(payload, session_id=session_id)
+            classification = classify_append(
+                content_overlap=best_overlap,
+                entity_overlap=entity_overlap,
+            )
+            return EncodingDecision(
+                classification=classification,
+                content_overlap=best_overlap,
+                entity_overlap=entity_overlap,
+                duplicate_of=duplicate_of if classification == "redundant" else None,
+            )
+        except Exception:
+            get_metrics().record_degraded_operation("append", "encoding_classification_unavailable")
+            return None
+
+    async def _encoding_entity_overlap(
+        self,
+        payload: dict[str, Any],
+        *,
+        session_id: str,
+    ) -> float:
+        """Return the fraction of payload-declared entity names already projected."""
+        names = _payload_entity_names(payload)
+        if not names:
+            return 0.0
+        matched = 0
+        for name in names:
+            try:
+                hits = await self.graph.search_exact(name, session_id=session_id)
+            except Exception:
+                continue
+            if isinstance(hits, list) and hits:
+                matched += 1
+        return matched / len(names)
+
+    async def _detect_interference(self, event: Any, *, session_id: str) -> dict[str, Any] | None:
+        """Detect a contradiction between a novel append and projected memory.
+
+        Contradiction is defined honestly from available write-time signals:
+        the new event's extraction names an already-active entity (same name
+        and entity type) whose projected state carries a different value for
+        the same scalar property key (summaries and bookkeeping/provenance
+        keys are excluded — free text changing is not a value conflict).
+        Runs against the pre-append projection and only flags memories whose
+        replayed salience is at or above the attenuation floor. Best-effort:
+        a failure never fails the append.
+        """
+        try:
+            extraction = extract(event)
+            for entity in extraction.entities:
+                properties = entity.properties
+                if not properties or entity.entity_type == "event":
+                    continue
+                try:
+                    existing = await self.graph.search_exact(
+                        entity.name,
+                        entity.entity_type,
+                        session_id=session_id,
+                    )
+                except Exception:
+                    continue
+                if not isinstance(existing, list):
+                    continue
+                for old in existing:
+                    if getattr(old, "valid_to", None) is not None:
+                        continue
+                    old_properties = getattr(old, "properties", None)
+                    if not isinstance(old_properties, dict):
+                        continue
+                    conflict = _conflicting_property_value(old_properties, properties)
+                    if conflict is None:
+                        continue
+                    contradicted = target_ref(
+                        old_properties.get("source_event_seq"),
+                        old_properties.get("source_event_hash"),
+                    )
+                    if contradicted is None or contradicted["seq"] == event.seq:
+                        continue
+                    if not self._memory_above_floor(contradicted, session_id=session_id):
+                        continue
+                    key, old_value, new_value = conflict
+                    claim = (
+                        f"{entity.name} {key} is now {new_value} (previously {old_value})"
+                    )[:400]
+                    return {
+                        "claim": claim,
+                        "rationale": (
+                            "Write-time interference: a novel append contradicts an "
+                            f"above-floor memory on {entity.entity_type} "
+                            f"'{entity.name}' property '{key}'."
+                        ),
+                        "source_events": [
+                            contradicted,
+                            {"seq": event.seq, "hash": event.hash},
+                        ],
+                    }
+        except Exception:
+            get_metrics().record_degraded_operation("append", "interference_detection_unavailable")
+        return None
+
+    def _memory_above_floor(self, target: dict[str, Any], *, session_id: str) -> bool:
+        """Return whether a memory's replayed salience clears the attenuation floor.
+
+        Memories with no reinforcement history carry the implicit base
+        salience (1.0) and are always above the default floor.
+        """
+        events = self.session_manager.get(session_id).eventlog.read_all()
+        ledger = SalienceLedger(half_life_days=self._salience_half_life_days)
+        states = ledger.replay(events, now=datetime.now(UTC))
+        state = states.get(EventRef(seq=int(target["seq"]), hash=str(target["hash"])))
+        score = state.score if state is not None else SALIENCE_BASE
+        return score >= self._salience_floor
+
+    async def _propose_interference_update(
+        self,
+        finding: dict[str, Any],
+        *,
+        session_id: str,
+    ) -> None:
+        """Emit one review-gated belief-update proposal for a detected conflict.
+
+        Routes through the existing :meth:`propose_belief_update` path so the
+        proposal is review-pending, non-authoritative, and cites both the
+        contradicted and the contradicting event. Best-effort: a proposal
+        failure never fails the append that triggered it.
+        """
+        try:
+            await self.propose_belief_update(
+                finding["claim"],
+                rationale=finding["rationale"],
+                confidence=0.5,
+                source_events=finding["source_events"],
+                phase="reflection",
+                session_id=session_id,
+                actor="zaxy-memory",
+            )
+        except Exception:
+            get_metrics().record_degraded_operation("append", "interference_proposal_unavailable")
+
+    async def _record_redundant_reinforcement(
+        self,
+        event: Any,
+        encoding: EncodingDecision,
+        *,
+        session_id: str,
+    ) -> None:
+        """Project a redundant append as weak reinforcement of the duplicate.
+
+        The honest minimal mechanism: the duplicate event is still appended,
+        hash-chained, and projected (its extraction upserts into the same
+        projected entities, so it never creates a new ranked entry), and the
+        gate additionally appends one 'surfaced'-strength reinforcement
+        toward the duplicated memory so repetition raises that memory's
+        salience instead of minting new ranked content. Best-effort: a
+        failure never fails the append.
+        """
+        try:
+            if encoding.duplicate_of is None:
+                return
+            index = self._session_event_ref_index(session_id)
+            targets = reinforcement_targets_from_citations(
+                [encoding.duplicate_of],
+                event_index=index,
+            )
+            if not targets:
+                return
+            citation = _event_citation(event) or f"{session_id}:append"
+            spec = build_reinforcement_event(
+                actor="zaxy-memory",
+                session_id=session_id,
+                kind="surfaced",
+                targets=targets,
+                source={"encoding_gate": citation},
+            )
+            await self._append_event_spec(spec, session_id=session_id)
+        except Exception:
+            get_metrics().record_degraded_operation("append", "salience_reinforcement_unavailable")
 
     async def ingest_documents(
         self,
@@ -1385,8 +1679,16 @@ class MemoryFabric:
         session_id: str = "default",
         include_source_lane: bool = True,
         scoring_profile: str | ScoringProfile | None = None,
+        cues: dict[str, str] | None = None,
     ) -> list[Context]:
-        """Return answer-ready context assembled from retrieval and source evidence."""
+        """Return answer-ready context assembled from retrieval and source evidence.
+
+        ``cues`` (optional, additive) carries the caller's encoding-specificity
+        context (``mission``/``workspace``/``tool``/``phase``). It only affects
+        ranking under the cognitive retrieval profile; explicit queries never
+        route through the salience attenuation floor, so attenuated memories
+        stay fully reachable here.
+        """
         import time
 
         validate_query(query)
@@ -1416,6 +1718,7 @@ class MemoryFabric:
         else:
             contexts = contexts[:limit]
         contexts = self._merge_projection_contexts(contexts, query, limit)
+        contexts = self._blend_query_cues(contexts, cues=cues, session_id=sid)
         duration_ms = (time.perf_counter() - start) * 1000
 
         await self._trace_query_best_effort(query, len(contexts), duration_ms, temporal_point)
@@ -1863,6 +2166,92 @@ class MemoryFabric:
         self._verbatim_index_cache[session_id] = (signature, index)
         return index
 
+    def _session_event_ref_index(self, session_id: str) -> dict[int, tuple[str, str]]:
+        """Return a cached seq -> (hash, type) index for the current log state.
+
+        Follows the verbatim-index pattern: rebuilt whenever the Eventloom
+        file signature changes, so reinforcement emitters that run outside a
+        checkout (feedback) can canonicalize 12-char citation fragments into
+        full-hash target refs without re-reading the log per call.
+        """
+        eventlog = self.session_manager.get(session_id).eventlog
+        signature = _eventlog_file_signature(eventlog)
+        cached = self._event_ref_index_cache.get(session_id)
+        if cached is not None and cached[0] == signature:
+            return cached[1]
+        index = event_ref_index(eventlog.read_all())
+        self._event_ref_index_cache[session_id] = (signature, index)
+        return index
+
+    def _session_cue_index(self, session_id: str) -> dict[int, frozenset[str]]:
+        """Return a cached seq -> normalized-cue-pairs index for the session log.
+
+        Follows the verbatim-index signature pattern; only events whose
+        payload carries a well-formed ``cues`` record appear.
+        """
+        eventlog = self.session_manager.get(session_id).eventlog
+        signature = _eventlog_file_signature(eventlog)
+        cached = self._session_cue_index_cache.get(session_id)
+        if cached is not None and cached[0] == signature:
+            return cached[1]
+        index: dict[int, frozenset[str]] = {}
+        for event in eventlog.read_all():
+            payload = getattr(event, "payload", None)
+            seq = getattr(event, "seq", None)
+            if not isinstance(payload, dict) or not isinstance(seq, int):
+                continue
+            pairs = cue_pairs(payload.get("cues"))
+            if pairs:
+                index[seq] = pairs
+        self._session_cue_index_cache[session_id] = (signature, index)
+        return index
+
+    def _blend_query_cues(
+        self,
+        contexts: list[Context],
+        *,
+        cues: dict[str, str] | None,
+        session_id: str,
+    ) -> list[Context]:
+        """Blend a bounded cue-overlap bonus into explicit query results.
+
+        Active only under the cognitive retrieval profile and only when the
+        caller provided cues; otherwise the input list is returned untouched
+        (byte parity with the pre-cue contract). The bonus is
+        ``CUE_MATCH_WEIGHT * jaccard`` added to the context score, and the
+        list is re-sorted only when at least one bonus applied.
+        """
+        if not cues or not self.retrieval_profile.cue_blending or not contexts:
+            return contexts
+        query_cues = cue_pairs(cues)
+        if not query_cues:
+            return contexts
+        cue_index = self._session_cue_index(session_id)
+        if not cue_index:
+            return contexts
+        blended: list[Context] = []
+        applied = False
+        for context in contexts:
+            seq, _event_hash = _citation_event_identity(_context_citation(context))
+            stored = cue_index.get(seq) if seq is not None else None
+            overlap = cue_overlap(query_cues, stored) if stored else 0.0
+            if overlap <= 0.0:
+                blended.append(context)
+                continue
+            applied = True
+            metadata = dict(context.metadata or {})
+            metadata["cue_overlap"] = round(overlap, 4)
+            blended.append(
+                replace(
+                    context,
+                    score=round(context.score + CUE_MATCH_WEIGHT * overlap, 4),
+                    metadata=metadata,
+                )
+            )
+        if not applied:
+            return contexts
+        return sorted(blended, key=lambda item: item.score, reverse=True)
+
     def _query_eventlog_fallback(
         self,
         query: str,
@@ -1876,6 +2265,9 @@ class MemoryFabric:
         query_tokens = _tokens(query)
         contexts: list[Context] = []
         for event in replay.events:
+            if getattr(event, "type", None) == REINFORCEMENT_EVENT_TYPE:
+                # Salience bookkeeping is never retrievable context.
+                continue
             content = _event_content(event)
             if not content:
                 continue
@@ -2154,8 +2546,13 @@ class MemoryFabric:
         max_recent_events: int | None = None,
         as_of_seq: int | None = None,
         purpose: PurposeProfile | dict[str, Any] | str | None = None,
+        cues: dict[str, str] | None = None,
     ) -> ContextAssembly:
-        """Assemble recent replay plus retrieval into prompt-ready context."""
+        """Assemble recent replay plus retrieval into prompt-ready context.
+
+        ``cues`` is additive and only affects retrieval under the cognitive
+        retrieval profile (see :meth:`query`).
+        """
         sid = validate_session_id(session_id)
         prompt_limit = validate_limit(limit)
         base_candidate_limit = prompt_limit if recall_limit is None else validate_limit(max(prompt_limit, recall_limit))
@@ -2177,6 +2574,7 @@ class MemoryFabric:
             session_id=sid,
             include_source_lane=False,
             scoring_profile=retrieval_policy.scoring_profile,
+            cues=cues,
         )
         verbatim_candidate_limit = self.context_assembly_policy.verbatim_candidate_limit(
             query=retrieval_query,
@@ -2190,6 +2588,7 @@ class MemoryFabric:
         replay_events = list(replay.events)
         if as_of_seq is not None:
             replay_events = [event for event in replay_events if event.seq <= as_of_seq]
+        session_events = list(replay_events)
         purpose_outcomes = _purpose_outcome_aggregates(replay_events, profile)
         graph_contexts = _apply_purpose_outcome_learning(graph_contexts, purpose_outcomes)
         verbatim_contexts = _apply_purpose_outcome_learning(verbatim_contexts, purpose_outcomes)
@@ -2251,6 +2650,7 @@ class MemoryFabric:
             context_counts=context_counts(contexts, replay_count=len(replay_events)),
             working_set=working_set_payload,
             recall=recall,
+            replay_events=session_events,
         )
 
     async def checkout_memory(
@@ -2263,8 +2663,19 @@ class MemoryFabric:
         max_recent_events: int | None = 20,
         ref: str | None = None,
         purpose: PurposeProfile | dict[str, Any] | str | None = None,
+        record_reinforcement: bool = True,
+        cues: dict[str, str] | None = None,
     ) -> MemoryCheckout:
-        """Checkout the current cited memory state an agent should condition on."""
+        """Checkout the current cited memory state an agent should condition on.
+
+        ``record_reinforcement=False`` skips the best-effort 'surfaced'
+        salience reinforcement append for read-only inspection surfaces
+        (e.g. the dashboard) that must not write to the log.
+
+        ``cues`` (optional, additive) carries the caller's
+        encoding-specificity context; it only affects ranking under the
+        cognitive retrieval profile.
+        """
         resolved_ref = self._resolve_checkout_ref(ref, session_id=session_id)
         checkout_session_id = resolved_ref.session_id if resolved_ref is not None else session_id
         as_of_seq = resolved_ref.target_seq if resolved_ref is not None else None
@@ -2277,13 +2688,65 @@ class MemoryFabric:
             max_recent_events=max_recent_events,
             as_of_seq=as_of_seq,
             purpose=purpose,
+            cues=cues,
         )
-        return build_memory_checkout(
+        checkout = build_memory_checkout(
             query=query,
             assembly=assembly,
             ref=resolved_ref,
             purpose=purpose,
+            now=datetime.now(UTC),
+            retrieval_profile=self.retrieval_profile,
+            cues=cues,
+            salience_floor=self._salience_floor,
+            salience_half_life_days=self._salience_half_life_days,
         )
+        if record_reinforcement:
+            await self._record_surfaced_reinforcement(
+                checkout,
+                assembly,
+                session_id=checkout_session_id,
+                ref=resolved_ref,
+            )
+        return checkout
+
+    async def _record_surfaced_reinforcement(
+        self,
+        checkout: MemoryCheckout,
+        assembly: ContextAssembly,
+        *,
+        session_id: str,
+        ref: MemoryRef | None,
+    ) -> None:
+        """Append one batched 'surfaced' salience reinforcement for a checkout.
+
+        Best-effort observability state: targets are the sealed event refs of
+        the facts/evidence actually carried by the packet, resolved against
+        the replay the checkout was computed from (no extra log scan). A
+        failure here never fails the checkout itself.
+        """
+        try:
+            events = assembly.replay_events
+            if not events:
+                return
+            index = event_ref_index(events)
+            citations = [
+                item.get("citation")
+                for item in [*checkout.current_facts, *checkout.evidence]
+            ]
+            targets = reinforcement_targets_from_citations(citations, event_index=index)
+            if not targets:
+                return
+            checkout_id = _checkout_source_id(ref, events, session_id=session_id)
+            spec = build_surfaced_reinforcement_event(
+                actor="zaxy-memory",
+                session_id=session_id,
+                checkout_id=checkout_id,
+                targets=targets,
+            )
+            await self._append_event_spec(spec, session_id=session_id)
+        except Exception:
+            get_metrics().record_degraded_operation("append", "salience_reinforcement_unavailable")
 
     def _resolve_checkout_ref(self, ref: str | None, *, session_id: str) -> MemoryRef | None:
         if ref is None:
@@ -2343,11 +2806,17 @@ class MemoryFabric:
                 payload.pop("feedback")
                 if importance is not None:
                     payload["importance"] = max(0.0, min(1.0, float(importance)))
-                await self.append(
+                feedback_event = await self.append(
                     "memory.reinforced",
                     actor=actor,
                     payload=payload,
                     session_id=sid,
+                )
+                await self._record_confirmed_reinforcement(
+                    context,
+                    feedback_event=feedback_event,
+                    session_id=sid,
+                    actor=actor,
                 )
             else:
                 await self.append(
@@ -2358,6 +2827,39 @@ class MemoryFabric:
                 )
             count += 1
         return count
+
+    async def _record_confirmed_reinforcement(
+        self,
+        context: Context,
+        *,
+        feedback_event: Any,
+        session_id: str,
+        actor: str,
+    ) -> None:
+        """Append a 'confirmed' salience reinforcement for positive feedback.
+
+        Best-effort observability state: emitted only when the reinforced
+        context carries a citation that resolves to a sealed event in this
+        session's log. A failure here never fails the feedback itself.
+        """
+        try:
+            citation = (context.metadata or {}).get("citation")
+            if not isinstance(citation, str) or not citation:
+                return
+            index = self._session_event_ref_index(session_id)
+            targets = reinforcement_targets_from_citations([citation], event_index=index)
+            if not targets:
+                return
+            feedback_id = _event_citation(feedback_event) or f"{session_id}:feedback"
+            spec = build_confirmed_reinforcement_event(
+                actor=actor,
+                session_id=session_id,
+                feedback_id=feedback_id,
+                targets=targets,
+            )
+            await self._append_event_spec(spec, session_id=session_id)
+        except Exception:
+            get_metrics().record_degraded_operation("append", "salience_reinforcement_unavailable")
 
     async def record_synthesis_candidate(
         self,
@@ -2809,12 +3311,36 @@ class MemoryFabric:
         """
         if not self._connected:
             await self.connect()
+        sid = validate_session_id(session_id)
+        reinforcement: dict[str, Any] | None = None
+        try:
+            # Resolve source-event provenance before the validity window closes.
+            entities = await self.graph.search_exact(entity_name, entity_type, session_id=sid)
+            targets = entity_reinforcement_targets(entities)
+            if targets:
+                reinforcement = build_invalidated_reinforcement_event(
+                    actor="zaxy-memory",
+                    session_id=sid,
+                    invalidation_id=_invalidation_source_id(
+                        entity_name=entity_name,
+                        entity_type=entity_type,
+                        invalid_at=invalid_at,
+                    ),
+                    targets=targets,
+                )
+        except Exception:
+            get_metrics().record_degraded_operation("append", "salience_reinforcement_unavailable")
         await self.graph.invalidate_entity(
             entity_name,
             entity_type,
             invalid_at,
-            session_id=validate_session_id(session_id),
+            session_id=sid,
         )
+        if reinforcement is not None:
+            try:
+                await self._append_event_spec(reinforcement, session_id=sid)
+            except Exception:
+                get_metrics().record_degraded_operation("append", "salience_reinforcement_unavailable")
 
     async def handoff_summary(self, session_id: str = "default") -> dict[str, Any]:
         """Generate a concise handoff summary from the event log.
@@ -2822,6 +3348,128 @@ class MemoryFabric:
         Suitable for resuming an agent session across restarts.
         """
         return self.session_manager.handoff_summary(session_id)
+
+
+#: Event types the encoding gate never classifies: cognitive-memory
+#: bookkeeping that must not recurse through (or be reshaped by) the gate.
+_ENCODING_GATE_SKIPPED_EVENT_TYPES = frozenset(
+    {
+        REINFORCEMENT_EVENT_TYPE,
+        "belief.update.proposed",
+        "reasoning.primitive.called",
+        "inference.edge.generated",
+    }
+)
+
+#: Payload keys whose string values declare a candidate entity identity at
+#: append time (used for the gate's entity-name overlap signal).
+_ENCODING_ENTITY_NAME_KEYS = ("entity_name", "name", "taskId", "task_id", "task")
+
+#: Projected-property keys excluded from interference value comparison:
+#: provenance, retention bookkeeping, and free-text summaries are not values.
+_INTERFERENCE_EXCLUDED_PROPERTY_KEYS = frozenset(
+    {
+        "summary",
+        "embedding",
+        "embedding_version",
+        "created_at",
+        "updated_at",
+        "observed_at",
+        "expires_at",
+        "last_reinforced_at",
+        "importance",
+        "reinforcement_count",
+        "retrieval_salience",
+        "source_event_seq",
+        "source_event_hash",
+        "source_event_prev_hash",
+        "source_thread",
+        "node_key",
+        "session_id",
+    }
+)
+
+_ENCODING_TOKEN_RE = re.compile(r"[a-z0-9]+")
+
+
+def _encoding_gate_eligible(event_type: str, payload: dict[str, Any]) -> bool:
+    """Return whether an append should be classified by the encoding gate."""
+    if event_type in _ENCODING_GATE_SKIPPED_EVENT_TYPES:
+        return False
+    return "encoding" not in payload
+
+
+#: Payload keys excluded from gate content comparison: write-time metadata
+#: (gate tags, cue records) is context about the memory, not its content.
+_ENCODING_CONTENT_EXCLUDED_KEYS = frozenset({"encoding", "cues"})
+
+
+def _encoding_classification_content(payload: dict[str, Any]) -> str:
+    """Return the canonical payload text the gate compares against memory.
+
+    Mirrors the verbatim index's event-chunk text (sorted-key JSON), with
+    gate/cue metadata stripped so tagging an event never dilutes later
+    duplicate detection against it.
+    """
+    comparable = {
+        key: value
+        for key, value in payload.items()
+        if key not in _ENCODING_CONTENT_EXCLUDED_KEYS
+    }
+    if not comparable:
+        return ""
+    try:
+        return json.dumps(comparable, sort_keys=True, ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        return ""
+
+
+def _encoding_tokens(text: str) -> set[str]:
+    return set(_ENCODING_TOKEN_RE.findall(text.casefold()))
+
+
+def _token_jaccard(left: set[str], right: set[str]) -> float:
+    if not left or not right:
+        return 0.0
+    intersection = len(left & right)
+    if intersection == 0:
+        return 0.0
+    return intersection / (len(left) + len(right) - intersection)
+
+
+def _payload_entity_names(payload: dict[str, Any]) -> list[str]:
+    """Return bounded candidate entity names declared by a payload."""
+    names: list[str] = []
+    for key in _ENCODING_ENTITY_NAME_KEYS:
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip() and len(value) <= 200:
+            name = value.strip()
+            if name not in names:
+                names.append(name)
+    return names
+
+
+def _conflicting_property_value(
+    old_properties: dict[str, Any],
+    new_properties: dict[str, Any],
+) -> tuple[str, Any, Any] | None:
+    """Return the first shared scalar property whose values conflict."""
+    for key in sorted(set(old_properties) & set(new_properties)):
+        if key in _INTERFERENCE_EXCLUDED_PROPERTY_KEYS or key.startswith("_"):
+            continue
+        old_value = old_properties[key]
+        new_value = new_properties[key]
+        if not _is_comparable_scalar(old_value) or not _is_comparable_scalar(new_value):
+            continue
+        old_text = str(old_value).strip().casefold()
+        new_text = str(new_value).strip().casefold()
+        if old_text and new_text and old_text != new_text:
+            return (key, old_value, new_value)
+    return None
+
+
+def _is_comparable_scalar(value: Any) -> bool:
+    return isinstance(value, str | int | float | bool)
 
 
 def _event_content(event: Any) -> str:
@@ -2845,6 +3493,48 @@ def _event_citation(event: Any) -> str | None:
     if not isinstance(thread, str) or not isinstance(seq, int) or not isinstance(event_hash, str):
         return None
     return f"eventloom://{thread}/events/{seq}#{event_hash[:12]}"
+
+
+def _checkout_source_id(ref: MemoryRef | None, events: list[Any], *, session_id: str) -> str:
+    """Return the stable as-of identity a checkout packet was computed against.
+
+    A ref checkout is identified by the resolved ref target; a HEAD checkout
+    by the citation of the last replayed event — both identities checkout
+    already produces, derived from data in hand (no log read).
+    """
+    if ref is not None:
+        return f"eventloom://{ref.session_id}/events/{ref.target_seq}#{ref.target_hash[:12]}"
+    citation = _event_citation(events[-1]) if events else None
+    return citation if citation is not None else f"{session_id}:HEAD"
+
+
+def _invalidation_source_id(*, entity_name: str, entity_type: str, invalid_at: str) -> str:
+    """Return the natural key of one invalidation operation."""
+    return f"invalidate:{entity_type}:{entity_name}@{invalid_at}"
+
+
+def entity_reinforcement_targets(entities: Any) -> list[dict[str, Any]]:
+    """Return builder-ready reinforcement targets from projected entities.
+
+    Reads the ``source_event_seq`` / ``source_event_hash`` provenance stored
+    on projected entity properties; entities without sealed full-hash
+    provenance are skipped, and duplicates collapse to one target.
+    """
+    targets: list[dict[str, Any]] = []
+    seen: set[tuple[int, str]] = set()
+    for entity in entities or []:
+        properties = getattr(entity, "properties", None)
+        if not isinstance(properties, dict):
+            continue
+        target = target_ref(properties.get("source_event_seq"), properties.get("source_event_hash"))
+        if target is None:
+            continue
+        key = (int(target["seq"]), str(target["hash"]))
+        if key in seen:
+            continue
+        seen.add(key)
+        targets.append(target)
+    return targets
 
 
 def _packet_memory_reinforcements(events: list[Any]) -> dict[str, dict[str, float | int]]:
@@ -3128,16 +3818,50 @@ def build_memory_checkout(
     assembly: ContextAssembly,
     ref: MemoryRef | None = None,
     purpose: PurposeProfile | dict[str, Any] | str | None = None,
+    now: datetime | None = None,
+    retrieval_profile: RetrievalProfile | None = None,
+    cues: dict[str, str] | None = None,
+    salience_floor: float = 0.15,
+    salience_half_life_days: float = SALIENCE_HALF_LIFE_DAYS,
 ) -> MemoryCheckout:
-    """Build the Memory Checkout contract from assembled context."""
+    """Build the Memory Checkout contract from assembled context.
+
+    ``now`` anchors the salience replay; callers on the serving paths pass
+    an explicit ``datetime.now(UTC)`` and omitted values fall back to the
+    same clock.
+
+    Under every pre-cognitive profile (``retrieval_profile`` omitted or
+    with its cognitive flags off) salience never changes ranking, ordering,
+    or selection — it is exposed in diagnostics only, byte-identical to the
+    pre-cognitive contract. Only the opt-in cognitive profile blends
+    salience and cue overlap into ranking and applies the attenuation floor
+    (see :func:`_rank_cognitive_contexts` for the blend).
+    """
+    checkout_now = now if now is not None else datetime.now(UTC)
     profile = purpose_profile(purpose)
     purpose_payload = profile.to_dict()
     checkout_contexts = _checkout_contexts_with_synthesis(query, assembly)
-    ranked_contexts = sorted(
-        checkout_contexts,
-        key=lambda context: _checkout_rank(context, query),
-        reverse=True,
+    cognitive = retrieval_profile is not None and (
+        retrieval_profile.salience_ranking or retrieval_profile.cue_blending
     )
+    attenuation: dict[str, Any] | None = None
+    if cognitive and retrieval_profile is not None:
+        ranked_contexts, attenuation = _rank_cognitive_contexts(
+            checkout_contexts,
+            query=query,
+            replay_events=assembly.replay_events,
+            retrieval_profile=retrieval_profile,
+            cues=cues,
+            salience_floor=salience_floor,
+            salience_half_life_days=salience_half_life_days,
+            now=checkout_now,
+        )
+    else:
+        ranked_contexts = sorted(
+            checkout_contexts,
+            key=lambda context: _checkout_rank(context, query),
+            reverse=True,
+        )
     candidate_current_facts = [
         _checkout_fact(context) for context in ranked_contexts if context.valid_to is None
     ]
@@ -3194,15 +3918,26 @@ def build_memory_checkout(
     skill_analytics = _checkout_skill_analytics(ranked_contexts)
     if skill_analytics["version_count"] or skill_analytics["outcome_count"]:
         diagnostics = {**diagnostics, "skill_analytics": skill_analytics}
-    retrieval_profile = assembly.working_set.get("retrieval_profile")
-    if isinstance(retrieval_profile, dict):
-        diagnostics = {**diagnostics, "retrieval_profile": retrieval_profile}
+    retrieval_profile_diagnostics = assembly.working_set.get("retrieval_profile")
+    if isinstance(retrieval_profile_diagnostics, dict):
+        diagnostics = {**diagnostics, "retrieval_profile": retrieval_profile_diagnostics}
     purpose_retrieval = assembly.working_set.get("purpose_retrieval_policy")
     if isinstance(purpose_retrieval, dict):
         diagnostics = {**diagnostics, "purpose_retrieval_policy": purpose_retrieval}
     recall_diagnostics = assembly.recall.to_diagnostics()
     if recall_diagnostics["candidate_count"] and recall_diagnostics["candidate_count"] != len(assembly.contexts):
         diagnostics = {**diagnostics, "recall": recall_diagnostics}
+    salience = _checkout_salience_diagnostics(
+        replay_events=assembly.replay_events,
+        current_facts=current_facts,
+        evidence=evidence,
+        now=checkout_now,
+        half_life_days=salience_half_life_days,
+    )
+    if salience is not None:
+        diagnostics = {**diagnostics, "salience": salience}
+    if attenuation is not None:
+        diagnostics = {**diagnostics, "attenuation": attenuation}
     guidance = build_checkout_guidance(
         query=query,
         purpose=purpose_payload,
@@ -3252,6 +3987,201 @@ def build_memory_checkout(
         assembly_policy=assembly.assembly_policy,
         purpose=purpose_payload,
     )
+
+
+def _rank_cognitive_contexts(
+    contexts: list[Context],
+    *,
+    query: str,
+    replay_events: list[Any],
+    retrieval_profile: RetrievalProfile,
+    cues: dict[str, str] | None,
+    salience_floor: float,
+    salience_half_life_days: float,
+    now: datetime,
+) -> tuple[list[Context], dict[str, Any] | None]:
+    """Rank checkout contexts under the cognitive retrieval profile.
+
+    Blend (documented contract):
+
+    - **Salience multiplier** (``salience_ranking``): relevance is multiplied
+      by normalized salience ``m = clamp(score / SALIENCE_BASE,
+      [SALIENCE_MIN, SALIENCE_MAX])`` — never-reinforced memories keep the
+      implicit base salience 1.0 and rank exactly as before. The multiplier
+      applies to the primary token-overlap key and to the fused-score
+      tiebreak; the citation/source/type priority keys are unchanged.
+    - **Cue bonus** (``cue_blending``): ``CUE_MATCH_WEIGHT *
+      jaccard(query_cues, stored_cues)`` is added to the primary key — a
+      bounded bonus of at most ``CUE_MATCH_WEIGHT`` (0.25) for a perfect cue
+      match. No cues on either side means zero bonus.
+    - **Attenuation floor**: memories whose replayed salience is strictly
+      below ``salience_floor`` are excluded from default checkout ranking
+      and listed (labeled ``attenuated``) in the returned diagnostics.
+      Authority-bearing state (accepted review status / accepted-authority
+      scope) and payloads pinned with ``"pinned": true`` are exempt: they
+      stay in ranking and are listed as exempt. Excluded memories remain
+      fully reachable via explicit ``memory_query``/``memory_replay``, which
+      never route through this function.
+    """
+    ref_index = event_ref_index(replay_events)
+    payloads_by_seq = _payloads_by_seq(replay_events)
+    states: dict[EventRef, SalienceState] = {}
+    if retrieval_profile.salience_ranking:
+        states = SalienceLedger(half_life_days=salience_half_life_days).replay(
+            replay_events,
+            now=now,
+        )
+    query_cues = cue_pairs(cues) if retrieval_profile.cue_blending else frozenset()
+    ranked: list[tuple[tuple[float, int, int, int, float, str, float], Context]] = []
+    excluded: list[dict[str, Any]] = []
+    exempt: list[dict[str, Any]] = []
+    for context in contexts:
+        citation = _context_citation(context)
+        ref = resolve_citation_target(citation, event_index=ref_index)
+        payload = payloads_by_seq.get(ref.seq) if ref is not None else None
+        multiplier = 1.0
+        if retrieval_profile.salience_ranking:
+            state = states.get(ref) if ref is not None else None
+            salience_score = state.score if state is not None else SALIENCE_BASE
+            multiplier = min(max(salience_score / SALIENCE_BASE, SALIENCE_MIN), SALIENCE_MAX)
+            if state is not None and ref is not None and state.score < salience_floor:
+                entry = {
+                    "citation": citation,
+                    "seq": ref.seq,
+                    "hash": ref.hash,
+                    "salience_score": round(state.score, 4),
+                    "label": "attenuated",
+                }
+                exempt_reason = _attenuation_exempt_reason(context, payload)
+                if exempt_reason is None:
+                    excluded.append(entry)
+                    continue
+                exempt.append({**entry, "exempt_reason": exempt_reason})
+        cue_bonus = 0.0
+        if query_cues and payload is not None:
+            cue_bonus = CUE_MATCH_WEIGHT * cue_overlap(query_cues, cue_pairs(payload.get("cues")))
+        base = _checkout_rank(context, query)
+        ranked.append(
+            (
+                (
+                    base[0] * multiplier + cue_bonus,
+                    base[1],
+                    base[2],
+                    base[3],
+                    base[4],
+                    base[5],
+                    base[6] * multiplier,
+                ),
+                context,
+            )
+        )
+    ordered = [context for _, context in sorted(ranked, key=lambda item: item[0], reverse=True)]
+    attenuation: dict[str, Any] | None = None
+    if retrieval_profile.salience_ranking:
+        attenuation = {
+            "authority_status": "non_authoritative",
+            "floor": salience_floor,
+            "label": "attenuated",
+            "excluded_count": len(excluded),
+            "excluded": excluded[:20],
+            "exempt_count": len(exempt),
+            "exempt": exempt[:20],
+        }
+    return ordered, attenuation
+
+
+def _payloads_by_seq(replay_events: list[Any]) -> dict[int, dict[str, Any]]:
+    """Map replayed event seq -> payload dict for cue/pin/authority lookups."""
+    payloads: dict[int, dict[str, Any]] = {}
+    for event in replay_events:
+        seq = getattr(event, "seq", None)
+        payload = getattr(event, "payload", None)
+        if isinstance(seq, int) and isinstance(payload, dict):
+            payloads[seq] = payload
+    return payloads
+
+
+_ATTENUATION_EXEMPT_AUTHORITIES = frozenset(
+    {"accepted", "authoritative", "parent-accepted", "promoted"}
+)
+
+
+def _attenuation_exempt_reason(
+    context: Context,
+    payload: dict[str, Any] | None,
+) -> str | None:
+    """Return why a below-floor memory survives attenuation, or None.
+
+    Exempt: payloads pinned with the additive ``"pinned": true`` metadata
+    flag, and authority-bearing state — an accepted review status or an
+    accepted/authoritative authority scope on either the projected context
+    metadata or the source event payload.
+    """
+    if payload is not None and payload.get("pinned") is True:
+        return "pinned"
+    metadata = context.metadata or {}
+    for source in (metadata, payload or {}):
+        if _checkout_policy_text(source.get("review_status")) == "accepted":
+            return "authority"
+        authority = _checkout_policy_text(
+            source.get("authority")
+            or source.get("authority_scope")
+            or source.get("authority_status")
+        )
+        if authority in _ATTENUATION_EXEMPT_AUTHORITIES:
+            return "authority"
+    return None
+
+
+def _checkout_salience_diagnostics(
+    *,
+    replay_events: list[Any],
+    current_facts: list[dict[str, Any]],
+    evidence: list[dict[str, Any]],
+    now: datetime,
+    half_life_days: float = SALIENCE_HALF_LIFE_DAYS,
+) -> dict[str, Any] | None:
+    """Replay salience over the checkout's own replay for diagnostics only.
+
+    Pure function of the replayed log slice and ``now``: reinforcement events
+    fold into per-memory scores, then surfaced packet citations are resolved
+    to their sealed refs and annotated with the score composition. Returns
+    None when nothing surfaced carries replayed salience, keeping the
+    diagnostics payload byte-identical to the pre-salience contract until
+    reinforcement events exist.
+    """
+    if not replay_events:
+        return None
+    states = SalienceLedger(half_life_days=half_life_days).replay(replay_events, now=now)
+    if not states:
+        return None
+    index = event_ref_index(replay_events)
+    items: list[dict[str, Any]] = []
+    seen: set[EventRef] = set()
+    for item in [*current_facts, *evidence]:
+        ref = resolve_citation_target(item.get("citation"), event_index=index)
+        if ref is None or ref in seen:
+            continue
+        seen.add(ref)
+        state = states.get(ref)
+        if state is None:
+            continue
+        items.append(
+            {
+                "citation": item.get("citation"),
+                "seq": ref.seq,
+                "hash": ref.hash,
+                "composition": state.composition(),
+            }
+        )
+    if not items:
+        return None
+    return {
+        "authority_status": "non_authoritative",
+        "half_life_days": half_life_days,
+        "scored_count": len(items),
+        "items": items,
+    }
 
 
 def _checkout_contexts_with_synthesis(query: str, assembly: ContextAssembly) -> list[Context]:

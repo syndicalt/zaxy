@@ -1182,7 +1182,16 @@ def _ignored_onboarding_doctor_checks(
     hook_installation_required: bool = True,
     agent_instructions_required: bool = True,
 ) -> set[str]:
-    ignored = {"codex_mcp_scope", "observation_coverage", "capture_health", "memory_activation", "packet_memory"}
+    ignored = {
+        "codex_mcp_scope",
+        "observation_coverage",
+        "capture_health",
+        "memory_activation",
+        "packet_memory",
+        # A freshly initialized workspace has genesis events but no projection
+        # state yet; lazy projection catches up on first memory use.
+        "projection_freshness",
+    }
     if not hook_installation_required:
         ignored.add("hook_installation")
     if not agent_instructions_required:

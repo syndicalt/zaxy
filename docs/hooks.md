@@ -121,6 +121,7 @@ Supported triggers are:
 |---------|------------|---------|
 | `session-start` | `hook.session_started` | Mark the start of a client session. |
 | `resume` | `hook.resumed` | Mark a resumed or rehydrated client session and request a fresh checkout reminder. |
+| `session-resumed` | `hook.session_resumed` | Mark a post-compaction resume and print a cited recovery packet to stdout. |
 | `stop` | `hook.stop` | Record a normal response/session checkpoint. |
 | `precompact` | `hook.precompact` | Record that context compaction is about to happen. |
 | `checkpoint` | `hook.checkpoint` | Record a manual or periodic save/checkpoint. |
@@ -192,6 +193,46 @@ zaxy hook-event transcript-turn \
   --content "Recorded the implementation decision." \
   --turn-index 12
 ```
+
+## Compaction Recovery (`session-resumed`)
+
+The `precompact` trigger records that compaction is about to happen; the
+`session-resumed` trigger closes the loop after the harness compacts and
+resumes. It appends a `hook.session_resumed` lifecycle event and then prints a
+recovery packet to stdout so the invoking hook can re-inject it into agent
+context. The packet is assembled read-only from Eventloom-backed state — open
+tasks and assignments, accepted coordination findings, recorded known
+unknowns, and recent verbatim activity since the last consolidation or
+precompact anchor — and every line carries an `eventloom://` citation to its
+sealed source event. Assembly is deterministic for a given log state and each
+section is bounded, so the packet stays small enough to inject verbatim.
+
+Claude Code wiring example (`SessionStart` matched on `compact` fires after a
+compaction-triggered resume; the hook's stdout is added to the new context):
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "zaxy hook-event session-resumed --eventloom-path .eventloom --session-id my-project-default --source claude-code"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Any harness with a post-compaction or resume hook can use the same command;
+the packet is plain text bracketed by `=== ZAXY RECOVERY PACKET ... ===`
+markers. `zaxy doctor` complements the loop with hash-chain, projection
+freshness, embedding-dimension, and vector-cache headroom checks so a resumed
+session can trust what it recovers.
 
 Command observations redact common secret-bearing arguments and bound stdout and
 stderr excerpts. File-edit observations persist path, operation, summary, and

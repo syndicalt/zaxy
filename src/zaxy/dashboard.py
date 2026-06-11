@@ -1472,6 +1472,9 @@ class DashboardApp:
                     limit=limit,
                     max_recent_events=max_recent_events,
                     ref=ref,
+                    # Dashboard inspection is read-only: never append salience
+                    # reinforcement (or anything else) to the log.
+                    record_reinforcement=False,
                 )
                 return checkout.to_dict()
             finally:

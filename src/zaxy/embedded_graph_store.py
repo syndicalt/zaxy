@@ -7,6 +7,7 @@ same-harness backend comparisons share the same retrieval surface.
 
 from __future__ import annotations
 
+import hashlib
 import heapq
 import importlib.util
 import json
@@ -15,12 +16,15 @@ import re
 import shutil
 from collections import Counter
 from collections.abc import Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 
 import numpy as np
 import numpy.typing as npt
+
+from zaxy.graph_walk import AdjacencySnapshot
 
 _CacheValue = TypeVar("_CacheValue")
 _TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
@@ -77,23 +81,75 @@ class _KeywordIndex:
 VECTOR_INDEX_CACHE_MAX_ENTRIES = 8
 VECTOR_INDEX_CACHE_MAX_BYTES = 256 * 1024 * 1024
 
+# Vectors persisted before embedding versioning carry no tag; they are grouped
+# under this sentinel and never compared against tagged vectors.
+LEGACY_EMBEDDING_VERSION = "legacy"
+
+# Quantized search scores top-k * oversample candidates with int8 dot products
+# before the exact float64 rerank.
+VECTOR_QUANTIZATION_OVERSAMPLE = 4
+
+_ANN_SHADOW_TABLE_PREFIX = "ZaxyVectorAnnShadow"
+_ANN_INSERT_BATCH_SIZE = 1024
+
 
 @dataclass(frozen=True)
 class _VectorGroup:
-    """Unit-normalized embedding matrix for one embedding dimensionality."""
+    """Unit-normalized embedding matrix for one (dimension, version) group."""
 
     matrix: npt.NDArray[np.float64]
     entity_indexes: list[int]
+
+    @property
+    def matrix_bytes(self) -> int:
+        return int(self.matrix.nbytes)
+
+
+@dataclass(frozen=True)
+class _QuantizedVectorGroup:
+    """Int8-quantized unit vectors with per-vector scale factors.
+
+    Original float vectors are not duplicated here: the exact rerank reads them
+    from the ``embedding`` property of the entity objects the index already
+    references, so quantization saves the full float64 matrix.
+    """
+
+    matrix: npt.NDArray[np.int8]
+    scales: npt.NDArray[np.float64]
+    entity_indexes: list[int]
+
+    @property
+    def matrix_bytes(self) -> int:
+        return int(self.matrix.nbytes + self.scales.nbytes)
+
+
+@dataclass(frozen=True)
+class _AnnVectorGroup:
+    """Kuzu-native HNSW-backed group; vectors are resident in the database."""
+
+    table_name: str
+    index_name: str
+    dimension: int
+    version: str
+    session_id: str
+    vector_count: int
+
+    @property
+    def matrix_bytes(self) -> int:
+        return 0
+
+
+_AnyVectorGroup = _VectorGroup | _QuantizedVectorGroup | _AnnVectorGroup
 
 
 @dataclass(frozen=True)
 class _VectorIndex:
     entities: list[GraphEntity]
-    groups: dict[int, _VectorGroup]
+    groups: dict[tuple[int, str], _AnyVectorGroup]
 
     @property
     def matrix_bytes(self) -> int:
-        return sum(group.matrix.nbytes for group in self.groups.values())
+        return sum(group.matrix_bytes for group in self.groups.values())
 
 
 @dataclass(frozen=True)
@@ -105,10 +161,22 @@ class _TraversalIndex:
 class EmbeddedGraphStore:
     """Kuzu-backed embedded projection store."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(
+        self,
+        path: Path,
+        *,
+        vector_ann_threshold: int | None = None,
+        vector_quantization: str | None = None,
+        active_embedding_version: str | None = None,
+    ) -> None:
         self.path = Path(path)
         self._database: Any | None = None
         self._connection: Any | None = None
+        self._vector_ann_threshold_override = vector_ann_threshold
+        self._vector_quantization_override = vector_quantization
+        self._active_embedding_version_override = active_embedding_version
+        self._ann_supported: bool | None = None
+        self._ann_indexed_tables: set[str] = set()
         self._active_entity_cache: dict[tuple[str, str, str], tuple[str, str | None, str]] = {}
         self._current_entity_index_cache: dict[str, list[GraphEntity]] = {}
         self._current_entity_lookup_cache: dict[str, dict[tuple[str, str | None], list[GraphEntity]]] = {}
@@ -119,6 +187,7 @@ class EmbeddedGraphStore:
         self._vector_index_cache: dict[tuple[str, str | None], _VectorIndex] = {}
         self._traversal_index_cache: dict[str, _TraversalIndex] = {}
         self._temporal_traversal_index_cache: dict[tuple[str, str], _TraversalIndex] = {}
+        self._adjacency_snapshot_cache: dict[str, AdjacencySnapshot] = {}
         self._bulk_projection_open = False
         self._dirty_bulk_sessions: set[str] = set()
         self._bulk_active_state_loaded_sessions: set[str] = set()
@@ -518,6 +587,17 @@ class EmbeddedGraphStore:
         self._keyword_index_cache[session_id] = index
         return index
 
+    async def active_entity_names(self, session_id: str = "default") -> list[str]:
+        """Return the names of the session's active (non-superseded) entities.
+
+        Served from the per-session current-entity cache, so a warm call is a
+        pure in-memory read; the cache is invalidated alongside the other
+        derived read indexes whenever the session's projection changes. This
+        is the minimal public surface the feeling-of-knowing pre-check needs
+        to build its per-session index without a graph query per call.
+        """
+        return [entity.name for entity in self._current_entities(session_id)]
+
     def _current_entities(self, session_id: str) -> list[GraphEntity]:
         cached = self._current_entity_index_cache.get(session_id)
         if cached is not None:
@@ -872,45 +952,217 @@ class EmbeddedGraphStore:
         ).get_all()
         return bool(rows and rows[0][0])
 
+    async def fetch_adjacency(self, session_id: str = "default") -> AdjacencySnapshot:
+        """Fetch the session's active-graph adjacency snapshot for graph walks.
+
+        This is the embedded implementation of the
+        :class:`zaxy.graph_walk.AdjacencyProvider` contract. Node identity is
+        ``Entity.node_key``; every active entity version appears as a node
+        (including isolated ones, so query-matched seeds resolve before they
+        gain edges). Each active ``RELATES`` row uses the same active-edge
+        query family as ``_build_traversal_index`` and contributes both its
+        stored direction and the reverse direction, exactly matching the
+        traversal index's undirected adjacency semantics (it registers every
+        edge under both endpoints). Parallel ``RELATES`` rows between the same
+        pair keep their multiplicity and proportionally weight the walk.
+
+        The snapshot ``signature`` is a deterministic content hash of the
+        node and edge sets, so it changes exactly when the projected graph
+        changes. Snapshots are cached per session and invalidated alongside
+        the other derived read indexes (``_clear_read_caches``).
+        """
+        cached = self._adjacency_snapshot_cache.get(session_id)
+        if cached is not None:
+            return cached
+        snapshot = self._build_adjacency_snapshot(session_id)
+        self._adjacency_snapshot_cache[session_id] = snapshot
+        return snapshot
+
+    def _build_adjacency_snapshot(self, session_id: str) -> AdjacencySnapshot:
+        conn = self._require_connection()
+        node_rows = conn.execute(
+            """
+            MATCH (e:Entity)
+            WHERE e.session_id = $session_id AND e.valid_to IS NULL
+            RETURN e.node_key
+            """,
+            {"session_id": session_id},
+        ).get_all()
+        edge_rows = conn.execute(
+            """
+            MATCH (source:Entity)-[r:RELATES]->(target:Entity)
+            WHERE source.session_id = $session_id
+              AND target.session_id = $session_id
+              AND r.session_id = $session_id
+              AND source.valid_to IS NULL
+              AND target.valid_to IS NULL
+              AND r.valid_to IS NULL
+            RETURN source.node_key, target.node_key
+            """,
+            {"session_id": session_id},
+        ).get_all()
+        node_ids = sorted({str(row[0]) for row in node_rows})
+        edges: list[tuple[str, str]] = []
+        for row in edge_rows:
+            source_key = str(row[0])
+            target_key = str(row[1])
+            edges.append((source_key, target_key))
+            edges.append((target_key, source_key))
+        edges.sort()
+        return AdjacencySnapshot.from_edges(
+            node_ids,
+            edges,
+            signature=_adjacency_signature(session_id, node_ids, edges),
+        )
+
     async def search_vector(
         self,
         embedding: list[float],
         limit: int = 10,
         temporal_point: str | None = None,
         session_id: str = "default",
+        embedding_version: str | None = None,
     ) -> list[SearchResult]:
-        """Search by vector similarity."""
-        from zaxy.graph import SearchResult
-
+        """Search by vector similarity within one embedding version group."""
         if limit <= 0:
             return []
         query = np.asarray(embedding, dtype=np.float64)
         query_norm = float(np.linalg.norm(query))
         if query_norm == 0.0:
             return []
+        version = embedding_version or self._resolved_active_embedding_version()
         index = self._vector_index(session_id, temporal_point)
-        group = index.groups.get(len(embedding))
+        group = index.groups.get((len(embedding), version))
         if group is None:
             return []
-        scores = group.matrix @ (query / query_norm)
-        positive_rows = np.flatnonzero(scores > 0.0)
-        if positive_rows.size == 0:
+        unit_query = query / query_norm
+        if isinstance(group, _AnnVectorGroup):
+            return self._search_vector_ann(group, unit_query, limit=limit, entities=index.entities)
+        if isinstance(group, _QuantizedVectorGroup):
+            return self._search_vector_quantized(group, unit_query, limit=limit, entities=index.entities)
+        return _dense_vector_results(group, unit_query, limit=limit, entities=index.entities)
+
+    def _search_vector_quantized(
+        self,
+        group: _QuantizedVectorGroup,
+        unit_query: npt.NDArray[np.float64],
+        *,
+        limit: int,
+        entities: list[GraphEntity],
+    ) -> list[SearchResult]:
+        """Oversample candidates with int8 dot products, then rerank exactly."""
+        from zaxy.graph import SearchResult
+
+        query_max = float(np.abs(unit_query).max())
+        if query_max == 0.0:
             return []
-        # Stable sort keeps first-projected entities ahead on score ties,
-        # matching the previous heapq.nlargest behavior.
-        ordered_rows = positive_rows[np.argsort(-scores[positive_rows], kind="stable")]
+        quantized_query = np.clip(np.rint(unit_query * (127.0 / query_max)), -127, 127).astype(np.int8)
+        integer_scores = group.matrix.astype(np.int32) @ quantized_query.astype(np.int32)
+        approximate_scores = integer_scores.astype(np.float64) * group.scales
+        candidate_count = min(approximate_scores.size, limit * VECTOR_QUANTIZATION_OVERSAMPLE)
+        if candidate_count <= 0:
+            return []
+        if candidate_count < approximate_scores.size:
+            candidate_rows = np.argpartition(-approximate_scores, candidate_count - 1)[:candidate_count]
+        else:
+            candidate_rows = np.arange(approximate_scores.size)
+        # Projection order keeps the exact rerank's tie behavior aligned with
+        # the dense path's stable sort.
+        candidate_rows = np.sort(candidate_rows)
+        scored: list[tuple[float, int]] = []
+        for row in candidate_rows:
+            entity = entities[group.entity_indexes[int(row)]]
+            vector = _embedding_vector(entity.properties.get("embedding"))
+            if vector is None:
+                continue
+            values = np.asarray(vector, dtype=np.float64)
+            norm = float(np.linalg.norm(values))
+            if norm == 0.0:
+                continue
+            score = float((values / norm) @ unit_query)
+            if score > 0.0:
+                scored.append((score, int(row)))
+        scored.sort(key=lambda item: -item[0])
+        return [
+            SearchResult(
+                entity=entities[group.entity_indexes[row]],
+                score=score,
+                source="vector",
+                raw_score=score,
+                exact=False,
+            )
+            for score, row in scored[:limit]
+        ]
+
+    def _search_vector_ann(
+        self,
+        group: _AnnVectorGroup,
+        unit_query: npt.NDArray[np.float64],
+        *,
+        limit: int,
+        entities: list[GraphEntity],
+    ) -> list[SearchResult]:
+        """Query the Kuzu-native HNSW index scoped to one session and version."""
+        from zaxy.graph import SearchResult
+
+        conn = self._require_connection()
+        graph_name = f"zaxy_vector_ann_scope_{group.dimension}"
+        # The predicate is itself a single-quoted Kuzu string argument, so its
+        # inner string literals use double quotes.
+        predicate = (
+            f'n.session_id = "{_kuzu_string_literal(group.session_id)}" '
+            f'AND n.embedding_version = "{_kuzu_string_literal(group.version)}"'
+        )
+        with suppress(RuntimeError):
+            conn.execute(f"CALL DROP_PROJECTED_GRAPH('{graph_name}')")
+        conn.execute(
+            f"CALL PROJECT_GRAPH('{graph_name}', {{'{group.table_name}': '{predicate}'}}, [])"
+        )
+        try:
+            rows = conn.execute(
+                f"CALL QUERY_VECTOR_INDEX('{graph_name}', '{group.index_name}', $query_vector, $k) "
+                "RETURN node.entity_row, distance ORDER BY distance",
+                {"query_vector": unit_query.tolist(), "k": limit},
+            ).get_all()
+        finally:
+            with suppress(RuntimeError):
+                conn.execute(f"CALL DROP_PROJECTED_GRAPH('{graph_name}')")
         results: list[SearchResult] = []
-        for row in ordered_rows[:limit]:
-            score = float(scores[row])
+        for row in rows:
+            score = 1.0 - float(row[1])
+            if score <= 0.0:
+                continue
             results.append(
                 SearchResult(
-                    entity=index.entities[group.entity_indexes[int(row)]],
+                    entity=entities[int(row[0])],
                     score=score,
                     source="vector",
                     raw_score=score,
+                    exact=False,
                 )
             )
         return results
+
+    def _resolved_active_embedding_version(self) -> str:
+        if self._active_embedding_version_override is not None:
+            return self._active_embedding_version_override
+        from zaxy.embedding import resolved_active_embedding_version_tag
+
+        return resolved_active_embedding_version_tag() or LEGACY_EMBEDDING_VERSION
+
+    def _resolved_vector_ann_threshold(self) -> int:
+        if self._vector_ann_threshold_override is not None:
+            return self._vector_ann_threshold_override
+        from zaxy.config import get_settings
+
+        return get_settings().vector_ann_threshold
+
+    def _resolved_vector_quantization(self) -> str:
+        if self._vector_quantization_override is not None:
+            return self._vector_quantization_override
+        from zaxy.config import get_settings
+
+        return get_settings().vector_quantization
 
     def _vector_index(self, session_id: str, temporal_point: str | None) -> _VectorIndex:
         key = (session_id, temporal_point)
@@ -925,8 +1177,8 @@ class EmbeddedGraphStore:
             else self._temporal_entities(session_id, temporal_point)
         )
         entities: list[GraphEntity] = []
-        unit_vectors: dict[int, list[npt.NDArray[np.float64]]] = {}
-        group_entity_indexes: dict[int, list[int]] = {}
+        unit_vectors: dict[tuple[int, str], list[npt.NDArray[np.float64]]] = {}
+        group_entity_indexes: dict[tuple[int, str], list[int]] = {}
         for entity in candidate_entities:
             vector = _embedding_vector(entity.properties.get("embedding"))
             if vector is None:
@@ -938,19 +1190,231 @@ class EmbeddedGraphStore:
             entity.properties["embedding_dimension"] = len(vector)
             entity_index = len(entities)
             entities.append(entity)
-            unit_vectors.setdefault(len(vector), []).append(values / norm)
-            group_entity_indexes.setdefault(len(vector), []).append(entity_index)
-        groups = {
-            dimension: _VectorGroup(
-                matrix=np.vstack(vectors),
-                entity_indexes=group_entity_indexes[dimension],
+            group_key = (len(vector), _embedding_version(entity.properties))
+            unit_vectors.setdefault(group_key, []).append(values / norm)
+            group_entity_indexes.setdefault(group_key, []).append(entity_index)
+        groups: dict[tuple[int, str], _AnyVectorGroup] = {
+            group_key: self._build_vector_group(
+                session_id=session_id,
+                temporal_point=temporal_point,
+                dimension=group_key[0],
+                version=group_key[1],
+                vectors=vectors,
+                entity_indexes=group_entity_indexes[group_key],
             )
-            for dimension, vectors in unit_vectors.items()
+            for group_key, vectors in unit_vectors.items()
         }
         index = _VectorIndex(entities=entities, groups=groups)
         self._vector_index_cache[key] = index
         self._evict_vector_indexes_over_budget()
         return index
+
+    def _build_vector_group(
+        self,
+        *,
+        session_id: str,
+        temporal_point: str | None,
+        dimension: int,
+        version: str,
+        vectors: list[npt.NDArray[np.float64]],
+        entity_indexes: list[int],
+    ) -> _AnyVectorGroup:
+        if (
+            temporal_point is None
+            and not self._bulk_projection_open
+            and len(vectors) > self._resolved_vector_ann_threshold()
+        ):
+            ann_group = self._try_build_ann_group(
+                session_id=session_id,
+                dimension=dimension,
+                version=version,
+                vectors=vectors,
+                entity_indexes=entity_indexes,
+            )
+            if ann_group is not None:
+                return ann_group
+        matrix = np.vstack(vectors)
+        if self._resolved_vector_quantization() == "int8":
+            quantized, scales = _quantize_unit_matrix(matrix)
+            return _QuantizedVectorGroup(matrix=quantized, scales=scales, entity_indexes=entity_indexes)
+        return _VectorGroup(matrix=matrix, entity_indexes=entity_indexes)
+
+    def _try_build_ann_group(
+        self,
+        *,
+        session_id: str,
+        dimension: int,
+        version: str,
+        vectors: list[npt.NDArray[np.float64]],
+        entity_indexes: list[int],
+    ) -> _AnnVectorGroup | None:
+        """Sync this group into a Kuzu HNSW shadow table, if the runtime supports it.
+
+        Shadow rows for the (session, version) scope are deleted and re-inserted
+        on every index rebuild — the same rebuild trigger as the dense matrix —
+        and the persistent HNSW index reflects inserts and deletes incrementally.
+        """
+        if not self._kuzu_vector_index_supported():
+            return None
+        conn = self._require_connection()
+        table_name = f"{_ANN_SHADOW_TABLE_PREFIX}{dimension}"
+        index_name = f"zaxy_vector_ann_{dimension}"
+        conn.execute(
+            f"""
+            CREATE NODE TABLE IF NOT EXISTS {table_name}(
+                shadow_key STRING,
+                session_id STRING,
+                embedding_version STRING,
+                entity_row INT64,
+                vec FLOAT[{dimension}],
+                PRIMARY KEY(shadow_key)
+            )
+            """
+        )
+        self._ensure_ann_index(table_name, index_name)
+        conn.execute(
+            f"MATCH (n:{table_name}) "
+            "WHERE n.session_id = $session_id AND n.embedding_version = $version "
+            "DETACH DELETE n",
+            {"session_id": session_id, "version": version},
+        )
+        for start in range(0, len(vectors), _ANN_INSERT_BATCH_SIZE):
+            batch = [
+                {
+                    "shadow_key": f"{session_id}\x1f{version}\x1f{entity_indexes[position]}",
+                    "entity_row": entity_indexes[position],
+                    "vec": vectors[position].tolist(),
+                }
+                for position in range(start, min(start + _ANN_INSERT_BATCH_SIZE, len(vectors)))
+            ]
+            conn.execute(
+                f"UNWIND $rows AS row CREATE (:{table_name} {{"
+                "shadow_key: row.shadow_key, session_id: $session_id, "
+                "embedding_version: $version, entity_row: row.entity_row, vec: row.vec})",
+                {"rows": batch, "session_id": session_id, "version": version},
+            )
+        return _AnnVectorGroup(
+            table_name=table_name,
+            index_name=index_name,
+            dimension=dimension,
+            version=version,
+            session_id=session_id,
+            vector_count=len(vectors),
+        )
+
+    def _ensure_ann_index(self, table_name: str, index_name: str) -> None:
+        """Create the persistent HNSW index for a shadow table exactly once."""
+        if table_name in self._ann_indexed_tables:
+            return
+        conn = self._require_connection()
+        try:
+            conn.execute(
+                f"CALL CREATE_VECTOR_INDEX('{table_name}', '{index_name}', 'vec', metric := 'cosine')"
+            )
+        except RuntimeError as exc:
+            if "already exists" not in str(exc):
+                raise
+        self._ann_indexed_tables.add(table_name)
+
+    def _kuzu_vector_index_supported(self) -> bool:
+        """Probe once whether the pinned Kuzu runtime ships the vector index."""
+        if self._ann_supported is None:
+            try:
+                rows = self._require_connection().execute(
+                    "CALL SHOW_FUNCTIONS() WHERE name = 'CREATE_VECTOR_INDEX' RETURN name"
+                ).get_all()
+            except RuntimeError:
+                self._ann_supported = False
+            else:
+                self._ann_supported = bool(rows)
+        return self._ann_supported
+
+    async def re_embed_session(
+        self,
+        *,
+        session_id: str,
+        provider: Any,
+        version_tag: str | None = None,
+    ) -> dict[str, int]:
+        """Re-embed projected entity vectors onto the provider's version tag.
+
+        This mutates only projection state (Kuzu Entity rows); Eventloom events
+        are never touched. Both active and historical entity versions are
+        migrated so temporal vector search stays version-consistent.
+        """
+        from zaxy.embedding import embedding_text, provider_version_tag
+
+        tag = version_tag or provider_version_tag(provider)
+        if not tag:
+            raise ValueError("embedding provider does not expose a version tag")
+        conn = self._require_connection()
+        try:
+            rows = conn.execute(
+                """
+                MATCH (e:Entity)
+                WHERE e.session_id = $session_id
+                  AND contains(e.properties_json, '"embedding"')
+                RETURN e.node_key, e.name, e.entity_type, e.summary, e.properties_json
+                """,
+                {"session_id": session_id},
+            ).get_all()
+        except RuntimeError as exc:
+            if not _is_missing_projection_table_error(exc):
+                raise
+            rows = []
+        scanned = 0
+        re_embedded = 0
+        already_current = 0
+        for row in rows:
+            properties = _json_dict(row[4])
+            vector = _embedding_vector(properties.get("embedding"))
+            if vector is None:
+                continue
+            scanned += 1
+            if _embedding_version(properties) == tag:
+                already_current += 1
+                continue
+            text = embedding_text(
+                str(row[1]),
+                str(row[2]),
+                str(row[3]) if row[3] is not None else None,
+            )
+            new_vector = provider.embed(text)
+            properties["embedding"] = [float(value) for value in new_vector]
+            properties["embedding_version"] = tag
+            conn.execute(
+                """
+                MATCH (e:Entity {node_key: $node_key})
+                SET e.properties_json = $properties_json
+                """,
+                {
+                    "node_key": str(row[0]),
+                    "properties_json": json.dumps(properties, sort_keys=True),
+                },
+            )
+            re_embedded += 1
+        if re_embedded:
+            self._active_entity_cache = {
+                cache_key: value
+                for cache_key, value in self._active_entity_cache.items()
+                if cache_key[0] != session_id
+            }
+            self._clear_read_caches(session_id)
+        return {
+            "scanned": scanned,
+            "re_embedded": re_embedded,
+            "already_current": already_current,
+        }
+
+    async def embedding_version_counts(self, session_id: str) -> dict[str, int]:
+        """Count active projected vectors per embedding version tag."""
+        counts: dict[str, int] = {}
+        for entity in self._current_entities(session_id):
+            if _embedding_vector(entity.properties.get("embedding")) is None:
+                continue
+            version = _embedding_version(entity.properties)
+            counts[version] = counts.get(version, 0) + 1
+        return counts
 
     def _evict_vector_indexes_over_budget(self) -> None:
         """Drop least-recently-used vector indexes beyond the entry/byte budget.
@@ -1000,6 +1464,7 @@ class EmbeddedGraphStore:
         self._keyword_index_cache.pop(session_id, None)
         self._clear_vector_index_cache(session_id)
         self._traversal_index_cache.pop(session_id, None)
+        self._adjacency_snapshot_cache.pop(session_id, None)
 
     def _clear_all_caches(self) -> None:
         self._active_entity_cache = {}
@@ -1012,8 +1477,10 @@ class EmbeddedGraphStore:
         self._vector_index_cache = {}
         self._traversal_index_cache = {}
         self._temporal_traversal_index_cache = {}
+        self._adjacency_snapshot_cache = {}
         self._dirty_bulk_sessions = set()
         self._bulk_active_state_loaded_sessions = set()
+        self._ann_indexed_tables = set()
 
     async def invalidate_entity(
         self,
@@ -1489,6 +1956,32 @@ class EmbeddedGraphStore:
         )
 
 
+def _adjacency_signature(
+    session_id: str,
+    node_ids: Sequence[str],
+    edges: Sequence[tuple[str, str]],
+) -> str:
+    """Hash the snapshot content so the signature changes exactly with the graph.
+
+    Nodes and directed edges are hashed in their (already deterministic)
+    sorted order with type/field separators so distinct graphs cannot collide
+    by concatenation. Content hashing is the embedded analogue of the
+    log-signature pattern: cached walk results keyed on this signature stay
+    valid until the projected graph itself changes.
+    """
+    hasher = hashlib.sha256()
+    hasher.update(session_id.encode("utf-8"))
+    for node_id in node_ids:
+        hasher.update(b"\x00n")
+        hasher.update(node_id.encode("utf-8"))
+    for source_key, target_key in edges:
+        hasher.update(b"\x00e")
+        hasher.update(source_key.encode("utf-8"))
+        hasher.update(b"\x00>")
+        hasher.update(target_key.encode("utf-8"))
+    return f"adjacency:sha256:{hasher.hexdigest()}"
+
+
 def _node_key(session_id: str, entity_type: str, name: str, source_event_seq: int) -> str:
     return f"{session_id}\x1f{entity_type}\x1f{name}\x1f{source_event_seq}"
 
@@ -1790,6 +2283,68 @@ def _bm25_score_from_precomputed(
         denominator = term_frequency + document_length_norm
         score += term_idf.get(term, 0.0) * (term_frequency * (k1 + 1)) / denominator
     return score
+
+
+def _dense_vector_results(
+    group: _VectorGroup,
+    unit_query: npt.NDArray[np.float64],
+    *,
+    limit: int,
+    entities: list[GraphEntity],
+) -> list[SearchResult]:
+    """Exact dense-matrix scoring; the pre-versioning behavior, unchanged."""
+    from zaxy.graph import SearchResult
+
+    scores = group.matrix @ unit_query
+    positive_rows = np.flatnonzero(scores > 0.0)
+    if positive_rows.size == 0:
+        return []
+    # Stable sort keeps first-projected entities ahead on score ties,
+    # matching the previous heapq.nlargest behavior.
+    ordered_rows = positive_rows[np.argsort(-scores[positive_rows], kind="stable")]
+    results: list[SearchResult] = []
+    for row in ordered_rows[:limit]:
+        score = float(scores[row])
+        results.append(
+            SearchResult(
+                entity=entities[group.entity_indexes[int(row)]],
+                score=score,
+                source="vector",
+                raw_score=score,
+                exact=True,
+            )
+        )
+    return results
+
+
+def _quantize_unit_matrix(
+    matrix: npt.NDArray[np.float64],
+) -> tuple[npt.NDArray[np.int8], npt.NDArray[np.float64]]:
+    """Quantize unit-vector rows to int8 with per-vector scale factors."""
+    row_max = np.abs(matrix).max(axis=1)
+    # Unit vectors always have a nonzero component; guard anyway so a zero row
+    # quantizes to zeros instead of dividing by zero.
+    safe_row_max = np.where(row_max == 0.0, 1.0, row_max)
+    quantized = np.clip(
+        np.rint(matrix * (127.0 / safe_row_max)[:, np.newaxis]),
+        -127,
+        127,
+    ).astype(np.int8)
+    scales = row_max / 127.0
+    return quantized, scales
+
+
+def _embedding_version(properties: dict[str, Any]) -> str:
+    """Return the stored embedding version tag; absent means legacy."""
+    version = properties.get("embedding_version")
+    if isinstance(version, str) and version:
+        return version
+    return LEGACY_EMBEDDING_VERSION
+
+
+def _kuzu_string_literal(value: str) -> str:
+    """Escape a value for inlining inside a quoted Kuzu string literal."""
+    return value.replace("\\", "\\\\").replace("'", "\\'").replace('"', '\\"')
 
 
 def _embedding_vector(value: Any) -> list[float] | None:

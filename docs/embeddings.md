@@ -49,6 +49,21 @@ entity text, not arbitrary raw payload dumps. This reduces the chance of
 embedding secrets and improves result quality by keeping the vector input close
 to the graph fact being stored.
 
+Stored vectors in the embedded backend carry the producing provider's version
+tag (for example `hash@<fingerprint>-dim1536`). Search never compares vectors
+across version tags, so changing providers or models cannot silently return
+garbage matches; `zaxy doctor` reports mixed-version corpora, and
+`zaxy memory re-embed --session-id <session>` batch-migrates stale-version
+vectors to the active provider without touching Eventloom. Scale is opt-in and
+never silently lossy: below `VECTOR_ANN_THRESHOLD` (default `1000000` vectors
+per session — deliberately high, keeping ANN opt-in until the HNSW path beats
+exact search in the vector-scale lane) the embedded backend uses exact
+dense-matrix search, above it a
+Kuzu-native HNSW index whose results report `exact: false`, and
+`VECTOR_QUANTIZATION=int8` opts in to quantized storage with exact float
+reranking of oversampled candidates. See
+[configuration.md](configuration.md) for the settings.
+
 If hosted embedding calls fail, treat the event log as the recovery source. Fix
 configuration, replay the Eventloom log, and rebuild graph projections. Do not
 manually patch vectors in a projection backend unless you are doing a controlled

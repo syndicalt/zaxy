@@ -16,10 +16,14 @@ from zaxy.embedding import (
     OpenAIEmbeddingProvider,
     SentenceTransformersEmbeddingProvider,
     _load_sentence_transformer,
+    active_embedding_version_tag,
     build_embedding_provider,
     embed_extraction,
     embed_extraction_async,
     entity_embedding_text,
+    hash_embedding_version_tag,
+    provider_version_tag,
+    resolved_active_embedding_version_tag,
 )
 from zaxy.extract import ExtractedEntity, ExtractionResult
 
@@ -702,3 +706,194 @@ class TestSentenceTransformersEmbeddingProvider:
 
         with pytest.raises(ValueError, match="dimension"):
             provider.embed("doctor specialist")
+
+
+class TestEmbeddingVersionTags:
+    """Tests for provider version tags and version-tag stamping."""
+
+    def test_hash_version_tag_is_content_derived(self) -> None:
+        import hashlib
+
+        provider = HashEmbeddingProvider(dimension=384)
+        expected_fingerprint = hashlib.sha256(
+            embedding_module._HASH_ALGORITHM_SPEC.encode("utf-8")
+        ).hexdigest()[:8]
+
+        assert provider.version_tag == f"hash@{expected_fingerprint}-dim384"
+
+    def test_hash_version_tag_changes_with_dimension(self) -> None:
+        assert HashEmbeddingProvider(dimension=8).version_tag != HashEmbeddingProvider(dimension=16).version_tag
+
+    def test_openai_version_tag_names_model_and_dimension(self) -> None:
+        provider = OpenAIEmbeddingProvider(api_key="key", model="text-embedding-3-small", dimension=1536)
+
+        assert provider.version_tag == "openai:text-embedding-3-small@1.0.0-dim1536"
+
+    def test_local_http_version_tag_names_model_and_dimension(self) -> None:
+        provider = LocalHTTPEmbeddingProvider(url="http://localhost:9999/embed", model="bge-m3", dimension=1024)
+
+        assert provider.version_tag == "local-http:bge-m3@1.0.0-dim1024"
+
+    def test_sentence_transformers_version_tag_names_model_and_dimension(self) -> None:
+        class FakeModel:
+            def encode(self, text: str, *, normalize_embeddings: bool) -> list[float]:
+                del text, normalize_embeddings
+                return [0.0]
+
+        provider = SentenceTransformersEmbeddingProvider(
+            model_name="BAAI/bge-m3",
+            dimension=1,
+            model=FakeModel(),
+        )
+
+        assert provider.version_tag == "sentence-transformers:BAAI/bge-m3@1.0.0-dim1"
+
+    def test_provider_version_tag_returns_none_for_tagless_providers(self) -> None:
+        class TaglessProvider:
+            dimension = 4
+
+            def embed(self, text: str) -> list[float]:
+                return [0.0, 0.0, 0.0, 0.0]
+
+        assert provider_version_tag(TaglessProvider()) is None
+        assert provider_version_tag(HashEmbeddingProvider(dimension=4)) == hash_embedding_version_tag(4)
+
+    def test_active_version_tag_matches_built_providers(self) -> None:
+        hash_settings = Settings(_env_file=None, embedding_provider="hash", embedding_dimension=64)
+        provider = build_embedding_provider(hash_settings)
+        assert provider is not None
+        assert active_embedding_version_tag(hash_settings) == provider.version_tag
+
+        openai_settings = Settings(
+            _env_file=None,
+            embedding_provider="openai",
+            embedding_dimension=1536,
+            openai_api_key="key",
+            openai_embedding_model="text-embedding-3-small",
+        )
+        openai_provider = build_embedding_provider(openai_settings)
+        assert openai_provider is not None
+        assert active_embedding_version_tag(openai_settings) == openai_provider.version_tag
+
+    def test_active_version_tag_is_none_when_disabled_or_unknown(self) -> None:
+        assert active_embedding_version_tag(Settings(_env_file=None, embedding_enabled=False)) is None
+        assert (
+            active_embedding_version_tag(
+                Settings(_env_file=None, embedding_provider="mystery-provider")
+            )
+            is None
+        )
+
+    def test_active_version_tag_never_builds_network_clients(self) -> None:
+        settings = Settings(
+            _env_file=None,
+            embedding_provider="openai",
+            embedding_dimension=1536,
+            openai_embedding_model="text-embedding-3-small",
+        )
+
+        # No API key configured: building would raise, deriving must not.
+        assert active_embedding_version_tag(settings) == "openai:text-embedding-3-small@1.0.0-dim1536"
+
+    def test_resolved_active_version_tag_applies_retrieval_profile(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import zaxy.config as config_module
+
+        settings = Settings(_env_file=None, retrieval_profile="local_sota")
+        monkeypatch.setattr(config_module, "get_settings", lambda: settings)
+
+        # local_sota pins sentence-transformers/BAAI/bge-m3 at dimension 1024;
+        # the resolved tag must match what MemoryFabric actually embeds with,
+        # not the raw (hash) settings fields.
+        assert active_embedding_version_tag(settings) == hash_embedding_version_tag(1536)
+        assert (
+            resolved_active_embedding_version_tag()
+            == "sentence-transformers:BAAI/bge-m3@1.0.0-dim1024"
+        )
+
+    def test_embed_extraction_stamps_version_tag(self) -> None:
+        provider = HashEmbeddingProvider(dimension=16)
+        result = ExtractionResult(
+            entities=[
+                ExtractedEntity(
+                    name="Ship MVP",
+                    entity_type="goal",
+                    observed_at="2024-01-01T00:00:00Z",
+                    summary="Get product to market",
+                    properties={"team": "core"},
+                )
+            ],
+            edges=[],
+            source_event_seq=1,
+        )
+
+        embedded = embed_extraction(result, provider)
+
+        assert embedded.entities[0].properties == {
+            "team": "core",
+            "embedding_version": provider.version_tag,
+        }
+
+    def test_embed_extraction_leaves_preset_embeddings_untagged(self) -> None:
+        provider = HashEmbeddingProvider(dimension=16)
+        result = ExtractionResult(
+            entities=[
+                ExtractedEntity(
+                    name="Ship MVP",
+                    entity_type="goal",
+                    observed_at="2024-01-01T00:00:00Z",
+                    embedding=[0.1, 0.2],
+                )
+            ],
+            edges=[],
+            source_event_seq=1,
+        )
+
+        embedded = embed_extraction(result, provider)
+
+        assert embedded.entities[0].embedding == [0.1, 0.2]
+        assert embedded.entities[0].properties is None
+
+    async def test_embed_extraction_async_stamps_version_tag(self) -> None:
+        provider = HashEmbeddingProvider(dimension=16)
+        result = ExtractionResult(
+            entities=[
+                ExtractedEntity(
+                    name="Ship MVP",
+                    entity_type="goal",
+                    observed_at="2024-01-01T00:00:00Z",
+                )
+            ],
+            edges=[],
+            source_event_seq=1,
+        )
+
+        embedded = await embed_extraction_async(result, provider)
+
+        assert embedded.entities[0].properties == {"embedding_version": provider.version_tag}
+
+    def test_embed_extraction_skips_stamp_for_tagless_provider(self) -> None:
+        class TaglessProvider:
+            dimension = 2
+
+            def embed(self, text: str) -> list[float]:
+                del text
+                return [1.0, 0.0]
+
+        result = ExtractionResult(
+            entities=[
+                ExtractedEntity(
+                    name="Ship MVP",
+                    entity_type="goal",
+                    observed_at="2024-01-01T00:00:00Z",
+                )
+            ],
+            edges=[],
+            source_event_seq=1,
+        )
+
+        embedded = embed_extraction(result, TaglessProvider())  # type: ignore[arg-type]
+
+        assert embedded.entities[0].embedding == [1.0, 0.0]
+        assert embedded.entities[0].properties is None

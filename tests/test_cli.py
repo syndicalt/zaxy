@@ -2002,11 +2002,12 @@ def test_coordinate_cli_audit_report_outputs_eventloom_citations(tmp_path: Path)
     payload = json.loads(result.output)
     assert payload["mission_id"] == "auth-main"
     assert payload["read_only"] is True
-    assert payload["summary"]["event_count"] == 5
+    assert payload["summary"]["event_count"] == 6
     assert payload["events"][0]["event_type"] == "coordination.mission.created"
     assert payload["events"][0]["event_seq"] == 1
     assert len(payload["events"][0]["event_hash"]) == 64
-    assert payload["events"][-1]["event_type"] == "coordination.finding.promoted"
+    assert payload["events"][-2]["event_type"] == "coordination.finding.promoted"
+    assert payload["events"][-1]["event_type"] == "memory.reinforcement"
     assert "## Eventloom Audit Trail" in payload["markdown"]
     assert f"finding={finding_id}" in payload["markdown"]
 
@@ -2918,6 +2919,78 @@ def test_memory_checkout_json_output(mock_fabric_cls: MagicMock, tmp_path: Path)
         "evidence_count": 1,
         "facts_per_1k_prompt_tokens": 125.0,
     }
+
+
+@patch("zaxy.cli.runtime.MemoryFabric")
+def test_memory_checkout_max_tokens_packs_prompt_and_reports_budget(
+    mock_fabric_cls: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """memory checkout --max-tokens should pack the prompt and report elisions."""
+    prompt = "\n\n".join(
+        [
+            "# Memory Checkout",
+            "Query: current project direction",
+            "## Current Facts\n- Use Memory Checkout. (eventloom://agent-1/events/1#abc)",
+            "## Evidence\n- eventloom://agent-1/events/1#abc: Use Memory Checkout.",
+            "## Checkout Quality\n- Answerability: answer_from_memory\n- Confidence: 0.9",
+            "## Checkout Guidance\n- Trust: use current facts",
+            "## Checkout Diagnostics\n- Source lanes: graph=1\n- Citations: 1",
+            "# Retrieved Context\n- Use Memory Checkout. (eventloom://agent-1/events/1#abc)",
+        ]
+    )
+    checkout = MagicMock()
+    checkout.to_dict.return_value = {
+        "session_id": "agent-1",
+        "query": "current project direction",
+        "prompt": prompt,
+        "current_facts": [{"content": "Use Memory Checkout.", "citation": "eventloom://agent-1/events/1#abc"}],
+        "evidence": [{"citation": "eventloom://agent-1/events/1#abc"}],
+        "provenance": [{"event_seq": 1, "event_hash": "abc"}],
+        "diagnostics": {"citation_count": 1},
+        "token_efficiency": {
+            "prompt_tokens": 999,
+            "current_fact_count": 1,
+            "evidence_count": 1,
+            "facts_per_1k_prompt_tokens": 1.001,
+        },
+        "warnings": [],
+    }
+    fabric = AsyncMock()
+    fabric.checkout_memory.return_value = checkout
+    mock_fabric_cls.return_value = fabric
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "checkout",
+            "current project direction",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "agent-1",
+            "--max-tokens",
+            "40",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    diagnostics = payload["diagnostics"]
+    assert diagnostics["budget_requested"] == 40
+    assert diagnostics["budget_used"] > 0
+    assert diagnostics["elided"]["count"] > 0
+    assert diagnostics["stable_prefix_chars"] == len("# Memory Checkout")
+    assert diagnostics["citation_count"] == 1
+    assert payload["prompt"].startswith("# Memory Checkout")
+    assert "## Checkout Quality" in payload["prompt"]
+    assert "## Checkout Guidance" in payload["prompt"]
+    assert len(payload["prompt"]) < len(prompt)
+    assert payload["current_facts"][0]["citation"] == "eventloom://agent-1/events/1#abc"
+    assert payload["token_efficiency"]["prompt_tokens"] < 999
 
 
 def test_memory_causal_and_consolidation_help_commands_are_registered() -> None:
@@ -7861,3 +7934,454 @@ def test_dashboard_command_uses_repo_local_profile_for_bare_init(
     assert scope.projection_backend == "embedded"
     assert scope.embedded_graph_path == embedded_path
     assert "Zaxy dashboard listening on http://127.0.0.1:8765" in result.output
+
+
+def test_hook_event_session_resumed_appends_event_and_prints_recovery_packet(tmp_path: Path) -> None:
+    """session-resumed should append the lifecycle event and emit a cited recovery packet."""
+    runner = CliRunner()
+    log = EventLog(tmp_path / ".eventloom" / "agent-1.jsonl")
+    log.append(
+        "task.created",
+        actor="user",
+        payload={"taskId": "task-1", "title": "Ship the recovery loop"},
+        thread="agent-1",
+    )
+    log.append(
+        "coordination.finding.promoted",
+        actor="coordinator",
+        payload={
+            "mission_id": "m1",
+            "worker_id": "w1",
+            "finding_id": "w1:finding:1",
+            "summary": "Token refresh owns the auth regression",
+            "status": "accepted",
+        },
+        thread="agent-1",
+    )
+    log.append(
+        "hook.precompact",
+        actor="zaxy-hook",
+        payload={"trigger": "precompact", "source": "claude-code"},
+        thread="agent-1",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "hook-event",
+            "session-resumed",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "agent-1",
+            "--source",
+            "claude-code",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Recorded hook session-resumed as hook.session_resumed" in result.output
+    assert "=== ZAXY RECOVERY PACKET session=agent-1 ===" in result.output
+    assert "=== END ZAXY RECOVERY PACKET ===" in result.output
+    assert "Ship the recovery loop (task task-1) [eventloom://agent-1/events/1#" in result.output
+    assert "Token refresh owns the auth regression" in result.output
+    assert "anchor: hook.precompact [eventloom://agent-1/events/3#" in result.output
+    events = EventLog(tmp_path / ".eventloom" / "agent-1.jsonl").read_all()
+    resumed = [event for event in events if event.type == "hook.session_resumed"]
+    assert len(resumed) == 1
+    assert resumed[0].payload["trigger"] == "session-resumed"
+    assert resumed[0].payload["source"] == "claude-code"
+
+
+def test_hook_event_session_resumed_works_on_empty_session(tmp_path: Path) -> None:
+    """A resume into an empty session should still print an explicit, empty packet."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "hook-event",
+            "session-resumed",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "agent-1",
+            "--source",
+            "claude-code",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "=== ZAXY RECOVERY PACKET session=agent-1 ===" in result.output
+    assert "Open tasks: none recorded" in result.output
+    assert "anchor: none recorded" in result.output
+
+
+def _seed_legacy_embedded_vector(projection_path: Path, *, session_id: str) -> None:
+    """Project one untagged (legacy) vector into an embedded projection."""
+    import asyncio
+
+    from zaxy.embedded_graph_store import EmbeddedGraphStore
+    from zaxy.extract import ExtractedEntity, ExtractionResult
+
+    async def _seed() -> None:
+        store = EmbeddedGraphStore(projection_path)
+        await store.connect()
+        await store.init_schema()
+        await store.upsert_extraction(
+            ExtractionResult(
+                entities=[
+                    ExtractedEntity(
+                        name="Legacy Goal",
+                        entity_type="goal",
+                        observed_at="2026-06-10T00:00:00Z",
+                        summary="needs migration",
+                        embedding=[1.0, 0.0],
+                    )
+                ],
+                edges=[],
+                source_event_seq=1,
+                source_event_hash="hash-1",
+            ),
+            session_id=session_id,
+        )
+        await store.close()
+
+    asyncio.run(_seed())
+
+
+def test_memory_re_embed_cli_migrates_stale_vectors(tmp_path: Path) -> None:
+    """Re-embed CLI should migrate a mixed-version store and report counts."""
+    import asyncio
+
+    from zaxy.embedded_graph_store import EmbeddedGraphStore
+    from zaxy.embedding import HashEmbeddingProvider
+
+    projection_path = tmp_path / "projections" / "embedded.kuzu"
+    _seed_legacy_embedded_vector(projection_path, session_id="agent-1")
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "re-embed",
+            "--session-id",
+            "agent-1",
+            "--embedded-graph-path",
+            str(projection_path),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    provider = HashEmbeddingProvider(dimension=1536)
+    assert payload["session_id"] == "agent-1"
+    assert payload["version_tag"] == provider.version_tag
+    assert payload["scanned"] == 1
+    assert payload["re_embedded"] == 1
+    assert payload["already_current"] == 0
+
+    async def _post_migration_names() -> list[str]:
+        store = EmbeddedGraphStore(projection_path)
+        await store.connect()
+        try:
+            results = await store.search_vector(
+                provider.embed("Legacy Goal (goal) needs migration"),
+                limit=5,
+                session_id="agent-1",
+                embedding_version=provider.version_tag,
+            )
+            return [hit.entity.name for hit in results]
+        finally:
+            await store.close()
+
+    assert asyncio.run(_post_migration_names()) == ["Legacy Goal"]
+
+
+def test_memory_re_embed_cli_reports_counts_in_human_output(tmp_path: Path) -> None:
+    """Re-embed CLI human output should state migrated and current counts."""
+    projection_path = tmp_path / "projections" / "embedded.kuzu"
+    _seed_legacy_embedded_vector(projection_path, session_id="agent-1")
+    runner = CliRunner()
+
+    first = runner.invoke(
+        app,
+        ["memory", "re-embed", "--session-id", "agent-1", "--embedded-graph-path", str(projection_path)],
+    )
+    assert first.exit_code == 0, first.output
+    assert "Re-embedded 1 of 1 projected vectors in session agent-1" in first.output
+    assert "(0 already current)" in first.output
+
+    second = runner.invoke(
+        app,
+        ["memory", "re-embed", "--session-id", "agent-1", "--embedded-graph-path", str(projection_path)],
+    )
+    assert second.exit_code == 0, second.output
+    assert "Re-embedded 0 of 1 projected vectors in session agent-1" in second.output
+    assert "(1 already current)" in second.output
+
+
+def test_memory_re_embed_cli_uses_runtime_store_seam(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Re-embed CLI must construct its store through the patchable runtime seam."""
+    from zaxy.embedding import hash_embedding_version_tag
+
+    projection_path = tmp_path / "projections" / "embedded.kuzu"
+    projection_path.mkdir(parents=True)
+    calls: dict[str, object] = {}
+
+    class FakeStore:
+        def __init__(self, path: Path) -> None:
+            calls["path"] = Path(path)
+
+        async def connect(self) -> None:
+            calls["connected"] = True
+
+        async def close(self) -> None:
+            calls["closed"] = True
+
+        async def re_embed_session(
+            self,
+            *,
+            session_id: str,
+            provider: object,
+            version_tag: str | None = None,
+        ) -> dict[str, int]:
+            calls["session_id"] = session_id
+            calls["version_tag"] = version_tag
+            return {"scanned": 3, "re_embedded": 2, "already_current": 1}
+
+    monkeypatch.setattr(cli_runtime, "EmbeddedGraphStore", FakeStore)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["memory", "re-embed", "--session-id", "agent-7", "--embedded-graph-path", str(projection_path)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls["path"] == projection_path
+    assert calls["session_id"] == "agent-7"
+    assert calls["version_tag"] == hash_embedding_version_tag(1536)
+    assert calls["closed"] is True
+    assert "Re-embedded 2 of 3 projected vectors in session agent-7" in result.output
+
+
+def test_memory_re_embed_cli_rejects_non_embedded_backend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Re-embed CLI should refuse server backends without an explicit projection path."""
+    import zaxy.config as config_module
+    from zaxy.config import Settings
+
+    monkeypatch.setattr(
+        config_module,
+        "get_settings",
+        lambda: Settings(_env_file=None, projection_backend="neo4j"),
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["memory", "re-embed", "--session-id", "agent-1"])
+
+    assert result.exit_code != 0
+    assert "embedded projection backend" in result.output
+
+
+def test_memory_re_embed_cli_rejects_missing_projection(tmp_path: Path) -> None:
+    """Re-embed CLI should fail fast when the projection path does not exist."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "re-embed",
+            "--session-id",
+            "agent-1",
+            "--embedded-graph-path",
+            str(tmp_path / "missing.kuzu"),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "no embedded projection found" in result.output
+
+
+def _seed_mining_log(eventloom_dir: Path, *, tools: list[str] | None = None) -> EventLog:
+    """Seed one shared Eventloom log with a recurring two-session tool sequence."""
+    from zaxy.lifecycle import build_tool_call_completed_event
+
+    eventloom_dir.mkdir(parents=True, exist_ok=True)
+    log = EventLog(eventloom_dir / "agent.jsonl")
+    for session in ("agent-1", "agent-2"):
+        for tool_name in tools or ["memory_query", "memory_checkout"]:
+            spec = build_tool_call_completed_event(
+                tool_name=tool_name,
+                status="succeeded",
+                session_id=session,
+                arguments={"query": "redacted"},
+                result_summary=f"{tool_name} succeeded",
+            )
+            log.append(
+                spec["event_type"],
+                actor=spec["actor"],
+                payload=spec["payload"],
+                thread=session,
+            )
+    return log
+
+
+def test_memory_mine_procedures_appends_candidates_end_to_end(tmp_path: Path) -> None:
+    """mine-procedures should append review-pending procedure candidates."""
+    eventloom_dir = tmp_path / ".eventloom"
+    log = _seed_mining_log(eventloom_dir)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "mine-procedures",
+            "--eventloom-path",
+            str(eventloom_dir),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Mined 1 procedure candidates from 1 log:" in result.output
+    assert "proposed=1, skipped_duplicates=0" in result.output
+    assert "[proposed] Procedure: tool:memory_query -> tool:memory_checkout" in result.output
+    candidates = [
+        event for event in log.read_all() if event.type == "consolidation.candidate.created"
+    ]
+    assert len(candidates) == 1
+    assert candidates[0].actor == "zaxy-procedure-miner"
+    assert candidates[0].payload["candidate_type"] == "procedure"
+    assert candidates[0].payload["review_status"] == "pending"
+
+
+def test_memory_mine_procedures_json_output_shape(tmp_path: Path) -> None:
+    """--json should expose per-log summaries, candidates, and totals."""
+    eventloom_dir = tmp_path / ".eventloom"
+    _seed_mining_log(eventloom_dir)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "mine-procedures",
+            "--eventloom-path",
+            str(eventloom_dir),
+            "--actor",
+            "custom-miner",
+            "--min-support",
+            "2",
+            "--max-length",
+            "4",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["actor"] == "custom-miner"
+    assert payload["min_support"] == 2
+    assert payload["max_length"] == 4
+    assert payload["session_ids"] is None
+    assert payload["totals"] == {"mined": 1, "proposed": 1, "skipped_duplicates": 0}
+    assert len(payload["logs"]) == 1
+    log_summary = payload["logs"][0]
+    assert log_summary["log"] == "agent.jsonl"
+    assert log_summary["session_ids"] == ["agent-1", "agent-2"]
+    assert log_summary["mined_count"] == 1
+    assert log_summary["appended_count"] == 1
+    assert log_summary["skipped_duplicate_count"] == 0
+    candidate = log_summary["candidates"][0]
+    assert candidate["status"] == "proposed"
+    assert candidate["title"] == "Procedure: tool:memory_query -> tool:memory_checkout"
+    assert candidate["support"] == 2
+    assert candidate["support_sessions"] == ["agent-1", "agent-2"]
+    assert candidate["candidate_id"].startswith("consolidation:procedure:")
+    assert isinstance(candidate["seq"], int)
+    assert len(candidate["hash"]) == 64
+
+
+def test_memory_mine_procedures_second_run_reports_skips(tmp_path: Path) -> None:
+    """Re-running over an unchanged log should skip duplicates, not re-append."""
+    eventloom_dir = tmp_path / ".eventloom"
+    log = _seed_mining_log(eventloom_dir)
+    runner = CliRunner()
+    args = ["memory", "mine-procedures", "--eventloom-path", str(eventloom_dir), "--json"]
+
+    first = runner.invoke(app, args)
+    second = runner.invoke(app, args)
+
+    assert first.exit_code == 0
+    assert second.exit_code == 0
+    first_payload = json.loads(first.output)
+    second_payload = json.loads(second.output)
+    assert first_payload["totals"] == {"mined": 1, "proposed": 1, "skipped_duplicates": 0}
+    assert second_payload["totals"] == {"mined": 1, "proposed": 0, "skipped_duplicates": 1}
+    second_candidate = second_payload["logs"][0]["candidates"][0]
+    assert second_candidate["status"] == "skipped_duplicate"
+    assert "seq" not in second_candidate
+    candidates = [
+        event for event in log.read_all() if event.type == "consolidation.candidate.created"
+    ]
+    assert len(candidates) == 1
+
+
+def test_memory_mine_procedures_session_filter_and_empty_directory(tmp_path: Path) -> None:
+    """--session-id should filter mined threads; empty directories report cleanly."""
+    eventloom_dir = tmp_path / ".eventloom"
+    _seed_mining_log(eventloom_dir)
+    runner = CliRunner()
+
+    filtered = runner.invoke(
+        app,
+        [
+            "memory",
+            "mine-procedures",
+            "--eventloom-path",
+            str(eventloom_dir),
+            "--session-id",
+            "agent-1",
+            "--json",
+        ],
+    )
+    assert filtered.exit_code == 0
+    payload = json.loads(filtered.output)
+    assert payload["session_ids"] == ["agent-1"]
+    # A single session cannot meet the cross-session support threshold.
+    assert payload["totals"] == {"mined": 0, "proposed": 0, "skipped_duplicates": 0}
+
+    empty = runner.invoke(
+        app,
+        ["memory", "mine-procedures", "--eventloom-path", str(tmp_path / "missing")],
+    )
+    assert empty.exit_code == 0
+    assert "No Eventloom logs found" in empty.output
+
+
+def test_memory_mine_procedures_rejects_invalid_min_support(tmp_path: Path) -> None:
+    """min-support below the cross-session floor should fail fast."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "mine-procedures",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--min-support",
+            "1",
+        ],
+    )
+
+    assert result.exit_code != 0

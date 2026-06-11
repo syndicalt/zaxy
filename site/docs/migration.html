@@ -24,7 +24,7 @@
   <main class="doc-layout">
     <article class="doc-content">
       <h1 id="migration-guide">Migration Guide</h1>
-      <p>This guide covers the public upgrade path from Zaxy 0.4 through 2.0. Eventloom logs are append-only; migrations should add events, projection metadata, indexes, docs, or compatibility shims instead of rewriting historical records.</p>
+      <p>This guide covers the public upgrade path from Zaxy 0.4 through 2.x. Eventloom logs are append-only; migrations should add events, projection metadata, indexes, docs, or compatibility shims instead of rewriting historical records.</p>
       <h2 id="upgrade-checklist">Upgrade Checklist</h2>
       <p>Before and after each upgrade:</p>
       <ol>
@@ -97,6 +97,45 @@
         <li>2.0 added causal memory contracts, review-gated consolidation, and reasoning-loop primitives as new (additive) surfaces.</li>
         <li>Benchmark and evaluation modules moved out of the runtime package into <code>zaxy_benchmarks</code>; production imports of <code>zaxy.*benchmark*</code> modules should be removed (they were <code>Internal</code>/<code>Experimental</code> surfaces).</li>
       </ul>
+      <h2 id="from-20-to-21">From 2.0 to 2.1+</h2>
+      <p>The 2.1–2.3 agent-experience and cognitive-memory surfaces are entirely additive — no Eventloom envelope changes, no projection migrations, no removed or renamed tools — but <strong>2.1.0 flips two defaults</strong>, each promoted by its measurement lane per the roadmap:</p>
+      <ol>
+        <li><strong><code>MCP_TOOL_PROFILE</code> defaults to <code>core</code></strong> (was <code>full</code>). The internal tool-adoption lane measured the listed tool surface at 8,165 → 1,344 estimated tokens (an 83.5% reduction) with <code>memory_checkout</code> listed first. Profiles change listing only; dispatch is never filtered, so every tool stays callable by name. <strong>Opt out: <code>MCP_TOOL_PROFILE=full</code></strong> (or <code>zaxy serve --profile full</code>). Affected: clients that snapshot tool listings or pin the listed-tool count — refresh snapshots or pin <code>full</code>.</li>
+        <li><strong><code>RETRIEVAL_PROFILE</code> defaults to <code>cognitive</code></strong> (was <code>local_fast</code>). The internal forgetting lane measured exact cold-start parity (zero-reinforcement corpora rank byte-identically to plain), no-recall-loss 1.0 (attenuated memories stay reachable by explicit query, labeled in diagnostics), pin/authority exemptions 1.0, and ranking lift 1.0 vs 0.0. The cognitive profile composes the same local retrieval stack as <code>local_fast</code> plus the salience-ranking, cue-blending, and graph-walk flags. <strong>Opt out: <code>RETRIEVAL_PROFILE=local_fast</code></strong> for the previous plain default. Affected: users with reinforcement history or graph structure the walk can traverse may see ranking shifts; cold-start users (no reinforcement events) see identical ranking. Settings that leave the profile unset but explicitly customize embedding/reranker/scoring knobs keep resolving to the <code>custom</code> profile exactly as before the flip.</li>
+      </ol>
+      <p>Unchanged defaults: the write-time encoding gate stays off (<code>ENCODING_GATE_ENABLED=false</code>, unmeasured) and vector quantization stays <code>none</code>. One default moved defensively: <code>VECTOR_ANN_THRESHOLD</code> rose from <code>50000</code> to <code>1000000</code> because the internal vector-scale lane measured the HNSW path below exact search on both recall and latency at 10^5 vectors — the raise prevents auto-engaging a measured-worse path; lower it explicitly to opt in. The feeling-of-knowing surface remains experimental (its calibration lane Brier margin over the base-rate predictor is +0.001–0.006 — too thin for promotion). Beyond the two flips above, existing clients upgrade without action; everything below is opt-in.</p>
+      <p>New settings (all documented in <a href="configuration.html">configuration.md</a>):</p>
+      <ul>
+        <li><code>MCP_TOOL_PROFILE</code> (<code>core</code> default since 2.1.0, or <code>full</code>): MCP tool listing profile. <code>core</code> lists only the front-door verb set; profiles change listing, never capability — every tool stays callable by name.</li>
+        <li><code>SALIENCE_HALF_LIFE_DAYS</code> (default <code>30.0</code>): recency-decay half-life for the salience reinforcement ledger.</li>
+        <li><code>SALIENCE_FLOOR</code> (default <code>0.15</code>): attenuation floor under the <code>cognitive</code> retrieval profile; below-floor memories leave default checkout ranking but remain reachable by explicit query.</li>
+        <li><code>ENCODING_GATE_ENABLED</code> (default <code>false</code>): tag appends as <code>novel</code>/<code>reinforcing</code>/<code>redundant</code>; events are always appended and hash-chained regardless.</li>
+        <li><code>VECTOR_ANN_THRESHOLD</code> (default <code>1000000</code>): per-session vector count above which the embedded backend uses a Kuzu-native HNSW index; results from the approximate path report <code>exact: false</code>. The default keeps ANN effectively opt-in per the vector-scale lane evidence.</li>
+        <li><code>VECTOR_QUANTIZATION</code> (<code>none</code> default, or <code>int8</code>): opt-in quantized vector storage with exact float rerank of oversampled candidates.</li>
+      </ul>
+      <p>New MCP tools (additive; no existing tool was removed or renamed):</p>
+      <ul>
+        <li><code>memory_feeling_of_knowing</code>: experimental metamemory pre-check, listed in the <code>core</code> profile; each call appends a non-authoritative <code>metacognition.fok.predicted</code> calibration marker.</li>
+        <li><code>memory_consolidation(operation, ...)</code> and <code>memory_confidence(operation, ...)</code>: umbrella tools over the existing consolidation and confidence/metacognition handlers; the single-purpose tool names remain available per the stability commitment.</li>
+      </ul>
+      <p>Both profiles now list <code>memory_checkout</code> first, and every core-profile tool description names checkout as the front door. Clients that snapshot tool listings or descriptions should refresh against <code>docs/examples/mcp-tool-contract.json</code>.</p>
+      <p>New CLI surfaces:</p>
+      <ul>
+        <li><code>zaxy serve --profile core|full</code> overrides <code>MCP_TOOL_PROFILE</code> per process.</li>
+        <li><code>zaxy memory checkout --max-tokens N</code> (and the <code>max_tokens</code> argument on the <code>memory_checkout</code> and <code>context_assemble</code> MCP tools) applies a token budget with greedy packing; diagnostics report <code>budget_requested</code>, <code>budget_used</code>, and <code>elided</code>, plus <code>stable_prefix_chars</code> for the cache-stable consolidated prefix.</li>
+        <li><code>zaxy memory mine-procedures</code> mines recurring successful tool sequences into review-pending procedure candidates; nothing becomes authoritative without consolidation review.</li>
+        <li><code>zaxy memory re-embed</code> batch-migrates projected vectors to the active embedding provider version tag; Eventloom events are never rewritten.</li>
+        <li><code>zaxy hook-event session-resumed</code> records <code>hook.session_resumed</code> and prints a cited compaction-recovery packet; see <a href="hooks.html">hooks.md</a>.</li>
+        <li><code>zaxy agent-experience-lanes</code> runs the internal tool-adoption, budget, and cache lanes (internal validation labels only; not public claims).</li>
+      </ul>
+      <p>New event kinds and payload conventions (additive Eventloom payloads):</p>
+      <ul>
+        <li><code>memory.reinforcement</code> with <code>kind: surfaced | confirmed | promoted | invalidated</code>, batched target event refs, and a source id; salience is fully rebuildable by replaying these events.</li>
+        <li><code>metacognition.fok.predicted</code>: non-authoritative feeling-of-knowing calibration markers.</li>
+        <li><code>hook.session_resumed</code>: post-compaction resume lifecycle events.</li>
+        <li>Payload conventions: an optional <code>cues</code> mapping (<code>mission</code>, <code>workspace</code>, <code>tool</code>, <code>phase</code>) for encoding-specificity blending, an <code>encoding</code> tag written only when the gate is enabled, and <code>&quot;pinned&quot;: true</code> to exempt a memory from the attenuation floor.</li>
+      </ul>
+      <p>The cognitive retrieval profile (the default since 2.1.0) enables salience-blended ranking, cue-overlap blending, and personalized-PageRank graph-walk retrieval over the unchanged immutable log. Attenuation is projection policy only — labeled in <code>diagnostics.attenuation</code>, exempting pinned and authority-bearing memories, and reversible by switching to <code>RETRIEVAL_PROFILE=local_fast</code>. See <a href="retrieval.html">retrieval.md</a>. The lean <code>core</code> tool listing is likewise the default since 2.1.0; restore the full listing with <code>MCP_TOOL_PROFILE=full</code> or <code>zaxy serve --profile full</code>; <code>memory_capabilities</code> reports the active profile and the available-but-unlisted tools.</p>
       <h2 id="compatibility-tests">Compatibility Tests</h2>
       <p>The compatibility suite should prove that old public behavior still works or that a migration path is documented:</p>
       <ul>

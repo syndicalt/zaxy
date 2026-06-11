@@ -2,6 +2,42 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 2.1.0 - 2026-06-10
+
+- Flipped the default MCP tool listing profile from `full` to `core`, backed
+  by the internal tool-adoption lane (listing surface 8,165 → 1,344 estimated
+  tokens, an 83.5% reduction, front door listed first). Profiles change
+  listing only; every tool stays callable by name. Opt out with
+  `MCP_TOOL_PROFILE=full` or `zaxy serve --profile full`.
+- Flipped the default retrieval profile from `local_fast` to `cognitive`,
+  backed by the internal forgetting lane (exact cold-start parity with plain
+  ranking, no-recall-loss 1.0 for attenuated memories, pin/authority
+  exemptions 1.0, ranking lift 1.0 vs 0.0). The cognitive profile composes
+  the same local_fast retrieval stack plus salience ranking, cue blending,
+  and personalized-PageRank graph walk, and is no longer labeled
+  experimental. Opt out with `RETRIEVAL_PROFILE=local_fast`. Settings that
+  leave the profile unset but customize embedding/reranker/scoring knobs
+  still resolve to the `custom` profile exactly as before the flip.
+- Shipped the additive 2.1–2.3 agent-experience and cognitive-memory feature
+  set: tool listing profiles and umbrella tools, checkout token budgets, the
+  salience reinforcement ledger, encoding-specificity cues, the experimental
+  `memory_feeling_of_knowing` pre-check, procedure mining, re-embedding, and
+  the internal agent-experience/cognitive measurement lanes. See
+  `docs/migration.md`.
+- Fixed a feeling-of-knowing verdict boundary: a 3-term query with exactly
+  one bloom hit scores `0.6 * (1/3)`, which is exactly the `possible`
+  threshold 0.2 but compared below it in binary floating point and was
+  mislabeled `unlikely`. Threshold comparisons are now epsilon-tolerant.
+- Kept `ENCODING_GATE_ENABLED=false` (unmeasured) and the
+  feeling-of-knowing surface experimental (FoK Brier margin over the
+  base-rate predictor is +0.001–0.006 — too thin for promotion).
+- Raised `VECTOR_ANN_THRESHOLD` from `50000` to `1000000`, keeping the Kuzu
+  HNSW path effectively opt-in: the internal vector-scale lane measured it
+  below exact dense-matrix search on both recall (0.90 vs the 0.95 bar at
+  10^5 vectors) and latency, with non-reproducible index builds. Lower the
+  threshold explicitly to opt in; the default comes down only with lane
+  evidence after ANN-path tuning.
+
 ## 2.0.1 - 2026-06-10
 
 - Decomposed the largest internal modules into dependency-layered packages while

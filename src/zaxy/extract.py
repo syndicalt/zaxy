@@ -1687,6 +1687,17 @@ def _extract_memory_activity_event(event: Event) -> ExtractionResult:
     return ExtractionResult(entities=[entity], edges=[], source_event_seq=event.seq)
 
 
+@register("memory.reinforcement")
+def _extract_memory_reinforcement(event: Event) -> ExtractionResult:
+    """Skip projection for non-authoritative salience reinforcement markers.
+
+    Reinforcement events are observability state replayed by the salience
+    ledger; projecting them as entities would let reinforcement bookkeeping
+    leak into ranked retrieval.
+    """
+    return ExtractionResult(entities=[], edges=[], source_event_seq=event.seq)
+
+
 @register("memory.reminder.suggested")
 def _extract_memory_reminder_suggested(event: Event) -> ExtractionResult:
     """Extract suggested memory reminders for agent recall hardening."""

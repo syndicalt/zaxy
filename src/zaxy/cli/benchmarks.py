@@ -86,6 +86,189 @@ def _load_external_results(path: Path | None) -> tuple[Any, ...]:
     return tuple(results)
 
 
+def _parse_agent_experience_lanes(value: str, valid_lanes: tuple[str, ...]) -> tuple[str, ...]:
+    """Parse the agent-experience lane selection string."""
+    normalized = value.strip().casefold()
+    if normalized == "all":
+        return valid_lanes
+    selected = tuple(dict.fromkeys(part.strip() for part in value.split(",") if part.strip()))
+    if not selected:
+        raise typer.BadParameter("--lanes must include at least one lane")
+    invalid = sorted(set(selected) - set(valid_lanes))
+    if invalid:
+        valid_text = ", ".join((*valid_lanes, "all"))
+        raise typer.BadParameter(
+            f"Unsupported agent-experience lane(s): {', '.join(invalid)}. Allowed: {valid_text}"
+        )
+    return selected
+
+
+def _parse_agent_experience_budgets(value: str) -> tuple[int | None, ...]:
+    """Parse the budget sweep string into token budgets with optional unlimited."""
+    budgets: list[int | None] = []
+    for part in value.split(","):
+        token = part.strip().casefold()
+        if not token:
+            continue
+        if token in {"unlimited", "none"}:
+            budgets.append(None)
+            continue
+        try:
+            budget = int(token)
+        except ValueError as exc:
+            raise typer.BadParameter(
+                f"invalid budget {part.strip()!r}; use integers or 'unlimited'"
+            ) from exc
+        if budget < 0:
+            raise typer.BadParameter("budgets must be >= 0")
+        budgets.append(budget)
+    if not budgets:
+        raise typer.BadParameter("--budgets must include at least one budget")
+    return tuple(budgets)
+
+
+@app.command("agent-experience-lanes")
+def agent_experience_lanes(
+    lanes: str = typer.Option(
+        "all",
+        "--lanes",
+        help="Comma-separated internal lanes to run: tool-adoption, budget, cache, or all",
+    ),
+    budgets: str = typer.Option(
+        "256,512,1024,2048,4096,8192,unlimited",
+        "--budgets",
+        help="Budget-lane token sweep: comma-separated integers plus optional 'unlimited'",
+    ),
+    repeats: int = typer.Option(
+        5,
+        "--repeats",
+        min=2,
+        help="Cache-lane repeated checkouts used to verify byte-identical stable prefixes",
+    ),
+    output_dir: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--output-dir",
+        help="Optional directory for the agent-experience-lanes.json report",
+    ),
+) -> None:
+    """Run the internal Phase 1 agent-experience lanes: tool-adoption, budget, cache."""
+    lanes_module = _benchmark_module("agent_experience_lanes")
+    run_agent_experience_lanes = lanes_module.run_agent_experience_lanes
+    valid_lanes = tuple(lanes_module.AGENT_EXPERIENCE_LANE_NAMES)
+
+    selected_lanes = _parse_agent_experience_lanes(lanes, valid_lanes)
+    budget_sweep = _parse_agent_experience_budgets(budgets)
+    with tempfile.TemporaryDirectory(prefix="zaxy-agent-experience-") as tmp:
+        try:
+            payload = run_agent_experience_lanes(
+                Path(tmp),
+                lanes=selected_lanes,
+                budgets=budget_sweep,
+                repeats=repeats,
+            )
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+    rendered = json.dumps(payload, indent=2, sort_keys=True)
+    typer.echo(rendered)
+    if output_dir is not None:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        report_path = output_dir / "agent-experience-lanes.json"
+        report_path.write_text(rendered + "\n", encoding="utf-8")
+        typer.echo(f"Wrote JSON report: {report_path}", err=True)
+
+
+COGNITIVE_LANE_NAMES: tuple[str, ...] = ("forgetting", "fok-calibration")
+
+
+def _parse_cognitive_lanes(value: str) -> tuple[str, ...]:
+    """Parse the cognitive lane selection string."""
+    normalized = value.strip().casefold()
+    if normalized == "all":
+        return COGNITIVE_LANE_NAMES
+    selected = tuple(dict.fromkeys(part.strip() for part in value.split(",") if part.strip()))
+    if not selected:
+        raise typer.BadParameter("--lanes must include at least one lane")
+    invalid = sorted(set(selected) - set(COGNITIVE_LANE_NAMES))
+    if invalid:
+        valid_text = ", ".join((*COGNITIVE_LANE_NAMES, "all"))
+        raise typer.BadParameter(
+            f"Unsupported cognitive lane(s): {', '.join(invalid)}. Allowed: {valid_text}"
+        )
+    return selected
+
+
+def _parse_fok_corpus_sizes(value: str) -> tuple[int, ...]:
+    """Parse the FoK-calibration corpus-size sweep string."""
+    sizes: list[int] = []
+    for part in value.split(","):
+        token = part.strip()
+        if not token:
+            continue
+        try:
+            size = int(token)
+        except ValueError as exc:
+            raise typer.BadParameter(
+                f"invalid corpus size {token!r}; use positive integers"
+            ) from exc
+        if size <= 0:
+            raise typer.BadParameter("corpus sizes must be positive integers")
+        sizes.append(size)
+    if not sizes:
+        raise typer.BadParameter("--fok-sizes must include at least one corpus size")
+    return tuple(sizes)
+
+
+@app.command("cognitive-lanes")
+def cognitive_lanes(
+    lanes: str = typer.Option(
+        "all",
+        "--lanes",
+        help="Comma-separated internal lanes to run: forgetting, fok-calibration, or all",
+    ),
+    fok_sizes: str = typer.Option(
+        "50,200",
+        "--fok-sizes",
+        help="FoK-calibration corpus entity counts, comma-separated positive integers",
+    ),
+    output_dir: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--output-dir",
+        help="Optional directory for the cognitive-lanes.json report",
+    ),
+) -> None:
+    """Run the internal cognitive memory lanes: forgetting and FoK calibration."""
+    selected_lanes = _parse_cognitive_lanes(lanes)
+    sizes = _parse_fok_corpus_sizes(fok_sizes)
+    results: dict[str, Any] = {}
+    with tempfile.TemporaryDirectory(prefix="zaxy-cognitive-lanes-") as tmp:
+        try:
+            if "forgetting" in selected_lanes:
+                forgetting_module = _benchmark_module("forgetting_lane")
+                results["forgetting"] = forgetting_module.run_forgetting_lane(
+                    Path(tmp) / "forgetting"
+                )
+            if "fok-calibration" in selected_lanes:
+                fok_module = _benchmark_module("fok_calibration_lane")
+                results["fok_calibration"] = fok_module.run_fok_calibration_lane(
+                    Path(tmp) / "fok-calibration",
+                    sizes=sizes,
+                )
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+    payload = {
+        "version": "cognitive-lanes-v1",
+        "validation": "internal",
+        "lanes": results,
+    }
+    rendered = json.dumps(payload, indent=2, sort_keys=True)
+    typer.echo(rendered)
+    if output_dir is not None:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        report_path = output_dir / "cognitive-lanes.json"
+        report_path.write_text(rendered + "\n", encoding="utf-8")
+        typer.echo(f"Wrote JSON report: {report_path}", err=True)
+
+
 @app.command()
 def benchmark(
     output_dir: Path = typer.Option(  # noqa: B008
@@ -1311,3 +1494,133 @@ def longmembench_evaluate_official(
     typer.echo(json.dumps(payload, indent=2, sort_keys=True))
     if result.status != "complete":
         raise typer.Exit(1)
+
+
+GRAPH_SCALE_LANE_NAMES: tuple[str, ...] = ("graph-walk", "vector-scale")
+
+
+def _parse_graph_scale_lanes(value: str) -> tuple[str, ...]:
+    """Parse the graph/scale lane selection string."""
+    normalized = value.strip().casefold()
+    if normalized == "all":
+        return GRAPH_SCALE_LANE_NAMES
+    selected = tuple(dict.fromkeys(part.strip() for part in value.split(",") if part.strip()))
+    if not selected:
+        raise typer.BadParameter("--lanes must include at least one lane")
+    invalid = sorted(set(selected) - set(GRAPH_SCALE_LANE_NAMES))
+    if invalid:
+        valid_text = ", ".join((*GRAPH_SCALE_LANE_NAMES, "all"))
+        raise typer.BadParameter(
+            f"Unsupported graph/scale lane(s): {', '.join(invalid)}. Allowed: {valid_text}"
+        )
+    return selected
+
+
+def _parse_vector_scale_sizes(value: str) -> tuple[int, ...]:
+    """Parse the vector-scale corpus-size sweep string."""
+    sizes: list[int] = []
+    for part in value.split(","):
+        token = part.strip()
+        if not token:
+            continue
+        try:
+            size = int(token)
+        except ValueError as exc:
+            raise typer.BadParameter(
+                f"invalid corpus size {token!r}; use positive integers"
+            ) from exc
+        if size <= 0:
+            raise typer.BadParameter("corpus sizes must be positive integers")
+        sizes.append(size)
+    if not sizes:
+        raise typer.BadParameter("--scale-sizes must include at least one corpus size")
+    return tuple(sizes)
+
+
+@app.command("graph-scale-lanes")
+def graph_scale_lanes(
+    lanes: str = typer.Option(
+        "all",
+        "--lanes",
+        help="Comma-separated internal lanes to run: graph-walk, vector-scale, or all",
+    ),
+    scale_sizes: str = typer.Option(
+        "1000,10000",
+        "--scale-sizes",
+        help=(
+            "Vector-scale corpus sizes, comma-separated positive integers. "
+            "100000 is opt-in: the Kuzu HNSW shadow sync takes minutes at 10^5."
+        ),
+    ),
+    scale_dimension: int = typer.Option(
+        64,
+        "--scale-dimension",
+        min=1,
+        help="Hash-embedding dimension for the vector-scale corpora",
+    ),
+    ann_threshold: int = typer.Option(
+        256,
+        "--ann-threshold",
+        min=1,
+        help="Lowered vector_ann_threshold so the HNSW path engages at lane sizes",
+    ),
+    query_count: int = typer.Option(
+        32,
+        "--query-count",
+        min=1,
+        help="Fixed query-set size for vector-scale recall and latency",
+    ),
+    latency_passes: int = typer.Option(
+        3,
+        "--latency-passes",
+        min=1,
+        help="Timed passes over the query set per mode (latency samples)",
+    ),
+    walk_top_k: int = typer.Option(
+        5,
+        "--walk-top-k",
+        min=1,
+        help="Top-k window for graph-walk bridge and direct-hit membership",
+    ),
+    output_dir: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--output-dir",
+        help="Optional directory for the graph-scale-lanes.json report",
+    ),
+) -> None:
+    """Run the internal PPR graph-walk and vector-scale lanes."""
+    selected_lanes = _parse_graph_scale_lanes(lanes)
+    sizes = _parse_vector_scale_sizes(scale_sizes)
+    results: dict[str, Any] = {}
+    with tempfile.TemporaryDirectory(prefix="zaxy-graph-scale-lanes-") as tmp:
+        try:
+            if "graph-walk" in selected_lanes:
+                graph_walk_module = _benchmark_module("graph_walk_lane")
+                results["graph_walk"] = graph_walk_module.run_graph_walk_lane(
+                    Path(tmp) / "graph-walk",
+                    top_k=walk_top_k,
+                )
+            if "vector-scale" in selected_lanes:
+                vector_scale_module = _benchmark_module("vector_scale_lane")
+                results["vector_scale"] = vector_scale_module.run_vector_scale_lane(
+                    Path(tmp) / "vector-scale",
+                    sizes=sizes,
+                    dimension=scale_dimension,
+                    ann_threshold=ann_threshold,
+                    query_count=query_count,
+                    latency_passes=latency_passes,
+                )
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+    payload = {
+        "version": "graph-scale-lanes-v1",
+        "validation": "internal",
+        "lanes": results,
+    }
+    rendered = json.dumps(payload, indent=2, sort_keys=True)
+    typer.echo(rendered)
+    if output_dir is not None:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        report_path = output_dir / "graph-scale-lanes.json"
+        report_path.write_text(rendered + "\n", encoding="utf-8")
+        typer.echo(f"Wrote JSON report: {report_path}", err=True)

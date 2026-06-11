@@ -97,6 +97,15 @@
   &quot;citation&quot;: &quot;eventloom://agent-1/events/42#abcdef123456&quot;
 }</code></pre>
       <p>Projection: unknown-event fallback today, preserving the feedback as an Eventloom-backed audit record without deleting, invalidating, or downranking the target entity.</p>
+      <p>Use <code>memory.reinforcement</code> for the salience ledger. These events are appended automatically — checkout surfacing emits one batched <code>surfaced</code> event per checkout, positive <code>memory_feedback</code> emits <code>confirmed</code>, coordination promotion emits <code>promoted</code>, and <code>memory_invalidate</code> emits <code>invalidated</code> — and replaying them fully rebuilds per-memory salience state, so attenuation is always reversible.</p>
+      <pre><code class="language-json">{
+  &quot;kind&quot;: &quot;surfaced&quot;,
+  &quot;targets&quot;: [{&quot;seq&quot;: 42, &quot;hash&quot;: &quot;aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&quot;}],
+  &quot;source&quot;: {&quot;checkout_id&quot;: &quot;checkout-123&quot;},
+  &quot;authority_status&quot;: &quot;non_authoritative&quot;
+}</code></pre>
+      <p><code>kind</code> is <code>surfaced</code>, <code>confirmed</code>, <code>promoted</code>, or <code>invalidated</code>; <code>targets</code> cites the reinforced memories by event sequence and hash; <code>source</code> names the originating checkout, feedback, or promotion; and an optional <code>weight</code> overrides the default multiplier for the kind. Salience only changes ranking under the <code>cognitive</code> retrieval profile (see <a href="retrieval.html">retrieval.md</a>) and never changes what is citable.</p>
+      <p>Related payload conventions: appends may carry an optional <code>cues</code> mapping with <code>mission</code>, <code>workspace</code>, <code>tool</code>, and <code>phase</code> string fields for encoding-specificity blending; <code>&quot;pinned&quot;: true</code> exempts a memory from the attenuation floor; and when <code>ENCODING_GATE_ENABLED=true</code>, append payloads gain an observational <code>encoding</code> tag (<code>novel</code>, <code>reinforcing</code>, or <code>redundant</code>) that never blocks or drops the append.</p>
       <h2 id="metacognition">Metacognition</h2>
       <p>Use <code>metacognition.*</code> events for uncertainty, confidence trajectories, conflicting evidence, and re-verification needs. These events are always diagnostic and non-authoritative. They help an agent decide when to refresh, ask a user, or inspect conflicting evidence, but they do not update accepted facts.</p>
       <p>Supported beta.2 events:</p>
@@ -105,6 +114,7 @@
         <li><code>metacognition.confidence.assessed</code>: records one append-only confidence point for a claim with support/conflict counts and cited evidence.</li>
         <li><code>metacognition.conflict.clustered</code>: records unresolved support and conflict source-event sets for a claim.</li>
         <li><code>metacognition.reverify.requested</code>: records an open re-verification request with priority and cited source events.</li>
+        <li><code>metacognition.fok.predicted</code>: records one non-authoritative feeling-of-knowing calibration marker (<code>query_hash</code>, <code>verdict</code>, <code>score</code>) each time the experimental <code>memory_feeling_of_knowing</code> tool runs, so the internal calibration lane can score predictions against actual checkout outcomes.</li>
       </ul>
       <p>Example known unknown:</p>
       <pre><code class="language-json">{

@@ -24,6 +24,7 @@ BOUNDARY_TRIGGERS = {
     "session-start",
     "start",
     "resume",
+    "session-resumed",
     "precompact",
     "compaction",
     "postcompact",

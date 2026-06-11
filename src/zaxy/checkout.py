@@ -10,11 +10,25 @@ import re
 from typing import Any
 
 from zaxy.causal import CAUSAL_RELATION_TYPES, causal_relation_to_graph_relation
+from zaxy.context import (
+    ASSEMBLY_PROMPT_SECTION_SPECS,
+    TIER_CONSOLIDATED,
+    TIER_VOLATILE,
+    PromptSection,
+    PromptSectionSpec,
+    budget_diagnostics,
+    order_prompt_sections,
+    pack_prompt_sections,
+    render_prompt_sections,
+    split_prompt_sections,
+    stable_prefix_chars,
+)
 from zaxy.evidence import build_evidence_set, evaluate_evidence_policy
 from zaxy.evidence_candidates import candidate_type_priority, checkout_candidate_projection
 from zaxy.purpose import PurposeProfile, purpose_ontology_lens, purpose_profile
 from zaxy.retrieval_intent import classify_retrieval_intent
 from zaxy.synthesis_packet import synthesis_packet_from_items
+from zaxy.token_budget import estimate_tokens
 
 _COMPACT_CONTEXT_LIMIT = 8
 _COMPACT_ANSWER_CANDIDATE_LIMIT = 5
@@ -22,6 +36,40 @@ _COMPACT_SNIPPET_LIMIT = 500
 _CAUSAL_GRAPH_RELATION_TYPES = frozenset(
     causal_relation_to_graph_relation(relation_type) for relation_type in CAUSAL_RELATION_TYPES
 )
+
+(
+    _WORKING_SET_SPEC,
+    _RECENT_EVENTS_SPEC,
+    _RETRIEVED_CONTEXT_SPEC,
+    _CONTEXT_WARNINGS_SPEC,
+) = ASSEMBLY_PROMPT_SECTION_SPECS
+
+#: Canonical Memory Checkout section table in render order: stability tiers are
+#: rendered consolidated -> session -> volatile so repeated checkouts share a
+#: byte-identical consolidated prefix, and the same table drives both rendering
+#: and splitting (``checkout_prompt_sections``).
+CHECKOUT_PROMPT_SECTION_SPECS: tuple[PromptSectionSpec, ...] = (
+    PromptSectionSpec("# Memory Checkout", "checkout_header", TIER_CONSOLIDATED, weight=1.0, mandatory=True),
+    PromptSectionSpec("## Applicable Skills", "applicable_skills", TIER_CONSOLIDATED, weight=0.6),
+    PromptSectionSpec("## Skill Analytics", "skill_analytics", TIER_CONSOLIDATED, weight=0.35),
+    _WORKING_SET_SPEC,
+    _RECENT_EVENTS_SPEC,
+    PromptSectionSpec("Query: ", "checkout_query", TIER_VOLATILE, weight=1.0, mandatory=True, prefix=True),
+    PromptSectionSpec("## Purpose Profile", "purpose_profile", TIER_VOLATILE, weight=0.5),
+    PromptSectionSpec("## Answer Candidates", "answer_candidates", TIER_VOLATILE, weight=0.9),
+    PromptSectionSpec("## Compact Answer Context", "compact_answer_context", TIER_VOLATILE, weight=0.9),
+    PromptSectionSpec("## Current Facts", "current_facts", TIER_VOLATILE, weight=1.0),
+    PromptSectionSpec("## Evidence", "evidence", TIER_VOLATILE, weight=0.95),
+    PromptSectionSpec("## Checkout Quality", "checkout_quality", TIER_VOLATILE, weight=1.0, mandatory=True),
+    PromptSectionSpec("## Checkout Guidance", "checkout_guidance", TIER_VOLATILE, weight=1.0, mandatory=True),
+    PromptSectionSpec("## Purpose Guidance", "purpose_guidance", TIER_VOLATILE, weight=0.5),
+    PromptSectionSpec("## Synthesis Guidance", "synthesis_guidance", TIER_VOLATILE, weight=0.55),
+    PromptSectionSpec("## Synthesis Evidence", "synthesis_evidence", TIER_VOLATILE, weight=0.6),
+    PromptSectionSpec("## Checkout Diagnostics", "checkout_diagnostics", TIER_VOLATILE, weight=0.3),
+    _RETRIEVED_CONTEXT_SPEC,
+    _CONTEXT_WARNINGS_SPEC,
+)
+_CHECKOUT_SPEC_BY_KIND = {spec.kind: spec for spec in CHECKOUT_PROMPT_SECTION_SPECS}
 
 
 def build_checkout_diagnostics(
@@ -367,62 +415,196 @@ def format_memory_checkout_prompt(
     guidance: dict[str, Any],
     diagnostics: dict[str, Any],
 ) -> str:
-    """Format the prompt-ready Memory Checkout contract."""
-    lines = ["# Memory Checkout", f"Query: {query}"]
-    _append_purpose(lines, diagnostics.get("purpose"))
-    _append_answer_candidates(lines, diagnostics.get("synthesis"))
-    lines.extend(["", "## Current Facts"])
-    compact_contexts = diagnostics.get("compact_contexts")
-    if isinstance(compact_contexts, list) and compact_contexts:
-        lines = ["# Memory Checkout", f"Query: {query}"]
-        _append_purpose(lines, diagnostics.get("purpose"))
-        _append_answer_candidates(lines, diagnostics.get("synthesis"))
-        lines.extend(["", "## Compact Answer Context"])
-        for context in compact_contexts:
-            if isinstance(context, str):
-                lines.append(f"- {_trim_text(context, 700)}")
-        lines.extend(["", "## Current Facts"])
+    """Format the prompt-ready Memory Checkout contract in stability-tier order."""
+    return render_prompt_sections(
+        build_memory_checkout_prompt_sections(
+            query=query,
+            assembly_prompt=assembly_prompt,
+            current_facts=current_facts,
+            evidence=evidence,
+            quality=quality,
+            guidance=guidance,
+            diagnostics=diagnostics,
+        )
+    )
+
+
+def build_memory_checkout_prompt_sections(
+    *,
+    query: str,
+    assembly_prompt: str,
+    current_facts: list[dict[str, Any]],
+    evidence: list[dict[str, Any]],
+    quality: dict[str, Any],
+    guidance: dict[str, Any],
+    diagnostics: dict[str, Any],
+) -> list[PromptSection]:
+    """Build the canonical Memory Checkout sections in stability-tier order.
+
+    The consolidated tier (header, skills, procedures) is serialized with
+    stable sort keys and contains no render-time timestamps or query-specific
+    text, so two checkouts with no intervening append share a byte-identical
+    prefix. Query-specific material renders in the volatile tail.
+    """
+    blocks: list[tuple[str, str | None]] = [
+        ("checkout_header", "# Memory Checkout"),
+        ("checkout_query", f"Query: {query}"),
+        ("purpose_profile", _purpose_profile_block(diagnostics.get("purpose"))),
+        ("answer_candidates", _answer_candidates_block(diagnostics.get("synthesis"))),
+        ("compact_answer_context", _compact_answer_context_block(diagnostics.get("compact_contexts"))),
+        ("current_facts", _current_facts_block(current_facts)),
+        ("evidence", _evidence_block(evidence)),
+        ("applicable_skills", _applicable_skills_block(diagnostics.get("skills"))),
+        ("skill_analytics", _skill_analytics_block(diagnostics.get("skill_analytics"))),
+        ("checkout_quality", _quality_block(quality)),
+        ("checkout_guidance", _guidance_block(guidance)),
+        ("purpose_guidance", _purpose_guidance_block(guidance.get("purpose"))),
+        ("synthesis_guidance", _synthesis_guidance_block(guidance.get("synthesis"))),
+        ("synthesis_evidence", _synthesis_evidence_block(diagnostics.get("synthesis"))),
+        ("checkout_diagnostics", _diagnostics_block(diagnostics, quality)),
+    ]
+    sections = [
+        PromptSection(
+            section_id=kind,
+            kind=kind,
+            tier=_CHECKOUT_SPEC_BY_KIND[kind].tier,
+            text=text,
+            weight=_CHECKOUT_SPEC_BY_KIND[kind].weight,
+            mandatory=_CHECKOUT_SPEC_BY_KIND[kind].mandatory,
+        )
+        for kind, text in blocks
+        if text
+    ]
+    sections.extend(
+        split_prompt_sections(
+            assembly_prompt,
+            ASSEMBLY_PROMPT_SECTION_SPECS,
+            preamble_kind="assembly_preamble",
+        )
+    )
+    return order_prompt_sections(sections)
+
+
+def checkout_prompt_sections(prompt: str) -> list[PromptSection]:
+    """Split a canonically rendered Memory Checkout prompt into its sections."""
+    return split_prompt_sections(
+        prompt,
+        CHECKOUT_PROMPT_SECTION_SPECS,
+        preamble_kind="checkout_preamble",
+        preamble_tier=TIER_CONSOLIDATED,
+    )
+
+
+def checkout_stable_prefix_chars(prompt: str) -> int:
+    """Return the consolidated-tier stable prefix length of a checkout prompt."""
+    return stable_prefix_chars(checkout_prompt_sections(prompt))
+
+
+def apply_checkout_budget(payload: dict[str, Any], *, max_tokens: int | None) -> dict[str, Any]:
+    """Attach cache-stability diagnostics and optionally pack the checkout prompt.
+
+    With ``max_tokens`` set, the prompt is greedily packed (mandatory header
+    and trust-contract sections always survive) and diagnostics gain
+    ``budget_requested``, ``budget_used``, and an ``elided`` summary. Without
+    it, only ``stable_prefix_chars`` is recorded and the payload content is
+    unchanged. The payload is mutated in place and returned.
+    """
+    prompt = payload.get("prompt")
+    if not isinstance(prompt, str) or not prompt:
+        return payload
+    sections = checkout_prompt_sections(prompt)
+    diagnostics = payload.get("diagnostics")
+    if not isinstance(diagnostics, dict):
+        diagnostics = {}
+        payload["diagnostics"] = diagnostics
+    if max_tokens is not None:
+        sections, result = pack_prompt_sections(sections, max_tokens=max_tokens)
+        payload["prompt"] = render_prompt_sections(sections)
+        diagnostics.update(budget_diagnostics(result))
+        _refresh_token_efficiency(payload)
+    diagnostics["stable_prefix_chars"] = stable_prefix_chars(sections)
+    return payload
+
+
+def _refresh_token_efficiency(payload: dict[str, Any]) -> None:
+    """Re-estimate prompt token metrics after budget packing changed the prompt."""
+    token_efficiency = payload.get("token_efficiency")
+    prompt = payload.get("prompt")
+    if not isinstance(token_efficiency, dict) or not isinstance(prompt, str):
+        return
+    prompt_tokens = estimate_tokens(prompt)
+    token_efficiency["prompt_tokens"] = prompt_tokens
+    fact_count = token_efficiency.get("current_fact_count")
+    if isinstance(fact_count, int) and not isinstance(fact_count, bool):
+        token_efficiency["facts_per_1k_prompt_tokens"] = (
+            round((fact_count / prompt_tokens) * 1000, 3) if prompt_tokens else 0.0
+        )
+
+
+def _block(lines: list[str]) -> str | None:
+    text = "\n".join(lines).strip()
+    return text or None
+
+
+def _purpose_profile_block(purpose: Any) -> str | None:
+    lines: list[str] = []
+    _append_purpose(lines, purpose)
+    return _block(lines)
+
+
+def _answer_candidates_block(synthesis: Any) -> str | None:
+    lines: list[str] = []
+    _append_answer_candidates(lines, synthesis)
+    return _block(lines)
+
+
+def _compact_answer_context_block(compact_contexts: Any) -> str | None:
+    if not isinstance(compact_contexts, list) or not compact_contexts:
+        return None
+    lines = ["## Compact Answer Context"]
+    for context in compact_contexts:
+        if isinstance(context, str):
+            lines.append(f"- {_trim_text(context, 700)}")
+    return _block(lines)
+
+
+def _current_facts_block(current_facts: list[dict[str, Any]]) -> str:
+    lines = ["## Current Facts"]
     if current_facts:
         for fact in current_facts:
             citation = f" ({fact['citation']})" if fact.get("citation") else ""
             lines.append(f"- {fact['content']}{citation}")
     else:
         lines.append("- No current facts were retrieved.")
-    lines.extend(["", "## Evidence"])
+    return "\n".join(lines)
+
+
+def _evidence_block(evidence: list[dict[str, Any]]) -> str:
+    lines = ["## Evidence"]
     if evidence:
         for item in evidence:
             lines.append(f"- {item['citation']}: {item['content']}")
     else:
         lines.append("- No cited evidence was retrieved.")
-    _append_applicable_skills(lines, diagnostics.get("skills"))
-    _append_skill_analytics(lines, diagnostics.get("skill_analytics"))
-    lines.extend(["", "## Checkout Quality"])
+    return "\n".join(lines)
+
+
+def _quality_block(quality: dict[str, Any]) -> str:
+    lines = ["## Checkout Quality"]
     lines.append(f"- Answerability: {quality.get('answerability')}")
     lines.append(f"- Confidence: {quality.get('confidence')}")
     for reason in quality.get("reasons", []):
         lines.append(f"- Reason: {reason}")
     _append_required_action(lines, quality.get("required_action"))
-    lines.extend(["", "## Checkout Guidance"])
+    return "\n".join(lines)
+
+
+def _guidance_block(guidance: dict[str, Any]) -> str:
+    lines = ["## Checkout Guidance"]
     for item in guidance.get("trust", []):
         lines.append(f"- Trust: {item}")
     for item in guidance.get("ignore", []):
         lines.append(f"- Ignore: {item}")
-    purpose_guidance = guidance.get("purpose")
-    if isinstance(purpose_guidance, dict):
-        lines.extend(["", "## Purpose Guidance"])
-        lines.append(f"- Profile: {purpose_guidance.get('profile')}")
-        lines.append(f"- Evidence policy: {purpose_guidance.get('evidence_policy')}")
-        lines.append(f"- Expected action: {purpose_guidance.get('expected_action')}")
-        for lens in _text_list(purpose_guidance.get("ontology_lens")):
-            lines.append(f"- Lens: {lens}")
-    synthesis = guidance.get("synthesis")
-    if isinstance(synthesis, dict):
-        lines.extend(["", "## Synthesis Guidance"])
-        lines.append(f"- Mode: {synthesis.get('mode')}")
-        lines.append(f"- Evidence needed: {synthesis.get('evidence_needed')}")
-        for step in _text_list(synthesis.get("steps")):
-            lines.append(f"- Step: {step}")
-    _append_synthesis_evidence(lines, diagnostics.get("synthesis"))
     recommended_next_call = guidance.get("recommended_next_call")
     if isinstance(recommended_next_call, dict):
         lines.append(
@@ -432,8 +614,41 @@ def format_memory_checkout_prompt(
     feedback = guidance.get("feedback")
     if isinstance(feedback, dict) and feedback.get("payloads"):
         lines.append(f"- Feedback: call {feedback.get('tool')} with a listed payload after use.")
+    return "\n".join(lines)
+
+
+def _purpose_guidance_block(purpose_guidance: Any) -> str | None:
+    if not isinstance(purpose_guidance, dict):
+        return None
+    lines = ["## Purpose Guidance"]
+    lines.append(f"- Profile: {purpose_guidance.get('profile')}")
+    lines.append(f"- Evidence policy: {purpose_guidance.get('evidence_policy')}")
+    lines.append(f"- Expected action: {purpose_guidance.get('expected_action')}")
+    for lens in _text_list(purpose_guidance.get("ontology_lens")):
+        lines.append(f"- Lens: {lens}")
+    return "\n".join(lines)
+
+
+def _synthesis_guidance_block(synthesis: Any) -> str | None:
+    if not isinstance(synthesis, dict):
+        return None
+    lines = ["## Synthesis Guidance"]
+    lines.append(f"- Mode: {synthesis.get('mode')}")
+    lines.append(f"- Evidence needed: {synthesis.get('evidence_needed')}")
+    for step in _text_list(synthesis.get("steps")):
+        lines.append(f"- Step: {step}")
+    return "\n".join(lines)
+
+
+def _synthesis_evidence_block(synthesis: Any) -> str | None:
+    lines: list[str] = []
+    _append_synthesis_evidence(lines, synthesis)
+    return _block(lines)
+
+
+def _diagnostics_block(diagnostics: dict[str, Any], quality: dict[str, Any]) -> str:
     source_lanes = diagnostics.get("source_lanes")
-    lines.extend(["", "## Checkout Diagnostics"])
+    lines = ["## Checkout Diagnostics"]
     evidence_plan = diagnostics.get("evidence_plan")
     if isinstance(evidence_plan, dict):
         reasons = _text_list(evidence_plan.get("reasons"))
@@ -585,13 +800,21 @@ def format_memory_checkout_prompt(
             f"excluded_reasons={excluded_reasons}, "
             f"authority={procedural_memory.get('authority_status', 'non_authoritative')}"
         )
+    salience = diagnostics.get("salience")
+    if isinstance(salience, dict):
+        lines.append(
+            "- Salience: "
+            f"scored={salience.get('scored_count', 0)}, "
+            f"half_life_days={salience.get('half_life_days')}, "
+            f"authority={salience.get('authority_status', 'non_authoritative')} "
+            "(diagnostics only; never changes ranking)"
+        )
     if diagnostics.get("feedback_recommended"):
         lines.append(
             "- Feedback: call "
             f"{diagnostics.get('feedback_tool', 'memory_feedback')} after using cited context."
         )
-    lines.extend(["", assembly_prompt])
-    return "\n".join(lines).strip()
+    return "\n".join(lines)
 
 
 def build_compact_answer_contexts(
@@ -1283,16 +1506,26 @@ def _append_answer_candidates(lines: list[str], synthesis: Any) -> None:
         )
 
 
-def _append_applicable_skills(lines: list[str], skills: Any) -> None:
+def _canonical_skill_order(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Sort consolidated-tier skill rows by stable keys for cache-stable rendering."""
+    return sorted(
+        items,
+        key=lambda item: (
+            str(item.get("skill_id") or ""),
+            str(item.get("version") or ""),
+            str(item.get("citation") or item.get("latest_citation") or ""),
+        ),
+    )
+
+
+def _applicable_skills_block(skills: Any) -> str | None:
     if not isinstance(skills, dict):
-        return
+        return None
     items = skills.get("items")
     if not isinstance(items, list) or not items:
-        return
-    lines.extend(["", "## Applicable Skills"])
-    for item in items:
-        if not isinstance(item, dict):
-            continue
+        return None
+    lines = ["## Applicable Skills"]
+    for item in _canonical_skill_order([item for item in items if isinstance(item, dict)]):
         skill_id = str(item.get("skill_id") or "unknown").strip()
         version = str(item.get("version") or "1").strip()
         status = str(item.get("status") or "unknown").strip()
@@ -1301,11 +1534,12 @@ def _append_applicable_skills(lines: list[str], skills: Any) -> None:
         lines.append(f"- {skill_id} v{version} [{status}]{suffix}")
         for step in _text_list(item.get("procedure"))[:5]:
             lines.append(f"  - {step}")
+    return "\n".join(lines)
 
 
-def _append_skill_analytics(lines: list[str], analytics: Any) -> None:
+def _skill_analytics_block(analytics: Any) -> str | None:
     if not isinstance(analytics, dict):
-        return
+        return None
     promotions = analytics.get("promotion_candidates")
     rollbacks = analytics.get("rollback_candidates")
     if not isinstance(promotions, list):
@@ -1313,16 +1547,15 @@ def _append_skill_analytics(lines: list[str], analytics: Any) -> None:
     if not isinstance(rollbacks, list):
         rollbacks = []
     if not promotions and not rollbacks and not analytics.get("contradiction_count"):
-        return
-    lines.extend(["", "## Skill Analytics"])
+        return None
+    lines = ["## Skill Analytics"]
     lines.append(
         "- "
         f"outcomes={analytics.get('outcome_count', 0)}; "
         f"contradictions={analytics.get('contradiction_count', 0)}"
     )
-    for item in promotions[:3]:
-        if not isinstance(item, dict):
-            continue
+    shown_promotions = [item for item in promotions[:3] if isinstance(item, dict)]
+    for item in _canonical_skill_order(shown_promotions):
         citation = str(item.get("latest_citation") or "").strip()
         suffix = f"; citation={citation}" if citation else ""
         lines.append(
@@ -1332,9 +1565,8 @@ def _append_skill_analytics(lines: list[str], analytics: Any) -> None:
             f"average_success_score={item.get('average_success_score')}"
             f"{suffix}"
         )
-    for item in rollbacks[:3]:
-        if not isinstance(item, dict):
-            continue
+    shown_rollbacks = [item for item in rollbacks[:3] if isinstance(item, dict)]
+    for item in _canonical_skill_order(shown_rollbacks):
         citation = str(item.get("latest_citation") or "").strip()
         suffix = f"; citation={citation}" if citation else ""
         lines.append(
@@ -1344,6 +1576,7 @@ def _append_skill_analytics(lines: list[str], analytics: Any) -> None:
             f"failures={item.get('failure_count', 0)}"
             f"{suffix}"
         )
+    return "\n".join(lines)
 
 
 def _int_metric(value: Any) -> int:

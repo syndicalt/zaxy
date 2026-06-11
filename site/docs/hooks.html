@@ -101,6 +101,11 @@ zaxy hook-event heartbeat --eventloom-path .eventloom --session-id my-project-de
             <td>Mark a resumed or rehydrated client session and request a fresh checkout reminder.</td>
           </tr>
           <tr>
+            <td><code>session-resumed</code></td>
+            <td><code>hook.session_resumed</code></td>
+            <td>Mark a post-compaction resume and print a cited recovery packet to stdout.</td>
+          </tr>
+          <tr>
             <td><code>stop</code></td>
             <td><code>hook.stop</code></td>
             <td>Record a normal response/session checkpoint.</td>
@@ -179,6 +184,25 @@ zaxy hook-event transcript-turn \
   --role assistant \
   --content &quot;Recorded the implementation decision.&quot; \
   --turn-index 12</code></pre>
+      <h2 id="compaction-recovery-session-resumed">Compaction Recovery (<code>session-resumed</code>)</h2>
+      <p>The <code>precompact</code> trigger records that compaction is about to happen; the <code>session-resumed</code> trigger closes the loop after the harness compacts and resumes. It appends a <code>hook.session_resumed</code> lifecycle event and then prints a recovery packet to stdout so the invoking hook can re-inject it into agent context. The packet is assembled read-only from Eventloom-backed state — open tasks and assignments, accepted coordination findings, recorded known unknowns, and recent verbatim activity since the last consolidation or precompact anchor — and every line carries an <code>eventloom://</code> citation to its sealed source event. Assembly is deterministic for a given log state and each section is bounded, so the packet stays small enough to inject verbatim.</p>
+      <p>Claude Code wiring example (<code>SessionStart</code> matched on <code>compact</code> fires after a compaction-triggered resume; the hook&#x27;s stdout is added to the new context):</p>
+      <pre><code class="language-json">{
+  &quot;hooks&quot;: {
+    &quot;SessionStart&quot;: [
+      {
+        &quot;matcher&quot;: &quot;compact&quot;,
+        &quot;hooks&quot;: [
+          {
+            &quot;type&quot;: &quot;command&quot;,
+            &quot;command&quot;: &quot;zaxy hook-event session-resumed --eventloom-path .eventloom --session-id my-project-default --source claude-code&quot;
+          }
+        ]
+      }
+    ]
+  }
+}</code></pre>
+      <p>Any harness with a post-compaction or resume hook can use the same command; the packet is plain text bracketed by <code>=== ZAXY RECOVERY PACKET ... ===</code> markers. <code>zaxy doctor</code> complements the loop with hash-chain, projection freshness, embedding-dimension, and vector-cache headroom checks so a resumed session can trust what it recovers.</p>
       <p>Command observations redact common secret-bearing arguments and bound stdout and stderr excerpts. File-edit observations persist path, operation, summary, and line count metadata; they do not persist source content. Tool-call observations persist argument keys but not raw argument values. Transcript-turn observations sanitize content before append so they can serve as source-recall material without storing obvious secrets.</p>
       <h2 id="payload">Payload</h2>
       <p>Hook events use actor <code>zaxy-hook</code> and append to the selected session log. The payload is intentionally small:</p>

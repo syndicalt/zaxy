@@ -123,15 +123,28 @@ the generated MCP config before changing memory code.
 
 ## Model Call Rhythm
 
-At session start, call `memory_bootstrap`. Before substantial work, call
-`memory_checkout` with the current task. After using projected context, call
-`memory_feedback` so Zaxy can reinforce useful memory.
+`memory_checkout` is the front door: call it first, with the current task,
+before substantial work. At session start, call `memory_bootstrap` for
+awareness, then checkout. After using projected context, call
+`memory_feedback` so Zaxy can reinforce useful memory. Everything else is
+plumbing or power use; `memory_capabilities` is the discovery surface for the
+rest of the tool set. The experimental `memory_feeling_of_knowing` offers a
+~1 ms pre-check of whether checkout would likely return anything for a query —
+a cheap hint before checkout, never a memory answer.
 
 For roadmap, release, review, implementation, resume, and high-context
 questions, treat checkout as required before answering. Bootstrap is awareness;
 checkout is the current cited prompt state. When checkout returns warnings,
 unsupported context, stale state, or a required action, follow that guidance
 instead of treating old model context as authoritative.
+
+The server lists the core profile by default (since 2.1.0): only the
+front-door verbs (`memory_checkout`, `memory_append`, `memory_query`,
+`context_assemble`, `memory_feedback`, `memory_invalidate`,
+`memory_capabilities`, `memory_feeling_of_knowing`) appear in the listing;
+every other tool stays callable by name, and `memory_capabilities` reports
+the available-but-unlisted set. To restore the full listing, serve with
+`zaxy serve --profile full` or set `MCP_TOOL_PROFILE=full`.
 
 For multi-agent missions, use the `coordination_*` tools rather than plain
 append calls when recording worker findings. `coordination_report_finding`

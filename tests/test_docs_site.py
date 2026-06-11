@@ -97,7 +97,7 @@ def test_public_site_has_product_positioning_and_required_sections() -> None:
     assert "Eventloom source of truth" in html
     assert "Pathlight" in html
     assert "embedded Kuzu" in html
-    assert "PyPI 2.0.1" in html
+    assert "PyPI 2.1.0" in html
     assert "Harvey LAB 10/10 tasks" in html
     assert "Harvey LAB mean 0.788" in html
     assert "Headline 500 R@5 1.000" in html
@@ -702,7 +702,7 @@ def test_mcp_docs_publish_tool_contract_snapshot() -> None:
     fixture = json.loads(Path("docs/examples/mcp-tool-contract.json").read_text(encoding="utf-8"))
     docs = Path("docs/mcp.md").read_text(encoding="utf-8")
 
-    assert fixture["tool_count"] == len(fixture["tools"]) == 44
+    assert fixture["tool_count"] == len(fixture["tools"]) == 47
     assert "docs/examples/mcp-tool-contract.json" in docs
     assert "MCP tool contract snapshot" in docs
     assert {tool["name"] for tool in fixture["tools"]} >= {

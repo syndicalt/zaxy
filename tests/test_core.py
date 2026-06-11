@@ -783,6 +783,142 @@ class TestContextFeedback:
         assert payload["entity_type"] == "memory"
 
 
+class TestSalienceReinforcementWiring:
+    """Salience emitters ride the fabric append path without changing behavior."""
+
+    @staticmethod
+    def _checkout_setup(fabric: MemoryFabric) -> None:
+        event = MagicMock(
+            seq=3,
+            type="decision.recorded",
+            actor="assistant",
+            payload={"decision": "Memory checkout should be the agent context contract."},
+            hash="c" * 64,
+            thread="agent-1",
+            timestamp="2026-06-09T12:00:00Z",
+        )
+        fabric.session_manager.replay.return_value = MagicMock(
+            events=[event],
+            integrity=MagicMock(ok=True),
+        )
+        fabric.query_router.query.return_value = [
+            ContextChunk(
+                content="Use Memory Checkout as the prompt-ready context contract.",
+                source="keyword",
+                score=0.95,
+                valid_from="2026-05-10T12:00:00Z",
+                valid_to=None,
+                citation=f"eventloom://agent-1/events/3#{'c' * 12}",
+                entity_name="memory checkout",
+                entity_type="decision",
+            ),
+        ]
+
+    async def test_checkout_memory_appends_batched_surfaced_reinforcement(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """Checkout should append one surfaced event through the event-spec path."""
+        self._checkout_setup(fabric)
+
+        with patch.object(fabric, "query_verbatim", return_value=[]):
+            checkout = await fabric.checkout_memory(
+                "What memory contract should the model use?",
+                session_id="agent-1",
+                limit=3,
+            )
+
+        call = fabric.session_manager.get.return_value.eventlog.append.call_args_list[-1]
+        assert call.args == ("memory.reinforcement",)
+        assert call.kwargs["thread"] == "agent-1"
+        assert call.kwargs["actor"] == "zaxy-memory"
+        assert call.kwargs["payload"]["kind"] == "surfaced"
+        assert call.kwargs["payload"]["targets"] == [{"seq": 3, "hash": "c" * 64}]
+        assert call.kwargs["payload"]["source"]["checkout_id"] == (
+            f"eventloom://agent-1/events/3#{'c' * 12}"
+        )
+        assert call.kwargs["payload"]["authority_status"] == "non_authoritative"
+        assert checkout.current_facts
+
+    async def test_failed_reinforcement_append_never_fails_the_checkout(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """Reinforcement is best-effort observability state."""
+        self._checkout_setup(fabric)
+
+        with (
+            patch.object(fabric, "query_verbatim", return_value=[]),
+            patch.object(
+                fabric,
+                "_append_event_spec",
+                AsyncMock(side_effect=RuntimeError("append unavailable")),
+            ),
+        ):
+            checkout = await fabric.checkout_memory(
+                "What memory contract should the model use?",
+                session_id="agent-1",
+                limit=3,
+            )
+
+        assert checkout.current_facts
+        assert checkout.warnings is not None
+
+    async def test_invalidate_appends_invalidated_reinforcement_with_entity_provenance(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """Fabric-level invalidation should emit negative reinforcement for CLI and MCP."""
+        fabric._connected = True
+        fabric.graph.search_exact.return_value = [
+            SimpleNamespace(
+                properties={"source_event_seq": 9, "source_event_hash": "e" * 64}
+            )
+        ]
+
+        await fabric.invalidate(
+            "salience ledger",
+            "decision",
+            "2026-06-10T00:00:00Z",
+            session_id="agent-1",
+        )
+
+        fabric.graph.invalidate_entity.assert_awaited_once_with(
+            "salience ledger",
+            "decision",
+            "2026-06-10T00:00:00Z",
+            session_id="agent-1",
+        )
+        call = fabric.session_manager.get.return_value.eventlog.append.call_args_list[-1]
+        assert call.args == ("memory.reinforcement",)
+        assert call.kwargs["payload"]["kind"] == "invalidated"
+        assert call.kwargs["payload"]["targets"] == [{"seq": 9, "hash": "e" * 64}]
+        assert call.kwargs["payload"]["source"]["invalidation_id"] == (
+            "invalidate:decision:salience ledger@2026-06-10T00:00:00Z"
+        )
+
+    async def test_invalidate_emission_failure_never_fails_the_invalidation(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        fabric._connected = True
+        fabric.graph.search_exact.side_effect = RuntimeError("projection down")
+
+        await fabric.invalidate(
+            "salience ledger",
+            "decision",
+            "2026-06-10T00:00:00Z",
+            session_id="agent-1",
+        )
+
+        fabric.graph.invalidate_entity.assert_awaited_once()
+        appended_types = [
+            call.args[0]
+            for call in fabric.session_manager.get.return_value.eventlog.append.call_args_list
+        ]
+        assert "memory.reinforcement" not in appended_types
+
+
 class TestPurposeOutcomeLearning:
     """Tests for replay-derived purpose outcome effects on future checkout."""
 
@@ -2456,6 +2592,18 @@ class TestContextAssembly:
             "citation_count": 2,
             "current_citation_count": 1,
             "current_fact_count": 1,
+            # The cognitive default profile (2.1.0 flip) always reports the
+            # attenuation block; with no reinforcement events it is empty and
+            # ranking is identical to plain (cold-start parity).
+            "attenuation": {
+                "authority_status": "non_authoritative",
+                "floor": 0.15,
+                "label": "attenuated",
+                "excluded_count": 0,
+                "excluded": [],
+                "exempt_count": 0,
+                "exempt": [],
+            },
             "evidence_plan": {
                 "mode": "direct_fact",
                 "needs_source_lane": False,
@@ -2491,16 +2639,30 @@ class TestContextAssembly:
             "feedback_recommended": True,
             "feedback_tool": "memory_feedback",
             "feedback_reason": "Reinforce cited context if it materially informed the next response.",
+            # 2.1.0 default flip: unconfigured fabrics report the cognitive
+            # profile (same local_fast stack plus the cognitive flags).
             "retrieval_profile": {
-                "name": "local_fast",
+                "name": "cognitive",
                 "embedding_provider": "hash",
                 "embedding_model": None,
                 "embedding_dimension": 1536,
                 "reranker_provider": "lexical",
                 "scoring_profile": "balanced",
-                "lanes": ["bm25", "hash_vector", "verbatim", "graph", "lexical_rerank"],
+                "lanes": [
+                    "bm25",
+                    "hash_vector",
+                    "verbatim",
+                    "graph",
+                    "graph_walk",
+                    "lexical_rerank",
+                ],
                 "hosted": False,
                 "experimental": False,
+                "cognitive": {
+                    "salience_ranking": True,
+                    "cue_blending": True,
+                    "graph_walk": True,
+                },
             },
             "purpose_retrieval_policy": {
                 "profile": "general",
@@ -3489,12 +3651,15 @@ class TestContextAssembly:
         assert fabric.query_router.query.await_args.kwargs["limit"] > 2
         assert checkout.diagnostics["recall"]["candidate_count"] == 4
         assert checkout.diagnostics["recall"]["source_group_count"] == 4
-        assert checkout.diagnostics["retrieval_profile"]["name"] == "local_fast"
+        # 2.1.0 default flip: the unconfigured fabric reports the cognitive
+        # profile (local_fast stack plus the graph_walk lane).
+        assert checkout.diagnostics["retrieval_profile"]["name"] == "cognitive"
         assert checkout.diagnostics["retrieval_profile"]["lanes"] == [
             "bm25",
             "hash_vector",
             "verbatim",
             "graph",
+            "graph_walk",
             "lexical_rerank",
         ]
         assert [item["citation"] for item in checkout.evidence[:3]] == [

@@ -387,6 +387,21 @@ To run the SSE transport for daemon-style clients:
 zaxy serve --transport sse --port 8080
 ```
 
+The server lists the front-door `core` tool set by default (since 2.1.0). To
+list every tool instead, serve the full profile:
+
+```bash
+zaxy serve --profile full
+```
+
+The core profile lists `memory_checkout` (the front door — call it first,
+before substantial work), `memory_append`, `memory_query`, `context_assemble`,
+`memory_feedback`, `memory_invalidate`, and `memory_capabilities`. Profiles
+change listing, not capability: every tool stays callable by name, and
+`memory_capabilities` reports the available-but-unlisted set. The default is
+`core` (since 2.1.0); set `MCP_TOOL_PROFILE=full` or pass
+`zaxy serve --profile full` to list every tool.
+
 ## Keep source-derived context fresh
 
 Use `zaxy refresh-context` when documents or code should stay synchronized with
@@ -450,8 +465,9 @@ the latest checkout, latest capture, activation efficiency, and structured
 command under "Memory next steps" so a stale or missing checkout is actionable
 without reading Eventloom JSONL.
 
-The MCP tool names are stable: `memory_append`, `memory_query`,
-`memory_feedback`, `memory_replay`, and `memory_invalidate`. A simple client can
+The MCP tool names are stable: `memory_checkout` is the front door, and
+`memory_append`, `memory_query`, `memory_feedback`, `memory_replay`, and
+`memory_invalidate` keep their contracts. A simple client can
 append a typed `goal.created` or `task.proposed` event, query for the goal
 title, record whether retrieved context was useful, and receive compact context
 chunks from the graph. Zaxy also exposes a Python API through `MemoryFabric`;

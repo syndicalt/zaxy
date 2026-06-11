@@ -18,6 +18,7 @@ def test_run_doctor_reports_local_setup_ok(tmp_path: Path, monkeypatch) -> None:
         _env_file=None,
         eventloom_path=str(tmp_path / ".eventloom"),
         eventloom_thread="zaxy-default",
+        embedded_graph_path=str(tmp_path / ".eventloom" / "projections" / "embedded.kuzu"),
         neo4j_uri="bolt://localhost:7687",
         zaxy_env="development",
         embedding_enabled=True,
@@ -31,7 +32,11 @@ def test_run_doctor_reports_local_setup_ok(tmp_path: Path, monkeypatch) -> None:
     assert report["status"] == "warning"
     assert {check["name"]: check["status"] for check in report["checks"]} == {
         "eventloom": "ok",
+        "event_chain": "ok",
         "local_profile": "ok",
+        "embedding": "ok",
+        "vector_cache": "ok",
+        "embedding_versions": "ok",
         "viewer": "ok",
         "cli_install": "ok",
         "mcp_defaults": "ok",
@@ -46,6 +51,7 @@ def test_run_doctor_reports_local_setup_ok(tmp_path: Path, monkeypatch) -> None:
         "packet_memory": "warning",
         "embedded_mcp_runtime": "ok",
         "embedded_graph": "ok",
+        "projection_freshness": "ok",
         "production": "ok",
     }
     assert (tmp_path / ".eventloom").is_dir()
@@ -561,3 +567,304 @@ def test_packet_status_reports_analyzer_probe_state(tmp_path: Path) -> None:
         "analyzer_listening": False,
         "client_base_url": "http://127.0.0.1:1/v1",
     }
+
+
+def _local_settings(tmp_path: Path, **overrides: object) -> Settings:
+    values: dict[str, object] = {
+        "eventloom_path": str(tmp_path / ".eventloom"),
+        "eventloom_thread": "zaxy-default",
+        "zaxy_env": "development",
+        "embedding_enabled": True,
+        "embedding_provider": "hash",
+        "reranker_provider": "lexical",
+    }
+    values.update(overrides)
+    return Settings(_env_file=None, **values)  # type: ignore[arg-type]
+
+
+def test_run_doctor_verifies_event_chain_over_active_log(tmp_path: Path) -> None:
+    """Doctor should fully verify the hash chain of a small active log."""
+    settings = _local_settings(tmp_path)
+    log = EventLog(tmp_path / ".eventloom" / "zaxy-default.jsonl")
+    log.append("task.created", actor="user", payload={"taskId": "task-1", "title": "Ship it"}, thread="zaxy-default")
+    log.append("task.completed", actor="agent", payload={"taskId": "task-1"}, thread="zaxy-default")
+
+    report = run_doctor(settings=settings, workspace_root=tmp_path)
+
+    check = next(check for check in report["checks"] if check["name"] == "event_chain")
+    assert check["status"] == "ok"
+    assert "hash chain verified over 2 events (full)" in check["message"]
+
+
+def test_run_doctor_reports_broken_event_chain_with_remediation(tmp_path: Path) -> None:
+    """Doctor should flag in-place log tampering and print a one-line remediation."""
+    settings = _local_settings(tmp_path)
+    log_path = tmp_path / ".eventloom" / "zaxy-default.jsonl"
+    log = EventLog(log_path)
+    log.append("task.created", actor="user", payload={"taskId": "task-1", "title": "Ship it"}, thread="zaxy-default")
+    log.append("task.completed", actor="agent", payload={"taskId": "task-1"}, thread="zaxy-default")
+    log_path.write_text(log_path.read_text(encoding="utf-8").replace("Ship it", "Sink it"), encoding="utf-8")
+
+    report = run_doctor(settings=settings, workspace_root=tmp_path)
+
+    check = next(check for check in report["checks"] if check["name"] == "event_chain")
+    assert report["status"] == "error"
+    assert check["status"] == "error"
+    assert "hash chain broken" in check["message"]
+    assert check["action"]
+
+
+def test_run_doctor_reports_embedding_provider_unavailable(tmp_path: Path) -> None:
+    """Doctor should turn a misconfigured embedding provider into an actionable error."""
+    settings = _local_settings(tmp_path, embedding_provider="openai", openai_api_key=None)
+
+    report = run_doctor(settings=settings, workspace_root=tmp_path)
+
+    check = next(check for check in report["checks"] if check["name"] == "embedding")
+    assert check["status"] == "error"
+    assert "embedding provider openai is unavailable" in check["message"]
+    assert check["action"]
+
+
+@patch("zaxy.doctor.build_embedding_provider")
+def test_run_doctor_reports_embedding_dimension_disagreement(
+    mock_build: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """Doctor should refuse silent dimension drift between settings and provider."""
+    provider = MagicMock()
+    provider.dimension = 64
+    mock_build.return_value = provider
+    settings = _local_settings(tmp_path)
+
+    report = run_doctor(settings=settings, workspace_root=tmp_path)
+
+    check = next(check for check in report["checks"] if check["name"] == "embedding")
+    assert check["status"] == "error"
+    assert "dimension 64" in check["message"]
+    assert "EMBEDDING_DIMENSION=1536" in check["message"]
+    assert check["action"]
+
+
+def test_run_doctor_reports_embedding_provider_ok(tmp_path: Path) -> None:
+    """Doctor should confirm the offline hash provider and its probed dimension."""
+    settings = _local_settings(tmp_path)
+
+    report = run_doctor(settings=settings, workspace_root=tmp_path)
+
+    check = next(check for check in report["checks"] if check["name"] == "embedding")
+    assert check["status"] == "ok"
+    assert "hash embeddings available at dimension 1536" in check["message"]
+
+
+def test_run_doctor_warns_on_vector_cache_budget_headroom(tmp_path: Path) -> None:
+    """Doctor should flag embedding dimensions that exhaust the vector cache budget."""
+    settings = _local_settings(tmp_path, embedding_dimension=8_000_000)
+
+    report = run_doctor(settings=settings, workspace_root=tmp_path)
+
+    check = next(check for check in report["checks"] if check["name"] == "vector_cache")
+    assert check["status"] == "warning"
+    assert "fits only" in check["message"]
+    assert check["details"]["budget_vector_capacity"] < 1024
+    assert check["action"]
+
+
+def test_run_doctor_reports_vector_cache_budget_ok(tmp_path: Path) -> None:
+    """Doctor should report healthy vector cache headroom at the default dimension."""
+    settings = _local_settings(tmp_path)
+
+    report = run_doctor(settings=settings, workspace_root=tmp_path)
+
+    check = next(check for check in report["checks"] if check["name"] == "vector_cache")
+    assert check["status"] == "ok"
+    assert "vector index cache budget holds about" in check["message"]
+    assert check["details"]["budget_vector_capacity"] >= 1024
+
+
+def test_run_doctor_warns_when_projection_is_missing_for_active_log(tmp_path: Path) -> None:
+    """Doctor should flag an event log with no embedded projection state."""
+    settings = _local_settings(
+        tmp_path,
+        projection_backend="embedded",
+        embedded_graph_path=str(tmp_path / ".eventloom" / "projections" / "embedded.kuzu"),
+    )
+    EventLog(tmp_path / ".eventloom" / "zaxy-default.jsonl").append(
+        "task.created",
+        actor="user",
+        payload={"taskId": "task-1", "title": "Ship it"},
+        thread="zaxy-default",
+    )
+
+    report = run_doctor(settings=settings, workspace_root=tmp_path)
+
+    check = next(check for check in report["checks"] if check["name"] == "projection_freshness")
+    assert check["status"] == "warning"
+    assert "has no state for the active event log" in check["message"]
+    assert "zaxy memory checkout" in check["action"]
+
+
+def test_run_doctor_warns_when_projection_is_older_than_log(tmp_path: Path) -> None:
+    """Doctor should flag projection state that predates the latest log writes."""
+    import os
+
+    projection_path = tmp_path / ".eventloom" / "projections" / "embedded.kuzu"
+    projection_path.mkdir(parents=True)
+    (projection_path / "data.kz").write_text("projection", encoding="utf-8")
+    settings = _local_settings(
+        tmp_path,
+        projection_backend="embedded",
+        embedded_graph_path=str(projection_path),
+    )
+    log_path = tmp_path / ".eventloom" / "zaxy-default.jsonl"
+    EventLog(log_path).append(
+        "task.created",
+        actor="user",
+        payload={"taskId": "task-1", "title": "Ship it"},
+        thread="zaxy-default",
+    )
+    stale = log_path.stat().st_mtime - 60
+    for path in (projection_path, projection_path / "data.kz"):
+        os.utime(path, (stale, stale))
+
+    report = run_doctor(settings=settings, workspace_root=tmp_path)
+
+    check = next(check for check in report["checks"] if check["name"] == "projection_freshness")
+    assert check["status"] == "warning"
+    assert "older than the active event log" in check["message"]
+    assert "zaxy memory checkout" in check["action"]
+
+
+def test_run_doctor_reports_projection_freshness_ok(tmp_path: Path) -> None:
+    """Doctor should pass projection state that is at least as new as the log."""
+    import os
+
+    projection_path = tmp_path / ".eventloom" / "projections" / "embedded.kuzu"
+    projection_path.mkdir(parents=True)
+    (projection_path / "data.kz").write_text("projection", encoding="utf-8")
+    settings = _local_settings(
+        tmp_path,
+        projection_backend="embedded",
+        embedded_graph_path=str(projection_path),
+    )
+    log_path = tmp_path / ".eventloom" / "zaxy-default.jsonl"
+    EventLog(log_path).append(
+        "task.created",
+        actor="user",
+        payload={"taskId": "task-1", "title": "Ship it"},
+        thread="zaxy-default",
+    )
+    fresh = log_path.stat().st_mtime + 60
+    os.utime(projection_path / "data.kz", (fresh, fresh))
+
+    report = run_doctor(settings=settings, workspace_root=tmp_path)
+
+    check = next(check for check in report["checks"] if check["name"] == "projection_freshness")
+    assert check["status"] == "ok"
+    assert "at least as new as the active event log" in check["message"]
+
+
+def _seed_embedded_projection_vectors(
+    projection_path: Path,
+    *,
+    session_id: str,
+    embedding_versions: list[str | None],
+) -> None:
+    """Project one embedded entity per requested embedding version tag."""
+    import asyncio
+
+    from zaxy.embedded_graph_store import EmbeddedGraphStore
+    from zaxy.extract import ExtractedEntity, ExtractionResult
+
+    async def _seed() -> None:
+        store = EmbeddedGraphStore(projection_path)
+        await store.connect()
+        await store.init_schema()
+        for position, version in enumerate(embedding_versions):
+            properties = {"embedding_version": version} if version else None
+            await store.upsert_extraction(
+                ExtractionResult(
+                    entities=[
+                        ExtractedEntity(
+                            name=f"Vector Entity {position}",
+                            entity_type="goal",
+                            observed_at="2026-06-10T00:00:00Z",
+                            embedding=[1.0, 0.0],
+                            properties=properties,
+                        )
+                    ],
+                    edges=[],
+                    source_event_seq=position + 1,
+                    source_event_hash=f"hash-{position + 1}",
+                ),
+                session_id=session_id,
+            )
+        await store.close()
+
+    asyncio.run(_seed())
+
+
+def test_run_doctor_warns_on_mixed_embedding_versions(tmp_path: Path) -> None:
+    """Doctor should flag stale-version vectors and point at the re-embed command."""
+    from zaxy.embedding import hash_embedding_version_tag
+
+    projection_path = tmp_path / ".eventloom" / "projections" / "embedded.kuzu"
+    active_tag = hash_embedding_version_tag(1536)
+    _seed_embedded_projection_vectors(
+        projection_path,
+        session_id="zaxy-default",
+        embedding_versions=[active_tag, None, "openai:text-embedding-3-small@1.0.0-dim2"],
+    )
+    settings = _local_settings(
+        tmp_path,
+        projection_backend="embedded",
+        embedded_graph_path=str(projection_path),
+    )
+
+    report = run_doctor(settings=settings, workspace_root=tmp_path)
+
+    check = next(check for check in report["checks"] if check["name"] == "embedding_versions")
+    assert check["status"] == "warning"
+    assert active_tag in check["message"]
+    assert "zaxy memory re-embed --session-id zaxy-default" in check["action"]
+    assert check["details"]["versions"]["zaxy-default"]["legacy"] == 1
+    assert check["details"]["versions"]["zaxy-default"][active_tag] == 1
+
+
+def test_run_doctor_reports_single_embedding_version_ok(tmp_path: Path) -> None:
+    """Doctor should pass corpora where every vector carries the active version."""
+    from zaxy.embedding import hash_embedding_version_tag
+
+    projection_path = tmp_path / ".eventloom" / "projections" / "embedded.kuzu"
+    active_tag = hash_embedding_version_tag(1536)
+    _seed_embedded_projection_vectors(
+        projection_path,
+        session_id="zaxy-default",
+        embedding_versions=[active_tag, active_tag],
+    )
+    settings = _local_settings(
+        tmp_path,
+        projection_backend="embedded",
+        embedded_graph_path=str(projection_path),
+    )
+
+    report = run_doctor(settings=settings, workspace_root=tmp_path)
+
+    check = next(check for check in report["checks"] if check["name"] == "embedding_versions")
+    assert check["status"] == "ok"
+    assert f"active embedding version {active_tag}" in check["message"]
+
+
+def test_run_doctor_skips_embedding_versions_without_projection(tmp_path: Path) -> None:
+    """Doctor should not warn when no embedded projection exists yet."""
+    settings = _local_settings(
+        tmp_path,
+        projection_backend="embedded",
+        embedded_graph_path=str(tmp_path / ".eventloom" / "projections" / "embedded.kuzu"),
+    )
+
+    report = run_doctor(settings=settings, workspace_root=tmp_path)
+
+    check = next(check for check in report["checks"] if check["name"] == "embedding_versions")
+    assert check["status"] == "ok"
+    assert "no embedded projection yet" in check["message"]

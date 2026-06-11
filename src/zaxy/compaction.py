@@ -434,7 +434,7 @@ def _projection_record(
     return CompactionProjectionRecord(
         kind=kind,
         event_seq=event.seq,
-        event_ref=_event_ref(event),
+        event_ref=event_ref(event),
         text=event_context(event.model_dump()),
         identities=identities,
         citations=tuple(identity for identity in identities if _is_source_citation(identity)),
@@ -685,7 +685,8 @@ def _representative_text(events: list[Event]) -> str:
     return "\n".join([event_context(event.model_dump()), *_event_identities(event)])
 
 
-def _event_ref(event: Event) -> str:
+def event_ref(event: Event) -> str:
+    """Return the canonical Eventloom citation for one sealed event."""
     return f"eventloom://{event.thread}/events/{event.seq}#{event.hash[:12]}"
 
 

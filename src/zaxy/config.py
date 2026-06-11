@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -243,6 +243,15 @@ class Settings(BaseSettings):
         default=True,
         description="Append redacted lifecycle events for MCP tool calls",
     )
+    # Default flipped from "full" to "core" in 2.1.0 backed by the internal
+    # tool-adoption lane (listing surface 8,165 -> 1,344 estimated tokens, an
+    # 83.5% reduction, with the front door listed first). Profiles change
+    # listing only — dispatch is never filtered, so every tool stays callable
+    # by name. Set MCP_TOOL_PROFILE=full to restore the previous listing.
+    mcp_tool_profile: Literal["core", "full"] = Field(
+        default="core",
+        description="MCP tool listing profile: core lists the front-door verb set, full lists every tool",
+    )
 
     # ------------------------------------------------------------------
     # Logging
@@ -259,9 +268,17 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     # Query router
     # ------------------------------------------------------------------
+    # Default flipped from "local_fast" to "cognitive" in 2.1.0 backed by the
+    # internal forgetting lane (cold-start parity exact, no-recall-loss 1.0,
+    # pin/authority exemptions 1.0, ranking lift 1.0 vs 0.0). The cognitive
+    # profile composes the same local_fast retrieval stack plus the
+    # salience-ranking, cue-blending, and graph-walk flags. Set
+    # RETRIEVAL_PROFILE=local_fast to restore the previous plain ranking.
     retrieval_profile: str = Field(
-        default="local_fast",
-        description="Named retrieval profile: local_fast, local_sota, hosted_sota, or custom",
+        default="cognitive",
+        description=(
+            "Named retrieval profile: cognitive, local_fast, local_sota, hosted_sota, or custom"
+        ),
     )
     query_default_limit: int = Field(
         default=10,
@@ -300,6 +317,26 @@ class Settings(BaseSettings):
         default=1,
         ge=0,
         description="Maximum assembled context slots reserved for recent packet memory",
+    )
+    salience_half_life_days: float = Field(
+        default=30.0,
+        gt=0,
+        description="Half-life in days for salience recency decay in the reinforcement ledger",
+    )
+    salience_floor: float = Field(
+        default=0.15,
+        ge=0,
+        description=(
+            "Salience score below which non-exempt memories are attenuated out of "
+            "default checkout ranking under the cognitive retrieval profile"
+        ),
+    )
+    encoding_gate_enabled: bool = Field(
+        default=False,
+        description=(
+            "Tag appended events with a novel/reinforcing/redundant encoding "
+            "classification; events are always appended and hash-chained regardless"
+        ),
     )
 
     # ------------------------------------------------------------------
@@ -348,6 +385,26 @@ class Settings(BaseSettings):
     embedding_sentence_transformer_model: str = Field(
         default="sentence-transformers/all-MiniLM-L6-v2",
         description="Local sentence-transformers model name for semantic embeddings",
+    )
+    # Default raised from 50_000 in 2.1.0: the internal vector-scale lane measured
+    # the HNSW path below the exact matrix on both recall (0.90 vs 1.0 @ 10^5) and
+    # latency, so no default corpus size should auto-engage it until the ANN path
+    # gains per-query projected-graph reuse and recall tuning.
+    vector_ann_threshold: int = Field(
+        default=1_000_000,
+        ge=1,
+        description=(
+            "Per-session vector count above which the embedded backend uses a "
+            "Kuzu-native HNSW index instead of the exact dense matrix; the 2.1.0 "
+            "default keeps ANN effectively opt-in"
+        ),
+    )
+    vector_quantization: Literal["none", "int8"] = Field(
+        default="none",
+        description=(
+            "Embedded vector index storage quantization: none (exact float64) or "
+            "int8 (per-vector scales with float rerank of oversampled candidates)"
+        ),
     )
 
     # ------------------------------------------------------------------
