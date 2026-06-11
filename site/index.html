@@ -4,15 +4,15 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Zaxy - event-sourced memory for agent work</title>
-  <meta name="description" content="Zaxy is an event-sourced, purpose-conditioned memory runtime for agent work: isolated worker sessions, accepted project state, cited Memory Checkout, purpose diagnostics, and replayable provenance." />
+  <meta name="description" content="Zaxy is an event-sourced memory runtime for agent work: cited Memory Checkout, salience-based forgetting that attenuates instead of deleting, compaction recovery, coordinated worker sessions, and replayable provenance on a hash-chained append-only log." />
   <meta property="og:title" content="Zaxy - event-sourced memory for agent work" />
-  <meta property="og:description" content="Event-sourced memory for agent teams, with cited checkout, accepted-state recovery, and release-gated provenance benchmarks." />
+  <meta property="og:description" content="Event-sourced agent memory with cited checkout, reversible cognitive forgetting, compaction recovery, and lane-measured defaults." />
   <meta property="og:type" content="website" />
-  <meta property="og:image" content="https://docs.zaxy.io/assets/zaxy-v1.1-header.png" />
-  <meta property="og:image:width" content="1835" />
-  <meta property="og:image:height" content="857" />
+  <meta property="og:image" content="https://docs.zaxy.io/assets/zaxy-v2.1-header.png" />
+  <meta property="og:image:width" content="1600" />
+  <meta property="og:image:height" content="640" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:image" content="https://docs.zaxy.io/assets/zaxy-v1.1-header.png" />
+  <meta name="twitter:image" content="https://docs.zaxy.io/assets/zaxy-v2.1-header.png" />
   <link rel="canonical" href="https://docs.zaxy.io/" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -24,6 +24,7 @@
   <nav class="nav" aria-label="Primary">
     <a class="brand" href="#top"><span class="brand-mark" aria-hidden="true">Z</span><span>Zaxy</span></a>
     <div class="nav-links">
+      <a href="#memory">Memory</a>
       <a href="#coordinate">Coordinate</a>
       <a href="#purpose">Purpose</a>
       <a href="#benchmarks">Benchmarks</a>
@@ -41,24 +42,29 @@
         <p class="eyebrow">Event-sourced memory for agent work</p>
         <h1>Zaxy</h1>
         <p class="tagline">
-          Zaxy keeps multi-agent projects replayable: parent missions, isolated
-          worker sessions, cited findings, purpose-conditioned checkout, conflict
-          review, and accepted merge-back into one durable project history.
+          Zaxy turns agent work into durable, auditable memory: a hash-chained
+          append-only log as the source of truth, cited Memory Checkout as the
+          trust contract, salience-based forgetting that attenuates instead of
+          deleting, compaction recovery for long sessions, and coordinated
+          worker missions that merge back into one replayable project history.
         </p>
         <div class="cta-row">
           <a href="#install" class="btn btn-primary">Install locally</a>
-          <a href="docs/coordinate-roadmap.html" class="btn btn-secondary">Coordinate docs</a>
+          <a href="docs/announcements/zaxy-v2.1.html" class="btn btn-secondary">What's new in 2.1</a>
         </div>
       </div>
       <div class="hero-console" aria-label="Memory runtime status">
         <div><span>runtime</span><strong>embedded Kuzu default</strong></div>
         <div><span>source</span><strong>Eventloom append-only JSONL</strong></div>
-        <div><span>checkout</span><strong>cited, purpose-conditioned context</strong></div>
+        <div><span>checkout</span><strong>cited, token-budgeted context</strong></div>
+        <div><span>forgetting</span><strong>salience attenuation, replayable</strong></div>
       </div>
     </section>
 
     <section class="proof-strip" aria-label="Project status">
       <span>PyPI 2.1.0</span>
+      <span>47 MCP tools, 8-tool core profile</span>
+      <span>cognitive ranking default</span>
       <span>embedded local runtime</span>
       <span>Harvey LAB 10/10 tasks</span>
       <span>Harvey LAB mean 0.788</span>
@@ -66,6 +72,29 @@
       <span>Harvey LAB external signal</span>
       <span>headline 500 checkout evidence</span>
       <span>external verification requested</span>
+    </section>
+
+    <section id="memory" class="section">
+      <div class="section-heading">
+        <p class="eyebrow">Cognitive memory</p>
+        <h2>Memory that forgets like a human, with receipts.</h2>
+        <p>
+          Zaxy 2.x implements the memory literature as boring, testable scoring
+          over an immutable log: retrieval strengthens, disuse decays, surprise
+          gates encoding. Forgetting is pure projection policy &mdash; attenuated
+          memories leave default ranking but stay one explicit query away, with
+          a replayable record of why they faded. Every default in this list was
+          flipped or held by an evaluation lane that ships in the repo.
+        </p>
+      </div>
+      <div class="tool-grid">
+        <article><code>salience ranking</code><p>Confirmed memories outrank stale ones; invalidated memories attenuate below a floor. Pinned and authority-reviewed memories are exempt. Cold-start ranking is byte-identical to plain retrieval &mdash; measured, not asserted.</p></article>
+        <article><code>compaction recovery</code><p>After a context compaction, a <code>session-resumed</code> hook hands the agent back its open tasks, accepted findings, and known unknowns &mdash; every line citing the exact log events it came from.</p></article>
+        <article><code>memory_checkout(..., max_tokens=N)</code><p>Token-budgeted packing with explicit elision reporting, and cache-stable packet ordering: consolidated content renders byte-identically across calls so provider prompt caching hits.</p></article>
+        <article><code>tool profiles</code><p>The default core profile lists 8 tools instead of 47 &mdash; an 83.5% smaller listing surface &mdash; while every tool stays callable by name. <code>--profile full</code> restores the complete listing.</p></article>
+        <article><code>memory_feeling_of_knowing</code><p>Experimental sub-millisecond metamemory pre-check: would checkout likely return something? Lets agents decide whether retrieval is worth the call before paying for it.</p></article>
+        <article><code>zaxy memory mine-procedures</code><p>Recurring successful tool sequences become review-pending procedure candidates with trace citations. Nothing becomes authoritative without review &mdash; the same gate as every generated abstraction.</p></article>
+      </div>
     </section>
 
     <section id="coordinate" class="section">
@@ -114,8 +143,8 @@
         <p class="eyebrow">Purpose control plane</p>
         <h2>The same evidence can mean different memory for different work.</h2>
         <p>
-          Zaxy now carries purpose through retrieval, checkout diagnostics,
-          feedback, compaction, and Coordinate accepted state. This is still
+          Zaxy carries purpose-conditioned checkout through retrieval,
+          diagnostics, feedback, compaction, and Coordinate accepted state. This is still
           framed as project-local agent work memory, not a broad Company Brain
           claim.
         </p>
@@ -136,7 +165,8 @@
       <div class="interface-list">
         <span><code>coordination_checkout</code> accepted parent state plus diagnostic worker-local findings</span>
         <span><code>coordination_approval_packet</code> reviewable accept/reject/defer/promote payloads</span>
-        <span><code>memory_checkout</code> answerability, current_citation_count, required action, and memory_feedback guidance</span>
+        <span><code>memory_checkout</code> answerability, current_citation_count, salience diagnostics, budget reporting, and memory_feedback guidance</span>
+        <span><code>memory_feeling_of_knowing</code> experimental likely/possible/unlikely pre-check with calibration markers</span>
         <span><code>CoordinationAdapter</code> dependency-light Python wrapper with LangGraph and CrewAI helper paths</span>
         <span><code>dashboard --enable-coordinate-review</code> opt-in human review controls over replay-backed state; read-only remains the default</span>
       </div>
@@ -243,6 +273,8 @@ zaxy coordinate checkout --mission auth-main</code></pre>
         <h2>Start with Coordinate and purpose. Keep the rest as operator reference.</h2>
       </div>
       <div class="docs-grid docs-grid-featured">
+        <a href="docs/announcements/zaxy-v2.1.html">Zaxy 2.1.0 release</a>
+        <a href="docs/migration.html">Migration guide (2.0 to 2.1+)</a>
         <a href="docs/coordinate-roadmap.html">Coordinate roadmap</a>
         <a href="docs/benchmarks.html">Benchmarks</a>
         <a href="docs/research/zaxy-memory-fabric-paper.html">Research paper</a>
@@ -260,6 +292,7 @@ zaxy coordinate checkout --mission auth-main</code></pre>
       <details class="docs-more">
         <summary>Operator and internals reference</summary>
         <div class="docs-grid">
+          <a href="docs/announcements/zaxy-v2.1.html">Zaxy 2.1.0 release</a>
           <a href="docs/announcements/zaxy-v1.0.html">Zaxy 1.0.0 release</a>
           <a href="docs/announcements/zaxy-v1.0-x-article.html">Zaxy 1.0.0 X article</a>
           <a href="docs/announcements/zaxy-v1.1-x-article.html">Zaxy 1.1.0 X article</a>
@@ -291,7 +324,7 @@ zaxy coordinate checkout --mission auth-main</code></pre>
   </main>
 
   <footer>
-    <span>Zaxy v1.0.2 - MIT</span>
+    <span>Zaxy v2.1.0 - MIT</span>
     <span><a href="README.html">README</a> <a href="docs/runbook.html">Runbook</a></span>
   </footer>
 </body>
