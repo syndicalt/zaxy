@@ -1,14 +1,26 @@
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from zaxy.event import Event
 from zaxy.extract import extract
 from zaxy.metacognition import (
+    FOK_BLOOM_FALSE_POSITIVE_RATE,
+    FOK_BLOOM_WEIGHT,
+    FOK_CUE_WEIGHT,
+    FOK_LIKELY_THRESHOLD,
+    FOK_POSSIBLE_THRESHOLD,
+    FOK_SALIENCE_BUCKET_UPPER_BOUNDS,
+    FOK_SALIENCE_WEIGHT,
+    FeelingOfKnowingIndex,
     build_confidence_assessment_event,
     build_conflict_cluster_event,
+    build_feeling_of_knowing_index,
     build_known_unknown_event,
     build_reverify_request_event,
+    feeling_of_knowing,
     summarize_metacognition_events,
 )
 
@@ -444,3 +456,180 @@ def test_known_unknown_accepts_valid_explicit_id() -> None:
     )
 
     assert event["payload"]["unknown_id"] == "metacognition:unknown:" + ("a" * 24)
+
+
+# --- Feeling-of-knowing pre-check -------------------------------------------
+
+_FOK_CORPUS_SIZE = 10_000
+
+
+def _seeded_corpus_index() -> FeelingOfKnowingIndex:
+    return build_feeling_of_knowing_index(
+        f"corpusname{position:05d}" for position in range(_FOK_CORPUS_SIZE)
+    )
+
+
+def test_fok_known_present_terms_always_hit_the_bloom() -> None:
+    """A bloom filter never produces false negatives for inserted tokens."""
+    index = _seeded_corpus_index()
+    for position in range(0, _FOK_CORPUS_SIZE, 7):
+        verdict = feeling_of_knowing(index, f"corpusname{position:05d}")
+        assert verdict.signals.bloom_hits == 1
+        assert verdict.verdict == "likely"
+
+
+def test_fok_bloom_false_positive_rate_stays_near_design_rate() -> None:
+    """Known-absent terms should hit at most ~3x the design FP rate."""
+    index = _seeded_corpus_index()
+    probes = 10_000
+    false_positives = sum(
+        feeling_of_knowing(index, f"absenttoken{position:05d}").signals.bloom_hits
+        for position in range(probes)
+    )
+    assert false_positives / probes <= 3.0 * FOK_BLOOM_FALSE_POSITIVE_RATE
+
+
+def test_fok_verdict_thresholds_partition_the_score_range() -> None:
+    index = build_feeling_of_knowing_index(["alpha beta", "gamma delta"])
+
+    full_match = feeling_of_knowing(index, "alpha beta")
+    assert full_match.score == pytest.approx(FOK_BLOOM_WEIGHT)
+    assert full_match.score >= FOK_LIKELY_THRESHOLD
+    assert full_match.verdict == "likely"
+
+    half_match = feeling_of_knowing(index, "alpha zzqq")
+    assert half_match.score == pytest.approx(FOK_BLOOM_WEIGHT / 2)
+    assert FOK_POSSIBLE_THRESHOLD <= half_match.score < FOK_LIKELY_THRESHOLD
+    assert half_match.verdict == "possible"
+
+    no_match = feeling_of_knowing(index, "zzqq yyxx")
+    assert no_match.score == 0.0
+    assert no_match.verdict == "unlikely"
+
+
+def test_fok_one_third_bloom_hit_lands_on_possible_boundary() -> None:
+    """Regression: 0.6 * (1/3) is exactly the possible threshold, not below it.
+
+    In binary floating point ``0.6 * (1/3)`` evaluates to
+    0.19999999999999998 < 0.2, which misclassified the designed boundary
+    case ("roughly one third of the query terms are known names") as
+    "unlikely" before the epsilon-tolerant threshold comparison.
+    """
+    index = build_feeling_of_knowing_index(["amber dynamo gateway"])
+
+    verdict = feeling_of_knowing(index, "amber crater turbine")
+
+    assert verdict.signals.query_term_count == 3
+    assert verdict.signals.bloom_hits == 1
+    assert verdict.score == pytest.approx(FOK_BLOOM_WEIGHT / 3)
+    assert verdict.verdict == "possible"
+
+
+def test_fok_signal_breakdown_reports_exact_components() -> None:
+    index = build_feeling_of_knowing_index(
+        ["alpha beta"],
+        cue_counts={"Alpha": 2, "repo": 1},
+        salience_by_name={"alpha beta": 2.0},
+    )
+
+    verdict = feeling_of_knowing(index, "alpha gammaz")
+
+    signals = verdict.signals
+    assert signals.query_term_count == 2
+    assert signals.bloom_hits == 1
+    assert signals.bloom_hit_ratio == pytest.approx(0.5)
+    assert signals.cue_hits == 1  # cue keys are casefolded at build time
+    assert signals.cue_hit_total == 2
+    assert signals.cue_hit_ratio == pytest.approx(0.5)
+    assert signals.matched_salience_mass == pytest.approx(2.0)
+    assert signals.total_salience_mass == pytest.approx(2.0)
+    assert signals.salience_mass_ratio == pytest.approx(1.0)
+    expected_score = (
+        FOK_BLOOM_WEIGHT * 0.5 + FOK_CUE_WEIGHT * 0.5 + FOK_SALIENCE_WEIGHT * 1.0
+    )
+    assert verdict.score == pytest.approx(expected_score)
+    assert verdict.verdict == "likely"
+    payload = verdict.to_dict()
+    assert payload["authority_status"] == "non_authoritative"
+    assert payload["signals"]["bloom_hits"] == 1
+
+
+def test_fok_salience_histogram_uses_fixed_buckets() -> None:
+    index = build_feeling_of_knowing_index(
+        ["a1", "b2", "c3", "d4", "e5"],
+        salience_by_name={"a1": 0.3, "b2": 0.9, "c3": 1.5, "d4": 3.0, "e5": 7.0},
+    )
+
+    assert len(index.salience_histogram) == len(FOK_SALIENCE_BUCKET_UPPER_BOUNDS) + 1
+    assert index.salience_histogram == (1, 1, 1, 1, 1)
+    assert index.total_salience_mass == pytest.approx(12.7)
+
+
+def test_fok_empty_index_is_always_unlikely() -> None:
+    index = build_feeling_of_knowing_index([])
+
+    verdict = feeling_of_knowing(index, "anything alpha beta")
+
+    assert index.entity_count == 0
+    assert index.token_count == 0
+    assert verdict.verdict == "unlikely"
+    assert verdict.score == 0.0
+    assert verdict.signals.bloom_hits == 0
+
+
+def test_fok_stop_word_only_query_is_unlikely_not_an_error() -> None:
+    index = build_feeling_of_knowing_index(["alpha beta"])
+
+    verdict = feeling_of_knowing(index, "what was the")
+
+    assert verdict.signals.query_term_count == 0
+    assert verdict.verdict == "unlikely"
+
+
+def test_fok_index_and_verdicts_are_deterministic() -> None:
+    names = ["alpha beta", "Gamma Service", "delta-pipeline"]
+    cues = {"alpha": 3, "pipeline": 1}
+    salience = {"alpha beta": 1.5, "Gamma Service": 0.4}
+
+    first = build_feeling_of_knowing_index(names, cue_counts=cues, salience_by_name=salience)
+    second = build_feeling_of_knowing_index(names, cue_counts=cues, salience_by_name=salience)
+
+    assert first == second
+    assert feeling_of_knowing(first, "alpha pipeline") == feeling_of_knowing(
+        second, "alpha pipeline"
+    )
+
+
+def test_fok_builder_validates_inputs() -> None:
+    with pytest.raises(ValueError, match="entity_names"):
+        build_feeling_of_knowing_index([42])  # type: ignore[list-item]
+    with pytest.raises(ValueError, match="cue_counts"):
+        build_feeling_of_knowing_index([], cue_counts={"alpha": -1})
+    with pytest.raises(ValueError, match="cue_counts"):
+        build_feeling_of_knowing_index([], cue_counts={"alpha": True})
+    with pytest.raises(ValueError, match="salience_by_name"):
+        build_feeling_of_knowing_index([], salience_by_name={"alpha": float("nan")})
+    with pytest.raises(ValueError, match="salience_by_name"):
+        build_feeling_of_knowing_index([], salience_by_name={"alpha": -0.1})
+
+
+def test_fok_query_validation() -> None:
+    index = build_feeling_of_knowing_index(["alpha"])
+    with pytest.raises(ValueError, match="query"):
+        feeling_of_knowing(index, "   ")
+    with pytest.raises(ValueError, match="FeelingOfKnowingIndex"):
+        feeling_of_knowing("not-an-index", "alpha")  # type: ignore[arg-type]
+
+
+def test_fok_performance_smoke_10k_names_1k_queries() -> None:
+    """10k-name index build plus 1k verdicts should stay comfortably fast."""
+    started = time.perf_counter()
+    index = _seeded_corpus_index()
+    built = time.perf_counter()
+    for position in range(1_000):
+        feeling_of_knowing(index, f"corpusname{position:05d} absentterm{position:05d}")
+    finished = time.perf_counter()
+
+    # Generous bounds to avoid flaky CI; locally this runs in well under 1s.
+    assert built - started < 5.0
+    assert finished - built < 5.0

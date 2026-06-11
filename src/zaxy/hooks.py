@@ -144,6 +144,7 @@ def hook_event_type(trigger: str) -> str:
         "session-start": "hook.session_started",
         "start": "hook.session_started",
         "resume": "hook.resumed",
+        "session-resumed": "hook.session_resumed",
         "stop": "hook.stop",
         "precompact": "hook.precompact",
         "checkpoint": "hook.checkpoint",
@@ -153,7 +154,8 @@ def hook_event_type(trigger: str) -> str:
         return event_types[normalized]
     except KeyError as exc:
         raise ValueError(
-            "hook trigger must be one of: session-start, resume, stop, precompact, checkpoint, heartbeat"
+            "hook trigger must be one of: session-start, resume, session-resumed, "
+            "stop, precompact, checkpoint, heartbeat"
         ) from exc
 
 

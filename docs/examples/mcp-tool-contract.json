@@ -1,8 +1,59 @@
 {
-  "tool_count": 44,
+  "tool_count": 47,
   "tools": [
     {
-      "description": "Append a typed event to the agent's persistent memory log.",
+      "description": "The front door to Zaxy memory: call this first, before substantial work, to checkout current, cited, prompt-ready memory state for a session. Start here; every other memory tool is plumbing or power use, discoverable through memory_capabilities.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 10,
+            "type": "integer"
+          },
+          "max_recent_events": {
+            "default": 20,
+            "type": "integer"
+          },
+          "max_tokens": {
+            "description": "Optional prompt token budget; sections are greedily packed and elisions are reported in diagnostics.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "purpose": {
+            "description": "Purpose profile name or object used to condition checkout guidance.",
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object"
+              }
+            ]
+          },
+          "query": {
+            "type": "string"
+          },
+          "ref": {
+            "description": "Memory ref to checkout, e.g. HEAD or refs/heads/main",
+            "type": "string"
+          },
+          "replay_from_seq": {
+            "default": 1,
+            "type": "integer"
+          },
+          "session_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "name": "memory_checkout"
+    },
+    {
+      "description": "Append a typed event to the agent's persistent memory log. Appended state becomes retrievable through memory_checkout, the front door for reading memory back.",
       "input_schema": {
         "additionalProperties": false,
         "properties": {
@@ -37,7 +88,7 @@
       "name": "memory_append"
     },
     {
-      "description": "Query the temporal knowledge graph for relevant context.",
+      "description": "Query the temporal knowledge graph for relevant context. Power use behind the memory_checkout front door: reach for it when you need targeted hits, temporal filters, or pagination rather than a prompt-ready packet.",
       "input_schema": {
         "additionalProperties": false,
         "properties": {
@@ -80,6 +131,198 @@
         "type": "object"
       },
       "name": "memory_query"
+    },
+    {
+      "description": "Assemble replay plus ranked retrieval into a prompt-ready context bundle. memory_checkout, the front door, wraps this assembly with current facts, citations, and a trust contract.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 10,
+            "type": "integer"
+          },
+          "max_recent_events": {
+            "default": 20,
+            "type": "integer"
+          },
+          "max_tokens": {
+            "description": "Optional prompt token budget; sections are greedily packed and elisions are reported in the budget payload.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "query": {
+            "type": "string"
+          },
+          "replay_from_seq": {
+            "default": 1,
+            "type": "integer"
+          },
+          "session_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "name": "context_assemble"
+    },
+    {
+      "description": "After using retrieved context, record whether a memory item was useful, stale, corrected, or reinforced. This closes the loop on context surfaced by memory_checkout, the front door.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "default": "zaxy",
+            "description": "Actor recording feedback",
+            "type": "string"
+          },
+          "citation": {
+            "description": "Eventloom citation for the retrieved context",
+            "type": "string"
+          },
+          "entity_name": {
+            "description": "Retrieved graph entity name",
+            "type": "string"
+          },
+          "entity_type": {
+            "description": "Retrieved graph entity type",
+            "type": "string"
+          },
+          "feedback": {
+            "description": "Retrieval outcome to record",
+            "enum": [
+              "used",
+              "helpful",
+              "irrelevant"
+            ],
+            "type": "string"
+          },
+          "importance": {
+            "description": "Optional 0..1 reinforcement importance for positive feedback",
+            "type": "number"
+          },
+          "outcome": {
+            "description": "Optional action outcome, e.g. supported_handoff or avoided_failed_path",
+            "type": "string"
+          },
+          "purpose": {
+            "description": "Optional purpose profile or preset that made this memory useful",
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object"
+              }
+            ]
+          },
+          "query": {
+            "description": "Query that returned the context",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Short rationale for the feedback",
+            "type": "string"
+          },
+          "score": {
+            "description": "Original retrieval score",
+            "type": "number"
+          },
+          "session_id": {
+            "description": "Session ID for multi-agent sharding",
+            "type": "string"
+          },
+          "source": {
+            "default": "mcp",
+            "description": "Retrieval source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entity_name",
+          "entity_type",
+          "feedback"
+        ],
+        "type": "object"
+      },
+      "name": "memory_feedback"
+    },
+    {
+      "description": "Mark a fact as invalid at a given time (bi-temporal update). History is preserved; the correction surfaces in later memory_checkout (front door) results.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "admin_token": {
+            "description": "Admin token if configured",
+            "type": "string"
+          },
+          "entity_name": {
+            "type": "string"
+          },
+          "entity_type": {
+            "type": "string"
+          },
+          "invalid_at": {
+            "description": "ISO-8601 timestamp",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entity_name",
+          "entity_type",
+          "invalid_at"
+        ],
+        "type": "object"
+      },
+      "name": "memory_invalidate"
+    },
+    {
+      "description": "Discover Zaxy's memory surface: active capabilities, the ambient usage loop, the active tool profile, and which tools remain callable beyond the listed set. memory_checkout is the front door; call this at session start or whenever tool awareness is unclear.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "current_task": {
+            "description": "Current task or question to seed checkout guidance",
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "memory_capabilities"
+    },
+    {
+      "description": "Experimental metamemory pre-check: predict whether memory_checkout would likely return something for a query, in roughly a millisecond, from in-memory session state only (no embedding call, no graph query). Returns a non-authoritative verdict (likely | possible | unlikely) with its signal breakdown and raw score. It is a cheap prediction about checkout, never a memory answer or evidence, and its calibration against real checkout outcomes is still being measured \u2014 when in doubt, call memory_checkout.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "cues": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Optional encoding-specificity cue fields (e.g. mission, workspace, tool, phase); cue values are probed against session memory alongside the query terms.",
+            "type": "object"
+          },
+          "query": {
+            "description": "The query you are considering sending to memory_checkout",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Session ID for scoped prediction",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "name": "memory_feeling_of_knowing"
     },
     {
       "description": "Read directed causal effects of an entity from graph-backed memory.",
@@ -734,87 +977,6 @@
       "name": "memory_verbatim"
     },
     {
-      "description": "After using retrieved context, record whether a memory item was useful, stale, corrected, or reinforced.",
-      "input_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "actor": {
-            "default": "zaxy",
-            "description": "Actor recording feedback",
-            "type": "string"
-          },
-          "citation": {
-            "description": "Eventloom citation for the retrieved context",
-            "type": "string"
-          },
-          "entity_name": {
-            "description": "Retrieved graph entity name",
-            "type": "string"
-          },
-          "entity_type": {
-            "description": "Retrieved graph entity type",
-            "type": "string"
-          },
-          "feedback": {
-            "description": "Retrieval outcome to record",
-            "enum": [
-              "used",
-              "helpful",
-              "irrelevant"
-            ],
-            "type": "string"
-          },
-          "importance": {
-            "description": "Optional 0..1 reinforcement importance for positive feedback",
-            "type": "number"
-          },
-          "outcome": {
-            "description": "Optional action outcome, e.g. supported_handoff or avoided_failed_path",
-            "type": "string"
-          },
-          "purpose": {
-            "description": "Optional purpose profile or preset that made this memory useful",
-            "oneOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "object"
-              }
-            ]
-          },
-          "query": {
-            "description": "Query that returned the context",
-            "type": "string"
-          },
-          "reason": {
-            "description": "Short rationale for the feedback",
-            "type": "string"
-          },
-          "score": {
-            "description": "Original retrieval score",
-            "type": "number"
-          },
-          "session_id": {
-            "description": "Session ID for multi-agent sharding",
-            "type": "string"
-          },
-          "source": {
-            "default": "mcp",
-            "description": "Retrieval source",
-            "type": "string"
-          }
-        },
-        "required": [
-          "entity_name",
-          "entity_type",
-          "feedback"
-        ],
-        "type": "object"
-      },
-      "name": "memory_feedback"
-    },
-    {
       "description": "Persist Memory Checkout answer candidates as synthesis artifacts and optional outcome feedback.",
       "input_schema": {
         "additionalProperties": false,
@@ -1043,53 +1205,6 @@
       "name": "memory_replay"
     },
     {
-      "description": "Mark a fact as invalid at a given time (bi-temporal update).",
-      "input_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "admin_token": {
-            "description": "Admin token if configured",
-            "type": "string"
-          },
-          "entity_name": {
-            "type": "string"
-          },
-          "entity_type": {
-            "type": "string"
-          },
-          "invalid_at": {
-            "description": "ISO-8601 timestamp",
-            "type": "string"
-          }
-        },
-        "required": [
-          "entity_name",
-          "entity_type",
-          "invalid_at"
-        ],
-        "type": "object"
-      },
-      "name": "memory_invalidate"
-    },
-    {
-      "description": "Describe Zaxy's active memory capabilities and ambient usage loop for this session.",
-      "input_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "current_task": {
-            "description": "Current task or question to seed checkout guidance",
-            "type": "string"
-          },
-          "session_id": {
-            "type": "string"
-          }
-        },
-        "required": [],
-        "type": "object"
-      },
-      "name": "memory_capabilities"
-    },
-    {
       "description": "At session start, return compact Zaxy memory guidance and the recommended first checkout call.",
       "input_schema": {
         "additionalProperties": false,
@@ -1106,83 +1221,6 @@
         "type": "object"
       },
       "name": "memory_bootstrap"
-    },
-    {
-      "description": "Before substantial work, checkout current, cited, prompt-ready memory state for a session.",
-      "input_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "limit": {
-            "default": 10,
-            "type": "integer"
-          },
-          "max_recent_events": {
-            "default": 20,
-            "type": "integer"
-          },
-          "purpose": {
-            "description": "Purpose profile name or object used to condition checkout guidance.",
-            "oneOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "object"
-              }
-            ]
-          },
-          "query": {
-            "type": "string"
-          },
-          "ref": {
-            "description": "Memory ref to checkout, e.g. HEAD or refs/heads/main",
-            "type": "string"
-          },
-          "replay_from_seq": {
-            "default": 1,
-            "type": "integer"
-          },
-          "session_id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "query"
-        ],
-        "type": "object"
-      },
-      "name": "memory_checkout"
-    },
-    {
-      "description": "Assemble replay plus ranked retrieval into a prompt-ready context bundle.",
-      "input_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "limit": {
-            "default": 10,
-            "type": "integer"
-          },
-          "max_recent_events": {
-            "default": 20,
-            "type": "integer"
-          },
-          "query": {
-            "type": "string"
-          },
-          "replay_from_seq": {
-            "default": 1,
-            "type": "integer"
-          },
-          "session_id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "query"
-        ],
-        "type": "object"
-      },
-      "name": "context_assemble"
     },
     {
       "description": "Persist a completed turn and return compact context for the next turn.",
@@ -1640,6 +1678,313 @@
         "type": "object"
       },
       "name": "coordination_proof_trace"
+    },
+    {
+      "description": "Run one consolidation lifecycle operation: candidate (append a cited candidate), propose_from_log (generate candidates from Eventloom segments), status (read review-gated counts), or review (append a review). Additive umbrella over the memory_consolidation_* tools; remaining arguments pass through unchanged. memory_checkout stays the front door for reading memory state.",
+      "input_schema": {
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "operation": {
+                  "const": "candidate"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "candidate_type",
+                "title",
+                "summary",
+                "source_events",
+                "confidence",
+                "method"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "operation": {
+                  "const": "review"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "candidate_id",
+                "status",
+                "rationale"
+              ]
+            }
+          }
+        ],
+        "properties": {
+          "actor": {
+            "description": "Actor recording the event; defaults to zaxy-consolidation for candidate/propose_from_log and zaxy-reviewer for review",
+            "type": "string"
+          },
+          "candidate_id": {
+            "description": "Consolidation candidate ID (review)",
+            "pattern": "^consolidation:(episode|claim|procedure):[0-9a-f]{24}$",
+            "type": "string"
+          },
+          "candidate_type": {
+            "description": "Consolidation candidate type (candidate)",
+            "enum": [
+              "episode",
+              "claim",
+              "procedure"
+            ],
+            "type": "string"
+          },
+          "confidence": {
+            "description": "Candidate confidence from 0.0 to 1.0 (candidate)",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "method": {
+            "description": "Consolidation method identifier (candidate)",
+            "type": "string"
+          },
+          "operation": {
+            "description": "Consolidation lifecycle operation to run",
+            "enum": [
+              "candidate",
+              "propose_from_log",
+              "status",
+              "review"
+            ],
+            "type": "string"
+          },
+          "purpose": {
+            "description": "Optional consolidation purpose",
+            "type": "string"
+          },
+          "rationale": {
+            "description": "Review rationale (review)",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Session ID for multi-agent sharding",
+            "type": "string"
+          },
+          "source_events": {
+            "description": "Cited Eventloom source events (candidate)",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "hash": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "seq": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "seq",
+                "hash"
+              ],
+              "type": "object"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "status": {
+            "description": "Review lifecycle status (review)",
+            "enum": [
+              "accepted",
+              "rejected",
+              "deferred",
+              "conflicted"
+            ],
+            "type": "string"
+          },
+          "summary": {
+            "description": "Candidate summary (candidate)",
+            "type": "string"
+          },
+          "title": {
+            "description": "Candidate title (candidate)",
+            "type": "string"
+          },
+          "window_size": {
+            "default": 5,
+            "description": "Number of source events per proposal window (propose_from_log)",
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "operation"
+        ],
+        "type": "object"
+      },
+      "name": "memory_consolidation"
+    },
+    {
+      "description": "Run one confidence/metacognition operation: claim (score claim confidence), trajectory (list confidence assessments for a claim), reverification (list re-verification needs), known_unknowns (list known unknowns), or record_known_unknown (record a cited known unknown). Additive umbrella over the single-purpose confidence tools; remaining arguments pass through unchanged. memory_checkout stays the front door for reading memory state.",
+      "input_schema": {
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "operation": {
+                  "const": "claim"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "claim"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "operation": {
+                  "const": "trajectory"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "claim"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "operation": {
+                  "const": "record_known_unknown"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "question",
+                "reason",
+                "source_events",
+                "claim_key"
+              ]
+            }
+          }
+        ],
+        "properties": {
+          "actor": {
+            "default": "zaxy-reasoning",
+            "description": "Actor recording the event (record_known_unknown)",
+            "type": "string"
+          },
+          "claim": {
+            "description": "Claim to score or inspect (claim, trajectory)",
+            "type": "string"
+          },
+          "claim_key": {
+            "description": "Stable claim or uncertainty key (record_known_unknown)",
+            "type": "string"
+          },
+          "gap_type": {
+            "default": "missing_evidence",
+            "description": "Uncertainty gap type (record_known_unknown)",
+            "type": "string"
+          },
+          "limit": {
+            "description": "Max results",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "min_confidence": {
+            "default": 0.7,
+            "description": "Confidence threshold (reverification)",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "operation": {
+            "description": "Confidence/metacognition operation to run",
+            "enum": [
+              "claim",
+              "trajectory",
+              "reverification",
+              "known_unknowns",
+              "record_known_unknown"
+            ],
+            "type": "string"
+          },
+          "phase": {
+            "description": "Reasoning phase for purpose-conditioned retrieval (claim, record_known_unknown)",
+            "enum": [
+              "planning",
+              "execution",
+              "review",
+              "reflection"
+            ],
+            "type": "string"
+          },
+          "query": {
+            "description": "Optional query filter (reverification)",
+            "type": "string"
+          },
+          "question": {
+            "description": "Known-unknown question to track (record_known_unknown)",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Reason this uncertainty was recorded (record_known_unknown)",
+            "type": "string"
+          },
+          "reverify_query": {
+            "description": "Suggested query for re-verification (record_known_unknown)",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Session ID for scoped reasoning",
+            "type": "string"
+          },
+          "source_events": {
+            "description": "Cited Eventloom source events (record_known_unknown)",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "hash": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "seq": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "seq",
+                "hash"
+              ],
+              "type": "object"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "status": {
+            "default": "open",
+            "description": "Known-unknown status filter or all (known_unknowns)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation"
+        ],
+        "type": "object"
+      },
+      "name": "memory_confidence"
     }
   ]
 }

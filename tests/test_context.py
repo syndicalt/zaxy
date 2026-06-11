@@ -2,7 +2,35 @@
 
 from __future__ import annotations
 
-from zaxy.context import Context, ContextAssemblyPolicy
+from zaxy.context import (
+    TIER_SESSION,
+    TIER_VOLATILE,
+    Context,
+    ContextAssemblyPolicy,
+    PromptSection,
+    apply_assembly_prompt_budget,
+    order_prompt_sections,
+    render_prompt_sections,
+    split_assembly_prompt,
+    stable_prefix_chars,
+)
+
+_ASSEMBLY_PROMPT = "\n".join(
+    [
+        "# Active Memory Working Set",
+        "- decision: Use MMR diversity (eventloom://agent-1/events/2#abc)",
+        "",
+        "# Recent Events",
+        "[1] transcript.turn by user",
+        "What retrieval policy did we pick?",
+        "",
+        "# Retrieved Context",
+        "- Use MMR diversity (eventloom://agent-1/events/2#abc)",
+        "",
+        "# Context Warnings",
+        "- Recent replay was compacted to fit the prompt budget.",
+    ]
+)
 
 
 def test_context_assembly_policy_reserves_verbatim_slot_at_limit_one() -> None:
@@ -138,3 +166,78 @@ def test_context_assembly_policy_expands_verbatim_lane_for_absence_queries() -> 
     )
 
     assert [context.source for context in contexts].count("verbatim") == 3
+
+
+def test_split_assembly_prompt_tags_sections_with_stability_tiers() -> None:
+    """Assembly prompt sections should carry kinds and stability tiers."""
+    sections = split_assembly_prompt(_ASSEMBLY_PROMPT)
+
+    assert [(section.kind, section.tier) for section in sections] == [
+        ("working_set", TIER_SESSION),
+        ("recent_events", TIER_SESSION),
+        ("retrieved_context", TIER_VOLATILE),
+        ("context_warnings", TIER_VOLATILE),
+    ]
+    assert sections[3].mandatory is True
+
+
+def test_split_assembly_prompt_round_trips_through_render() -> None:
+    """Splitting then rendering must reproduce the canonical prompt byte for byte."""
+    sections = split_assembly_prompt(_ASSEMBLY_PROMPT)
+
+    assert render_prompt_sections(sections) == _ASSEMBLY_PROMPT
+
+
+def test_order_prompt_sections_orders_tiers_and_is_stable_within_tier() -> None:
+    """Sections render consolidated, then session, then volatile, stably."""
+    sections = [
+        PromptSection(section_id="b", kind="b", tier=TIER_VOLATILE, text="b"),
+        PromptSection(section_id="c", kind="c", tier=TIER_SESSION, text="c"),
+        PromptSection(section_id="a", kind="a", tier="consolidated", text="a"),
+        PromptSection(section_id="d", kind="d", tier=TIER_SESSION, text="d"),
+    ]
+
+    assert [section.section_id for section in order_prompt_sections(sections)] == [
+        "a",
+        "c",
+        "d",
+        "b",
+    ]
+
+
+def test_assembly_prompt_has_no_consolidated_stable_prefix() -> None:
+    """Assembled context has session-first content, so its stable prefix is empty."""
+    assert stable_prefix_chars(split_assembly_prompt(_ASSEMBLY_PROMPT)) == 0
+
+
+def test_apply_assembly_prompt_budget_large_budget_changes_nothing() -> None:
+    """A generous budget keeps the prompt byte-identical and reports no elisions."""
+    prompt, budget = apply_assembly_prompt_budget(_ASSEMBLY_PROMPT, max_tokens=100_000)
+
+    assert prompt == _ASSEMBLY_PROMPT
+    assert budget["budget_requested"] == 100_000
+    assert budget["budget_used"] > 0
+    assert budget["elided"] == {"count": 0, "kinds": [], "sections": []}
+
+
+def test_apply_assembly_prompt_budget_zero_budget_keeps_mandatory_warnings() -> None:
+    """A zero budget elides optional sections but never the warning contract."""
+    prompt, budget = apply_assembly_prompt_budget(_ASSEMBLY_PROMPT, max_tokens=0)
+
+    assert prompt == "# Context Warnings\n- Recent replay was compacted to fit the prompt budget."
+    assert budget["elided"]["count"] == 3
+    assert budget["elided"]["kinds"] == ["recent_events", "retrieved_context", "working_set"]
+    for record in budget["elided"]["sections"]:
+        assert record["estimated_tokens"] > 0
+
+
+def test_apply_assembly_prompt_budget_is_monotone_in_budget() -> None:
+    """A larger assembly budget never drops a previously included section."""
+    previous_kinds: set[str] = set()
+    all_kinds = {section.kind for section in split_assembly_prompt(_ASSEMBLY_PROMPT)}
+    for budget_tokens in range(0, 200, 5):
+        prompt, budget = apply_assembly_prompt_budget(_ASSEMBLY_PROMPT, max_tokens=budget_tokens)
+        elided_kinds = set(budget["elided"]["kinds"])
+        included_kinds = all_kinds - elided_kinds
+        assert previous_kinds <= included_kinds
+        previous_kinds = included_kinds

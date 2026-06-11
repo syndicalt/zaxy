@@ -7,11 +7,21 @@ import socket
 import tempfile
 import tomllib
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
 
 from zaxy.config import Settings, get_settings
-from zaxy.event import EventLog
+from zaxy.embedded_graph_store import (
+    LEGACY_EMBEDDING_VERSION,
+    VECTOR_INDEX_CACHE_MAX_BYTES,
+    VECTOR_INDEX_CACHE_MAX_ENTRIES,
+)
+from zaxy.embedding import (
+    HashEmbeddingProvider,
+    active_embedding_version_tag,
+    build_embedding_provider,
+)
+from zaxy.event import Event, EventLog
 from zaxy.hooks import HOOK_CLIENTS, inspect_hook_status, render_hook_config
 from zaxy.install import resolve_zaxy_executable
 from zaxy.local_profile import check_local_profile
@@ -23,6 +33,14 @@ from zaxy.viewer import write_viewer_html
 
 AGENT_ACTIVATION_BEGIN = "<!-- zaxy-memory-activation:start -->"
 AGENT_ACTIVATION_END = "<!-- zaxy-memory-activation:end -->"
+
+# Full hash-chain verification is cheap below this log size; larger logs get a
+# bounded tail verification so doctor stays fast on long-lived sessions.
+EVENT_CHAIN_FULL_VERIFY_MAX_BYTES = 8 * 1024 * 1024
+EVENT_CHAIN_TAIL_EVENTS = 512
+# Minimum float64 vectors the in-process vector index cache budget should hold
+# at the configured embedding dimension before doctor flags the headroom.
+VECTOR_CACHE_MIN_VECTOR_HEADROOM = 1024
 
 
 def run_doctor(
@@ -41,7 +59,11 @@ def run_doctor(
     )
     checks = [
         _check_eventloom(active),
+        _check_event_chain(active),
         _check_local_profile(),
+        _check_embedding_provider(active),
+        _check_vector_cache_budget(active),
+        _check_embedding_versions(active),
         _check_viewer(root),
         _check_cli_install(zaxy_executable),
         _check_mcp_defaults(active),
@@ -56,6 +78,7 @@ def run_doctor(
         _check_packet_memory(active),
         _check_embedded_mcp_runtime(active),
         _check_projection_backend(active),
+        _check_projection_freshness(active),
         _check_production(active),
     ]
     return {
@@ -98,6 +121,358 @@ def _check_eventloom(settings: Settings) -> dict[str, str]:
         "status": "ok",
         "message": f"{path} is writable",
     }
+
+
+def _check_event_chain(settings: Settings) -> dict[str, Any]:
+    """Verify hash-chain integrity over the active session event log."""
+    log_path = eventlog_path(Path(settings.eventloom_path), settings.eventloom_thread)
+    if not log_path.exists():
+        return {
+            "name": "event_chain",
+            "status": "ok",
+            "message": f"no active event log at {log_path} yet",
+        }
+    log = EventLog(log_path)
+    try:
+        size = log_path.stat().st_size
+        if size <= EVENT_CHAIN_FULL_VERIFY_MAX_BYTES:
+            mode = "full"
+            report = log.verify()
+            ok = report.ok
+            verified = report.total_events
+            reason = report.broken_reason
+        else:
+            mode = f"tail({EVENT_CHAIN_TAIL_EVENTS})"
+            ok, verified, reason = _verify_event_tail(log.tail_events(EVENT_CHAIN_TAIL_EVENTS))
+    except Exception as exc:
+        return {
+            "name": "event_chain",
+            "status": "error",
+            "message": f"event log {log_path} is unreadable: {exc}",
+            "action": "Restore the Eventloom log from backup; never edit the append-only log in place.",
+        }
+    if not ok:
+        return {
+            "name": "event_chain",
+            "status": "error",
+            "message": f"hash chain broken in {log_path}: {reason}",
+            "details": {"mode": mode, "events_verified": verified},
+            "action": "Restore the Eventloom log from backup; never edit the append-only log in place.",
+        }
+    return {
+        "name": "event_chain",
+        "status": "ok",
+        "message": f"hash chain verified over {verified} events ({mode})",
+        "details": {"mode": mode, "events_verified": verified},
+    }
+
+
+def _verify_event_tail(events: list[Event]) -> tuple[bool, int, str | None]:
+    """Verify per-event seals and prev_hash linkage within a log tail window."""
+    previous: Event | None = None
+    for event in events:
+        if not event.verify():
+            return False, len(events), f"Event {event.seq} hash mismatch"
+        if previous is not None:
+            if event.seq != previous.seq + 1:
+                return False, len(events), f"Event sequence expected {previous.seq + 1} but found {event.seq}"
+            if event.prev_hash != previous.hash:
+                return False, len(events), f"Event {event.seq} prev_hash does not link to previous"
+        previous = event
+    return True, len(events), None
+
+
+def _check_embedding_provider(settings: Settings) -> dict[str, Any]:
+    """Confirm the configured embedding provider builds and agrees on dimension."""
+    if not settings.embedding_enabled:
+        return {
+            "name": "embedding",
+            "status": "ok",
+            "message": "embeddings are disabled (EMBEDDING_ENABLED=false)",
+        }
+    try:
+        provider = build_embedding_provider(settings)
+    except Exception as exc:
+        return {
+            "name": "embedding",
+            "status": "error",
+            "message": f"embedding provider {settings.embedding_provider} is unavailable: {exc}",
+            "action": "Configure the missing provider credentials or set EMBEDDING_PROVIDER=hash for the offline default.",
+        }
+    if provider is None:
+        return {
+            "name": "embedding",
+            "status": "ok",
+            "message": "embeddings are disabled (EMBEDDING_ENABLED=false)",
+        }
+    configured = settings.embedding_dimension
+    probed: int | None = None
+    if isinstance(provider, HashEmbeddingProvider):
+        probed = len(provider.embed("zaxy doctor embedding probe"))
+    actual = probed if probed is not None else provider.dimension
+    if actual != configured:
+        return {
+            "name": "embedding",
+            "status": "error",
+            "message": (
+                f"embedding provider {settings.embedding_provider} returns dimension "
+                f"{actual} but EMBEDDING_DIMENSION={configured}"
+            ),
+            "details": {"configured_dimension": configured, "provider_dimension": actual},
+            "action": "Set EMBEDDING_DIMENSION to the provider's actual vector size before projecting new vectors.",
+        }
+    suffix = "" if probed is not None else " (dimension not probed for hosted providers)"
+    return {
+        "name": "embedding",
+        "status": "ok",
+        "message": f"{settings.embedding_provider} embeddings available at dimension {configured}{suffix}",
+        "details": {"configured_dimension": configured, "provider_dimension": actual},
+    }
+
+
+def _check_vector_cache_budget(settings: Settings) -> dict[str, Any]:
+    """Report in-process vector index cache headroom at the configured dimension."""
+    if not settings.embedding_enabled:
+        return {
+            "name": "vector_cache",
+            "status": "ok",
+            "message": "not applicable while embeddings are disabled",
+        }
+    bytes_per_vector = settings.embedding_dimension * 8
+    budget_capacity = VECTOR_INDEX_CACHE_MAX_BYTES // bytes_per_vector
+    details = {
+        "cache_max_bytes": VECTOR_INDEX_CACHE_MAX_BYTES,
+        "cache_max_entries": VECTOR_INDEX_CACHE_MAX_ENTRIES,
+        "bytes_per_vector": bytes_per_vector,
+        "budget_vector_capacity": budget_capacity,
+    }
+    if budget_capacity < VECTOR_CACHE_MIN_VECTOR_HEADROOM:
+        return {
+            "name": "vector_cache",
+            "status": "warning",
+            "message": (
+                f"vector index cache budget fits only {budget_capacity} float64 vectors "
+                f"at EMBEDDING_DIMENSION={settings.embedding_dimension}"
+            ),
+            "details": details,
+            "action": "Lower EMBEDDING_DIMENSION so per-session vector indexes fit the in-process cache budget.",
+        }
+    return {
+        "name": "vector_cache",
+        "status": "ok",
+        "message": (
+            f"vector index cache budget holds about {budget_capacity} vectors "
+            f"across up to {VECTOR_INDEX_CACHE_MAX_ENTRIES} cached sessions"
+        ),
+        "details": details,
+    }
+
+
+def _check_embedding_versions(settings: Settings) -> dict[str, Any]:
+    """Report mixed embedding-version corpora in the embedded projection."""
+    if not settings.embedding_enabled:
+        return {
+            "name": "embedding_versions",
+            "status": "ok",
+            "message": "not applicable while embeddings are disabled",
+        }
+    backend = settings.projection_backend.casefold().strip()
+    if backend != "embedded":
+        return {
+            "name": "embedding_versions",
+            "status": "ok",
+            "message": f"embedding versions are not file-checked for projection backend {backend}",
+        }
+    projection_path = Path(settings.embedded_graph_path)
+    if not projection_path.exists():
+        return {
+            "name": "embedding_versions",
+            "status": "ok",
+            "message": "no embedded projection yet; nothing to audit",
+        }
+    from zaxy.retrieval_profile import apply_retrieval_profile, resolve_retrieval_profile
+
+    resolved = apply_retrieval_profile(settings, resolve_retrieval_profile(settings))
+    active_tag = active_embedding_version_tag(resolved) or LEGACY_EMBEDDING_VERSION
+    try:
+        version_counts = _embedded_vector_version_counts(projection_path)
+    except Exception as exc:
+        return {
+            "name": "embedding_versions",
+            "status": "ok",
+            "message": f"embedded projection not inspectable right now ({exc}); audit skipped",
+        }
+    total = sum(count for counts in version_counts.values() for count in counts.values())
+    if total == 0:
+        return {
+            "name": "embedding_versions",
+            "status": "ok",
+            "message": "no projected vectors yet",
+        }
+    stale_sessions = sorted(
+        session
+        for session, counts in version_counts.items()
+        if any(version != active_tag for version in counts)
+    )
+    details = {
+        "active_version": active_tag,
+        "sampled_vectors": total,
+        "versions": {
+            session: dict(sorted(counts.items()))
+            for session, counts in sorted(version_counts.items())
+        },
+    }
+    if stale_sessions:
+        remediation = "; ".join(
+            f"zaxy memory re-embed --session-id {session} "
+            f"--eventloom-path {settings.eventloom_path}"
+            for session in stale_sessions
+        )
+        return {
+            "name": "embedding_versions",
+            "status": "warning",
+            "message": (
+                f"projected vectors span embedding versions other than the active "
+                f"{active_tag} in sessions: {', '.join(stale_sessions)}; stale-version "
+                "vectors are isolated from search until re-embedded"
+            ),
+            "details": details,
+            "action": f"Run {remediation}",
+        }
+    return {
+        "name": "embedding_versions",
+        "status": "ok",
+        "message": f"all {total} sampled vectors carry the active embedding version {active_tag}",
+        "details": details,
+    }
+
+
+# Bounded sample so doctor stays fast on very large embedded projections.
+EMBEDDING_VERSION_SAMPLE_LIMIT = 5000
+
+
+def _embedded_vector_version_counts(
+    projection_path: Path,
+    *,
+    sample_limit: int = EMBEDDING_VERSION_SAMPLE_LIMIT,
+) -> dict[str, dict[str, int]]:
+    """Sample active embedded Entity rows and count vectors per version tag."""
+    import json
+
+    import kuzu
+
+    from zaxy.embedded_graph_store import _is_missing_projection_table_error
+
+    database = kuzu.Database(str(projection_path), read_only=True)
+    connection = kuzu.Connection(database)
+    try:
+        result = connection.execute(
+            "MATCH (e:Entity) "
+            "WHERE e.valid_to IS NULL AND contains(e.properties_json, '\"embedding\"') "
+            f"RETURN e.session_id, e.properties_json LIMIT {int(sample_limit)}"
+        )
+        rows = cast("list[list[Any]]", cast(Any, result).get_all())
+    except RuntimeError as exc:
+        if _is_missing_projection_table_error(exc):
+            return {}
+        raise
+    counts: dict[str, dict[str, int]] = {}
+    for row in rows:
+        try:
+            properties = json.loads(str(row[1] or "{}"))
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(properties, dict):
+            continue
+        embedding = properties.get("embedding")
+        if not isinstance(embedding, list) or not embedding:
+            continue
+        version = properties.get("embedding_version")
+        tag = version if isinstance(version, str) and version else LEGACY_EMBEDDING_VERSION
+        session_counts = counts.setdefault(str(row[0]), {})
+        session_counts[tag] = session_counts.get(tag, 0) + 1
+    return counts
+
+
+def _check_projection_freshness(settings: Settings) -> dict[str, Any]:
+    """Compare embedded projection state against the active event log signature."""
+    backend = settings.projection_backend.casefold().strip()
+    if backend != "embedded":
+        return {
+            "name": "projection_freshness",
+            "status": "ok",
+            "message": f"freshness is not file-checked for projection backend {backend}",
+            "action": "Run zaxy status for live projection posture on server backends.",
+        }
+    log_path = eventlog_path(Path(settings.eventloom_path), settings.eventloom_thread)
+    try:
+        log_stat = os.stat(log_path)
+    except OSError:
+        return {
+            "name": "projection_freshness",
+            "status": "ok",
+            "message": "no active event log yet; nothing to project",
+        }
+    if log_stat.st_size == 0:
+        return {
+            "name": "projection_freshness",
+            "status": "ok",
+            "message": "active event log is empty; nothing to project",
+        }
+    log_signature = (log_stat.st_mtime_ns, log_stat.st_size)
+    refresh_action = (
+        "Run zaxy memory checkout '<query>' --eventloom-path "
+        f"{settings.eventloom_path} --session-id {settings.eventloom_thread} "
+        "to refresh the embedded projection."
+    )
+    projection_path = Path(settings.embedded_graph_path)
+    projection_mtime_ns = _newest_mtime_ns(projection_path)
+    if projection_mtime_ns is None:
+        return {
+            "name": "projection_freshness",
+            "status": "warning",
+            "message": f"embedded projection at {projection_path} has no state for the active event log",
+            "details": {"log_mtime_ns": log_signature[0], "log_size": log_signature[1]},
+            "action": refresh_action,
+        }
+    if projection_mtime_ns < log_signature[0]:
+        return {
+            "name": "projection_freshness",
+            "status": "warning",
+            "message": "embedded projection state is older than the active event log",
+            "details": {
+                "log_mtime_ns": log_signature[0],
+                "log_size": log_signature[1],
+                "projection_mtime_ns": projection_mtime_ns,
+            },
+            "action": refresh_action,
+        }
+    return {
+        "name": "projection_freshness",
+        "status": "ok",
+        "message": "embedded projection state is at least as new as the active event log",
+        "details": {
+            "log_mtime_ns": log_signature[0],
+            "log_size": log_signature[1],
+            "projection_mtime_ns": projection_mtime_ns,
+        },
+    }
+
+
+def _newest_mtime_ns(path: Path) -> int | None:
+    """Return the newest st_mtime_ns under a projection file or directory."""
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    newest = stat.st_mtime_ns
+    if path.is_dir():
+        for child in path.rglob("*"):
+            try:
+                newest = max(newest, child.stat().st_mtime_ns)
+            except OSError:
+                continue
+    return newest
 
 
 def _check_local_profile() -> dict[str, str]:

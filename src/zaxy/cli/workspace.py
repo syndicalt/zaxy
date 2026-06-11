@@ -22,6 +22,7 @@ from zaxy.cli.runtime import (
     apply_onboarding_preset,
     capture_app,
     format_onboarding_result,
+    memory_app,
     onboarding_result_payload,
     resolve_zaxy_executable,
 )
@@ -524,7 +525,7 @@ def _parse_json_object(value: str, *, option: str) -> dict[str, object]:
 
 @app.command("hook-event")
 def hook_event(
-    trigger: str = typer.Argument(..., help="Hook trigger: session-start, resume, stop, precompact, checkpoint, heartbeat, command, file-edit, tool-call, or transcript-turn"),  # noqa: B008
+    trigger: str = typer.Argument(..., help="Hook trigger: session-start, resume, session-resumed, stop, precompact, checkpoint, heartbeat, command, file-edit, tool-call, or transcript-turn"),  # noqa: B008
     eventloom_path: str = typer.Option(".eventloom", help="Eventloom directory for hook events"),
     session_id: str = typer.Option("default", help="Session ID to append hook events into"),
     source: str = typer.Option("generic", help="Client or adapter that emitted the hook"),
@@ -682,6 +683,11 @@ def hook_event(
     typer.echo(f"Recorded hook {payload['trigger']} as {event_type} seq={event.seq}")
     if reminder is not None:
         typer.echo(f"Suggested memory reminder seq={reminder.seq}")
+    if payload["trigger"] == "session-resumed":
+        from zaxy.recovery import assemble_recovery_packet, render_recovery_packet
+
+        packet = assemble_recovery_packet(eventlog, session_id=session_id)
+        typer.echo(render_recovery_packet(packet))
 
 
 def _resolve_cli_projection_backend(
@@ -835,6 +841,86 @@ def packet_status(
         typer.echo(json.dumps(report, indent=2, sort_keys=True))
     else:
         typer.echo(format_packet_memory_report(report))
+
+
+@memory_app.command("re-embed")
+def memory_re_embed(
+    session_id: str = typer.Option("default", "--session-id", "--session", help="Session whose projected vectors should be re-embedded"),  # noqa: B008
+    eventloom_path: str | None = typer.Option(None, help="Eventloom directory whose embedded projection should be migrated"),  # noqa: B008
+    embedded_graph_path: Path | None = typer.Option(None, help="Embedded graph projection path override"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Re-embed projected vectors onto the active embedding provider version.
+
+    Stale-version vectors never match searches embedded with the active
+    provider; this batch migration upserts them to the active version tag.
+    Eventloom events are never rewritten — only projection state changes.
+    """
+    import asyncio
+
+    from zaxy.config import get_settings
+    from zaxy.embedding import build_embedding_provider, provider_version_tag
+    from zaxy.retrieval_profile import apply_retrieval_profile, resolve_retrieval_profile
+
+    settings = get_settings()
+    settings = apply_retrieval_profile(settings, resolve_retrieval_profile(settings))
+    backend = settings.projection_backend.casefold().strip()
+    if embedded_graph_path is None and backend != "embedded":
+        raise typer.BadParameter(
+            f"memory re-embed supports the embedded projection backend, not {backend}; "
+            "pass --embedded-graph-path to migrate a specific embedded projection"
+        )
+    try:
+        provider = build_embedding_provider(settings)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if provider is None:
+        raise typer.BadParameter("embeddings are disabled (EMBEDDING_ENABLED=false)")
+    version_tag = provider_version_tag(provider)
+    if version_tag is None:
+        raise typer.BadParameter(
+            f"embedding provider {settings.embedding_provider} does not expose a version tag"
+        )
+    if embedded_graph_path is not None:
+        projection_path = embedded_graph_path
+    elif eventloom_path is not None:
+        projection_path = Path(eventloom_path) / "projections" / "embedded.kuzu"
+    else:
+        projection_path = Path(settings.embedded_graph_path)
+    if not projection_path.exists():
+        raise typer.BadParameter(f"no embedded projection found at {projection_path}")
+
+    async def _run() -> dict[str, int]:
+        store = _runtime.EmbeddedGraphStore(projection_path)
+        await store.connect()
+        try:
+            report = await store.re_embed_session(
+                session_id=session_id,
+                provider=provider,
+                version_tag=version_tag,
+            )
+            return cast(dict[str, int], report)
+        finally:
+            await store.close()
+
+    try:
+        report = asyncio.run(_run())
+    except RuntimeError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if json_output:
+        payload: dict[str, Any] = {
+            "session_id": session_id,
+            "version_tag": version_tag,
+            "projection_path": str(projection_path),
+            **report,
+        }
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+        return
+    typer.echo(
+        f"Re-embedded {report['re_embedded']} of {report['scanned']} projected vectors "
+        f"in session {session_id} to {version_tag} "
+        f"({report['already_current']} already current)"
+    )
 
 
 @app.command("index-codebase")

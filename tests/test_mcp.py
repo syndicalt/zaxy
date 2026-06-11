@@ -193,7 +193,7 @@ class TestToolSchema:
 
     def test_tools_list_length(self) -> None:
         """Should expose the memory and context lifecycle tools."""
-        assert len(TOOLS) == 44
+        assert len(TOOLS) == 47
 
     def test_tool_names(self) -> None:
         """Tool names should match the expected contract."""
@@ -207,6 +207,8 @@ class TestToolSchema:
             "memory_consolidation_review",
             "memory_consolidation_propose_from_log",
             "memory_consolidation_status",
+            "memory_consolidation",
+            "memory_confidence",
             "memory_explain_outcome",
             "memory_propose_belief_update",
             "memory_claim_confidence",
@@ -224,6 +226,7 @@ class TestToolSchema:
             "memory_replay",
             "memory_invalidate",
             "memory_capabilities",
+            "memory_feeling_of_knowing",
             "memory_bootstrap",
             "memory_checkout",
             "context_assemble",
@@ -245,18 +248,14 @@ class TestToolSchema:
             "coordination_proof_trace",
         }
 
-
-def test_mcp_admin_token_gate_accepts_exact_token(server: ZaxyMCPServer) -> None:
-    server._admin_token = "secret-admin-token"
-
-    server._require_admin({"admin_token": "secret-admin-token"})
-
-
-def test_mcp_admin_token_gate_rejects_wrong_token(server: ZaxyMCPServer) -> None:
-    server._admin_token = "secret-admin-token"
-
-    with pytest.raises(PermissionError, match="admin_token"):
-        server._require_admin({"admin_token": "wrong"})
+    def test_budgeted_tools_expose_optional_max_tokens(self) -> None:
+        """memory_checkout and context_assemble should accept an optional token budget."""
+        for name in ("memory_checkout", "context_assemble"):
+            tool = next(t for t in TOOLS if t.name == name)
+            max_tokens = tool.inputSchema["properties"]["max_tokens"]
+            assert max_tokens["type"] == "integer"
+            assert max_tokens["minimum"] == 0
+            assert "max_tokens" not in tool.inputSchema["required"]
 
     def test_v06_mcp_tool_contract_matches_snapshot(self) -> None:
         """The public MCP tool surface should stay protected by a canonical snapshot."""
@@ -366,6 +365,33 @@ def test_mcp_admin_token_gate_rejects_wrong_token(server: ZaxyMCPServer) -> None
         assert tool.inputSchema["required"] == []
         assert "session_id" in tool.inputSchema["properties"]
         assert "current_task" in tool.inputSchema["properties"]
+
+    def test_memory_feeling_of_knowing_has_strict_experimental_schema(self) -> None:
+        """memory_feeling_of_knowing should be a strict, honestly labeled pre-check."""
+        tool = next(t for t in TOOLS if t.name == "memory_feeling_of_knowing")
+
+        assert tool.inputSchema["required"] == ["query"]
+        assert tool.inputSchema["additionalProperties"] is False
+        assert "session_id" in tool.inputSchema["properties"]
+        cues = tool.inputSchema["properties"]["cues"]
+        assert cues["type"] == "object"
+        assert cues["additionalProperties"] == {"type": "string"}
+        assert tool.description is not None
+        assert "experimental" in tool.description.lower()
+        assert "never a memory answer" in tool.description.lower()
+
+    def test_tool_table_leads_with_the_front_door_verbs(self) -> None:
+        """The listing order should lead with memory_checkout, then the core verbs."""
+        assert [tool.name for tool in TOOLS][:8] == [
+            "memory_checkout",
+            "memory_append",
+            "memory_query",
+            "context_assemble",
+            "memory_feedback",
+            "memory_invalidate",
+            "memory_capabilities",
+            "memory_feeling_of_knowing",
+        ]
 
     def test_memory_bootstrap_has_optional_query_schema(self) -> None:
         """memory_bootstrap should expose the session-start model handoff contract."""
@@ -560,6 +586,20 @@ def test_mcp_admin_token_gate_rejects_wrong_token(server: ZaxyMCPServer) -> None
         assert plan.inputSchema["required"] == ["goal"]
         assert plan.inputSchema["properties"]["phase"]["default"] == "planning"
         assert plan.inputSchema["additionalProperties"] is False
+
+
+def test_mcp_admin_token_gate_accepts_exact_token(server: ZaxyMCPServer) -> None:
+    server._admin_token = "secret-admin-token"
+
+    server._require_admin({"admin_token": "secret-admin-token"})
+
+
+def test_mcp_admin_token_gate_rejects_wrong_token(server: ZaxyMCPServer) -> None:
+    server._admin_token = "secret-admin-token"
+
+    with pytest.raises(PermissionError, match="admin_token"):
+        server._require_admin({"admin_token": "wrong"})
+
 
 
 # ------------------------------------------------------------------
@@ -2715,6 +2755,157 @@ class TestContextLifecycleTools:
         snapshots = json.loads(Path("docs/examples/mcp-response-snapshots.json").read_text(encoding="utf-8"))
         assert _mcp_response_snapshot("context_assemble", output) == snapshots["context_assemble"]
 
+    async def test_context_assemble_without_max_tokens_keeps_payload_shape(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """Omitting max_tokens must not add budget diagnostics to the payload."""
+        server.session_manager.replay.return_value = MagicMock(events=[])
+        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
+            router = AsyncMock()
+            router.query.return_value = []
+            mock_router_cls.return_value = router
+
+            result = await server.handle_context_assemble({
+                "query": "retrieval decision",
+                "session_id": "agent-1",
+            })
+
+        output = json_loads(result[0].text)
+        assert "budget" not in output
+
+    async def test_context_assemble_max_tokens_packs_prompt_and_reports_budget(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """context_assemble should pack its prompt and report elisions when budgeted."""
+        event = MagicMock(
+            seq=2,
+            type="transcript.turn",
+            actor="assistant",
+            payload={"content": "Use MMR diversity for retrieval ranking decisions."},
+        )
+        server.session_manager.replay.return_value = MagicMock(events=[event])
+        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
+            router = AsyncMock()
+            router.query.return_value = [
+                MagicMock(
+                    content="MMR diversity (decision)",
+                    source="keyword",
+                    score=0.9,
+                    valid_from=None,
+                    valid_to=None,
+                    citation="eventloom://agent-1/events/2#abc",
+                    score_explanation=None,
+                )
+            ]
+            mock_router_cls.return_value = router
+
+            unbudgeted = await server.handle_context_assemble({
+                "query": "retrieval decision",
+                "session_id": "agent-1",
+            })
+            generous = await server.handle_context_assemble({
+                "query": "retrieval decision",
+                "session_id": "agent-1",
+                "max_tokens": 100_000,
+            })
+            tight = await server.handle_context_assemble({
+                "query": "retrieval decision",
+                "session_id": "agent-1",
+                "max_tokens": 10,
+            })
+
+        unbudgeted_output = json_loads(unbudgeted[0].text)
+        generous_output = json_loads(generous[0].text)
+        tight_output = json_loads(tight[0].text)
+        assert generous_output["prompt"] == unbudgeted_output["prompt"]
+        assert generous_output["budget"]["budget_requested"] == 100_000
+        assert generous_output["budget"]["elided"]["count"] == 0
+        assert tight_output["budget"]["budget_requested"] == 10
+        assert tight_output["budget"]["budget_used"] <= 10
+        assert tight_output["budget"]["elided"]["count"] > 0
+        assert len(tight_output["prompt"]) < len(unbudgeted_output["prompt"])
+        assert tight_output["contexts"] == unbudgeted_output["contexts"]
+
+    async def test_context_assemble_rejects_invalid_max_tokens(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """max_tokens must be a non-negative integer."""
+        with pytest.raises(ValueError, match="max_tokens must be"):
+            await server.handle_context_assemble({
+                "query": "retrieval decision",
+                "session_id": "agent-1",
+                "max_tokens": -1,
+            })
+
+    async def test_memory_checkout_max_tokens_reports_budget_diagnostics(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """memory_checkout should pack its prompt and keep citations budget-invariant."""
+        event = MagicMock(
+            seq=2,
+            type="decision.recorded",
+            actor="assistant",
+            payload={"decision": "Use memory checkout."},
+            hash="c" * 64,
+        )
+        server.session_manager.replay.return_value = MagicMock(events=[event])
+        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
+            router = AsyncMock()
+            router.query.return_value = [
+                MagicMock(
+                    content="Memory checkout is the context contract.",
+                    source="keyword",
+                    score=0.8,
+                    valid_from="2026-05-10T20:55:40Z",
+                    valid_to=None,
+                    citation="eventloom://agent-1/events/1882#checkout",
+                    score_explanation=None,
+                    entity_name="memory checkout",
+                    entity_type="task",
+                ),
+            ]
+            mock_router_cls.return_value = router
+
+            with patch("zaxy.mcp_server.record_memory_activity"):
+                unbudgeted = await server.handle_memory_checkout({
+                    "query": "What context contract should the model use?",
+                    "session_id": "agent-1",
+                })
+                budgeted = await server.handle_memory_checkout({
+                    "query": "What context contract should the model use?",
+                    "session_id": "agent-1",
+                    "max_tokens": 60,
+                })
+
+        unbudgeted_output = json_loads(unbudgeted[0].text)
+        budgeted_output = json_loads(budgeted[0].text)
+        assert "budget_requested" not in unbudgeted_output["diagnostics"]
+        assert unbudgeted_output["diagnostics"]["stable_prefix_chars"] == len("# Memory Checkout")
+        diagnostics = budgeted_output["diagnostics"]
+        assert diagnostics["budget_requested"] == 60
+        assert diagnostics["budget_used"] > 0
+        assert diagnostics["elided"]["count"] > 0
+        assert diagnostics["stable_prefix_chars"] == len("# Memory Checkout")
+        prompt = budgeted_output["prompt"]
+        assert prompt.startswith("# Memory Checkout")
+        assert "Query: What context contract should the model use?" in prompt
+        assert "## Checkout Quality" in prompt
+        assert "## Checkout Guidance" in prompt
+        assert len(prompt) < len(unbudgeted_output["prompt"])
+        assert budgeted_output["current_facts"] == unbudgeted_output["current_facts"]
+        assert budgeted_output["evidence"] == unbudgeted_output["evidence"]
+        assert (
+            budgeted_output["diagnostics"]["citation_count"]
+            == unbudgeted_output["diagnostics"]["citation_count"]
+        )
+        assert budgeted_output["token_efficiency"]["prompt_tokens"] < (
+            unbudgeted_output["token_efficiency"]["prompt_tokens"]
+        )
+
     async def test_memory_checkout_returns_current_facts_and_evidence(
         self,
         server: ZaxyMCPServer,
@@ -2782,6 +2973,9 @@ class TestContextLifecycleTools:
         assert slot_plan["operation"] == "select_fact"
         assert slot_plan["required_slots"] == []
         assert slot_plan["optional_slots"] == ["exact", "semantic"]
+        stable_prefix_chars = output["diagnostics"].pop("stable_prefix_chars")
+        assert stable_prefix_chars == len("# Memory Checkout")
+        assert "budget_requested" not in output["diagnostics"]
         assert output["diagnostics"] == {
             "source_lanes": {"graph": 2},
             "citation_count": 2,
@@ -4047,3 +4241,201 @@ class TestSSEEntrypoint:
         mock_uvicorn_server.serve.assert_awaited_once()
         mock_graph.close.assert_awaited_once()
         mock_tracer.close.assert_awaited_once()
+
+
+# ------------------------------------------------------------------
+# Salience reinforcement wiring tests
+# ------------------------------------------------------------------
+
+def _salience_wired_server(tmp_path: Path) -> ZaxyMCPServer:
+    """Server with a real Eventloom session manager and a mocked projection store."""
+    with (
+        patch("zaxy.mcp_server.build_projection_store") as mock_build_projection_store,
+        patch("zaxy.mcp_server.MemoryTracer") as mock_tracer_cls,
+    ):
+        mock_build_projection_store.return_value = AsyncMock()
+        mock_tracer_cls.return_value = AsyncMock()
+        return ZaxyMCPServer(
+            eventloom_path=str(tmp_path / ".eventloom"),
+            default_session_id="agent-1",
+        )
+
+
+class TestSalienceReinforcementWiring:
+    """MCP handlers emit salience reinforcement events as diagnostics-only state."""
+
+    async def test_memory_checkout_appends_surfaced_reinforcement_for_packet_refs(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Checkout should batch one surfaced event citing only packet refs."""
+        server = _salience_wired_server(tmp_path)
+        log = server.session_manager.get("agent-1").eventlog
+        seeded = log.append(
+            "decision.made",
+            actor="dev",
+            payload={"decision": "Adopt the salience ledger for memory reinforcement."},
+            thread="agent-1",
+        )
+
+        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
+            router = AsyncMock()
+            router.query.return_value = []
+            mock_router_cls.return_value = router
+            first = await server.handle_memory_checkout(
+                {"query": "salience ledger decision", "session_id": "agent-1"}
+            )
+            second = await server.handle_memory_checkout(
+                {"query": "salience ledger decision", "session_id": "agent-1"}
+            )
+
+        events = log.read_all()
+        reinforcements = [event for event in events if event.type == "memory.reinforcement"]
+        assert len(reinforcements) == 2
+        payload = reinforcements[0].payload
+        assert payload["kind"] == "surfaced"
+        assert payload["authority_status"] == "non_authoritative"
+        assert {"seq": seeded.seq, "hash": seeded.hash} in payload["targets"]
+        activity = next(event for event in events if event.type == "memory.checkout.completed")
+        assert payload["source"]["checkout_id"] == (
+            f"eventloom://agent-1/events/{activity.seq}#{activity.hash[:12]}"
+        )
+
+        first_output = json_loads(first[0].text)
+        second_output = json_loads(second[0].text)
+        assert "salience" not in first_output["diagnostics"]
+        salience = second_output["diagnostics"]["salience"]
+        assert salience["authority_status"] == "non_authoritative"
+        assert salience["scored_count"] >= 1
+        seeded_item = next(item for item in salience["items"] if item["seq"] == seeded.seq)
+        assert seeded_item["hash"] == seeded.hash
+        assert seeded_item["composition"]["reinforcement_counts"]["surfaced"] == 1
+
+    async def test_memory_feedback_positive_appends_confirmed_reinforcement(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        server = _salience_wired_server(tmp_path)
+        log = server.session_manager.get("agent-1").eventlog
+        seeded = log.append(
+            "decision.made",
+            actor="dev",
+            payload={"decision": "Adopt the salience ledger."},
+            thread="agent-1",
+        )
+
+        result = await server.handle_memory_feedback(
+            {
+                "feedback": "used",
+                "entity_name": "salience ledger",
+                "entity_type": "decision",
+                "citation": f"eventloom://agent-1/events/{seeded.seq}#{seeded.hash[:12]}",
+                "session_id": "agent-1",
+            }
+        )
+
+        feedback_response = json_loads(result[0].text)
+        events = log.read_all()
+        assert [event.type for event in events] == [
+            "decision.made",
+            "memory.reinforced",
+            "memory.reinforcement",
+        ]
+        payload = events[-1].payload
+        assert payload["kind"] == "confirmed"
+        assert payload["targets"] == [{"seq": seeded.seq, "hash": seeded.hash}]
+        assert payload["source"]["feedback_id"] == (
+            f"eventloom://agent-1/events/{feedback_response['seq']}"
+            f"#{feedback_response['hash'][:12]}"
+        )
+
+    @pytest.mark.parametrize("feedback", ["irrelevant", "Irrelevant "])
+    async def test_non_positive_feedback_appends_no_reinforcement(
+        self,
+        tmp_path: Path,
+        feedback: str,
+    ) -> None:
+        server = _salience_wired_server(tmp_path)
+        log = server.session_manager.get("agent-1").eventlog
+        seeded = log.append(
+            "decision.made",
+            actor="dev",
+            payload={"decision": "Adopt the salience ledger."},
+            thread="agent-1",
+        )
+
+        await server.handle_memory_feedback(
+            {
+                "feedback": feedback,
+                "entity_name": "salience ledger",
+                "entity_type": "decision",
+                "citation": f"eventloom://agent-1/events/{seeded.seq}#{seeded.hash[:12]}",
+                "session_id": "agent-1",
+            }
+        )
+
+        assert [event.type for event in log.read_all()] == ["decision.made", "memory.feedback"]
+
+    async def test_memory_invalidate_appends_invalidated_reinforcement(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        server = _salience_wired_server(tmp_path)
+        log = server.session_manager.get("agent-1").eventlog
+        seeded = log.append(
+            "decision.made",
+            actor="dev",
+            payload={"decision": "Adopt the salience ledger."},
+            thread="agent-1",
+        )
+        server.graph.search_exact = AsyncMock(
+            return_value=[
+                SimpleNamespace(
+                    properties={
+                        "source_event_seq": seeded.seq,
+                        "source_event_hash": seeded.hash,
+                    }
+                )
+            ]
+        )
+
+        result = await server.handle_memory_invalidate(
+            {
+                "entity_name": "salience ledger",
+                "entity_type": "decision",
+                "invalid_at": "2026-06-10T00:00:00Z",
+                "session_id": "agent-1",
+            }
+        )
+
+        assert json_loads(result[0].text) == {"status": "invalidated"}
+        server.graph.invalidate_entity.assert_awaited_once()
+        events = log.read_all()
+        assert events[-1].type == "memory.reinforcement"
+        payload = events[-1].payload
+        assert payload["kind"] == "invalidated"
+        assert payload["targets"] == [{"seq": seeded.seq, "hash": seeded.hash}]
+        assert payload["source"]["invalidation_id"] == (
+            "invalidate:decision:salience ledger@2026-06-10T00:00:00Z"
+        )
+
+    async def test_invalidate_provenance_failure_never_fails_the_invalidation(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        server = _salience_wired_server(tmp_path)
+        log = server.session_manager.get("agent-1").eventlog
+        server.graph.search_exact = AsyncMock(side_effect=RuntimeError("projection down"))
+
+        result = await server.handle_memory_invalidate(
+            {
+                "entity_name": "salience ledger",
+                "entity_type": "decision",
+                "invalid_at": "2026-06-10T00:00:00Z",
+                "session_id": "agent-1",
+            }
+        )
+
+        assert json_loads(result[0].text) == {"status": "invalidated"}
+        server.graph.invalidate_entity.assert_awaited_once()
+        assert log.read_all() == []

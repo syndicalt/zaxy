@@ -19,12 +19,31 @@ from typing import Any, Protocol
 import httpx
 
 from zaxy.graph import GraphEntity, SearchResult
+from zaxy.graph_walk import blend_walk_scores, personalized_pagerank
 from zaxy.metrics import get_metrics
 from zaxy.projection import ProjectionStore
 from zaxy.retrieval_plan import source_lane_queries
 from zaxy.security import validate_limit, validate_query, validate_session_id, vector_has_signal
 
 _TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
+
+# Personalized-PageRank graph-walk stage (cognitive retrieval profile only).
+# The walk is bounded (alpha/iterations fixed, generous top_n), deterministic,
+# and folded into fused candidate scores with GRAPH_WALK_WEIGHT:
+# ``blended = (1 - w) * fused + w * max_normalized_walk_mass`` — a uniform
+# (1 - w) rescale of every candidate plus up to ``w`` of walk mass, so the
+# walk reorders candidates without ever drowning direct relevance.
+GRAPH_WALK_ALPHA = 0.85
+GRAPH_WALK_ITERATIONS = 20
+GRAPH_WALK_TOP_N = 128
+GRAPH_WALK_WEIGHT = 0.2
+GRAPH_WALK_CACHE_MAX_ENTRIES = 32
+
+#: Field separator used by projection backends inside ``node_key`` strings
+#: (``session\x1ftype\x1fname\x1fseq``). Snapshot nodes that do not follow
+#: this convention are skipped, so a backend with a different key format
+#: degrades to "walk contributes nothing" instead of misranking.
+_NODE_KEY_SEPARATOR = "\x1f"
 _USER_ID_RE = re.compile(r"\buser-\d{4}\b")
 _DURABLE_IDENTIFIER_RE = re.compile(r"\b[A-Za-z]+(?:-[A-Za-z0-9]+)+\b")
 _EXACT_CANDIDATE_RE = (
@@ -391,6 +410,7 @@ class QueryRouter:
         retention_policy: str | RetentionPolicy = "none",
         retention_decay_half_life_days: int = 30,
         retention_expired_weight: float = 0.0,
+        graph_walk_enabled: bool = False,
     ) -> None:
         self.store = store
         self.default_limit = default_limit
@@ -405,6 +425,16 @@ class QueryRouter:
             expired_weight=retention_expired_weight,
         )
         self._traversal_available_by_session: dict[str, bool] = {}
+        self.graph_walk_enabled = graph_walk_enabled
+        # Walk results keyed on (snapshot.signature, sorted seed node ids):
+        # the signature changes exactly when the projected graph changes, so
+        # a cache hit is always a correct replay of the same bounded walk.
+        self._graph_walk_cache: dict[
+            tuple[str, tuple[str, ...]],
+            dict[tuple[str, str], float],
+        ] = {}
+        self.graph_walk_cache_hits = 0
+        self.graph_walk_cache_misses = 0
 
     async def query(
         self,
@@ -489,6 +519,7 @@ class QueryRouter:
                     source_weight=fusion_weights["vector"],
                     matched_query=query,
                     scoring_profile=active_profile.name,
+                    exact=hit.exact,
                 )
                 hit = _apply_temporal_score(hit, temporal_point, temporal_weight)
                 results.append(_apply_salience_score(hit))
@@ -583,6 +614,14 @@ class QueryRouter:
             if key not in best or r.score > best[key].score:
                 best[key] = r
 
+        # 5b. Cognitive-profile graph walk: fold bounded personalized-PageRank
+        # mass from query-matched seeds into the fused candidate scores.
+        if self.graph_walk_enabled and best:
+            seed_entities = [*exact_hits, *keyword_hits, *vector_hits]
+            walk_mass = await self._graph_walk_mass(scope, seed_entities)
+            if walk_mass:
+                best = _blend_graph_walk_candidates(best, walk_mass)
+
         # 6. Suppress fuzzy near-neighbors when a durable identifier has a direct hit.
         filtered = _suppress_identifier_fuzzy_distractors(
             list(best.values()),
@@ -598,6 +637,75 @@ class QueryRouter:
         )
 
         return [_to_chunk(r) for r in ranked]
+
+    async def _graph_walk_mass(
+        self,
+        session_id: str,
+        seed_results: list[SearchResult],
+    ) -> dict[tuple[str, str], float]:
+        """Run the bounded personalized-PageRank walk from query-matched seeds.
+
+        Best-effort: stores without ``fetch_adjacency``, fetch failures, empty
+        snapshots, and seeds absent from the graph all yield an empty mass map
+        (the walk contributes nothing). The adjacency fetch stays on the async
+        seam — ``fetch_adjacency`` is awaited directly from this coroutine,
+        never bridged with ``asyncio.run``. Walk results are cached per
+        ``(snapshot.signature, seed set)``.
+        """
+        fetch_adjacency = getattr(self.store, "fetch_adjacency", None)
+        if fetch_adjacency is None or not seed_results:
+            return {}
+        try:
+            snapshot = await fetch_adjacency(session_id=session_id)
+        except Exception:
+            get_metrics().record_degraded_operation("query", "graph_walk_unavailable")
+            return {}
+        if snapshot.node_count == 0:
+            return {}
+        node_keys_by_entity: dict[tuple[str, str], list[str]] = {}
+        for node_id in snapshot.node_ids:
+            entity_key = _walk_entity_key(node_id)
+            if entity_key is not None:
+                node_keys_by_entity.setdefault(entity_key, []).append(node_id)
+        seed_entity_keys = sorted(
+            {(result.entity.name, result.entity.entity_type) for result in seed_results}
+        )
+        seeds = sorted(
+            {
+                node_id
+                for entity_key in seed_entity_keys
+                for node_id in node_keys_by_entity.get(entity_key, ())
+            }
+        )
+        if not seeds:
+            return {}
+        cache_key = (snapshot.signature, tuple(seeds))
+        cached = self._graph_walk_cache.get(cache_key)
+        if cached is not None:
+            self.graph_walk_cache_hits += 1
+            return cached
+        self.graph_walk_cache_misses += 1
+        try:
+            ranked = personalized_pagerank(
+                snapshot,
+                seeds,
+                alpha=GRAPH_WALK_ALPHA,
+                iterations=GRAPH_WALK_ITERATIONS,
+                top_n=GRAPH_WALK_TOP_N,
+            )
+        except Exception:
+            get_metrics().record_degraded_operation("query", "graph_walk_unavailable")
+            return {}
+        mass: dict[tuple[str, str], float] = {}
+        for node_id, node_mass in ranked:
+            entity_key = _walk_entity_key(node_id)
+            if entity_key is None:
+                continue
+            mass[entity_key] = mass.get(entity_key, 0.0) + node_mass
+        while len(self._graph_walk_cache) >= GRAPH_WALK_CACHE_MAX_ENTRIES:
+            self._graph_walk_cache.pop(next(iter(self._graph_walk_cache)))
+        self._graph_walk_cache[cache_key] = mass
+        return mass
 
     async def _has_traversal_edges(self, session_id: str) -> bool:
         """Return cached traversal availability, defaulting open for older stores."""
@@ -655,6 +763,54 @@ class QueryRouter:
             get_metrics().record_degraded_operation("query", "reranker_unavailable")
             return [_with_warnings(candidate, ["reranker unavailable"]) for candidate in candidates[:limit]]
         return reranked[:limit]
+
+
+def _walk_entity_key(node_id: str) -> tuple[str, str] | None:
+    """Parse a projection ``node_key`` into the router's (name, type) key.
+
+    Backends stamp node keys as ``session\\x1ftype\\x1fname\\x1fseq``; node
+    ids that do not follow the convention return ``None`` and are excluded
+    from seeding and folding, so an incompatible backend degrades to a no-op
+    walk instead of misattributing mass.
+    """
+    parts = node_id.split(_NODE_KEY_SEPARATOR)
+    if len(parts) != 4:
+        return None
+    return (parts[2], parts[1])
+
+
+def _blend_graph_walk_candidates(
+    best: dict[tuple[str, str], SearchResult],
+    walk_mass: dict[tuple[str, str], float],
+) -> dict[tuple[str, str], SearchResult]:
+    """Fold walk mass into fused candidate scores via :func:`blend_walk_scores`.
+
+    Only existing candidates are re-scored — the walk re-weights what
+    retrieval already found (including multi-hop traversal candidates); it
+    never invents candidates without provenance. Mass for entities outside
+    the candidate set is dropped before max-normalization so the strongest
+    candidate-relevant walk hit maps to the full ``GRAPH_WALK_WEIGHT`` bonus.
+    """
+    base_scores = {
+        _walk_blend_key(key): result.score for key, result in best.items()
+    }
+    candidate_mass = {
+        _walk_blend_key(key): mass
+        for key, mass in walk_mass.items()
+        if key in best
+    }
+    if not candidate_mass:
+        return best
+    blended = blend_walk_scores(base_scores, candidate_mass, weight=GRAPH_WALK_WEIGHT)
+    rescored: dict[tuple[str, str], SearchResult] = {}
+    for key, result in best.items():
+        blended_score = blended[_walk_blend_key(key)]
+        rescored[key] = replace(result, score=blended_score, ranking_score=None)
+    return rescored
+
+
+def _walk_blend_key(key: tuple[str, str]) -> str:
+    return _NODE_KEY_SEPARATOR.join(key)
 
 
 def _mmr_pool_limit(limit: int, *, has_reranker: bool) -> int:

@@ -8,9 +8,17 @@ from zaxy.config import Settings
 from zaxy.retrieval_profile import resolve_retrieval_profile
 
 
-def test_local_fast_profile_resolves_existing_deterministic_defaults() -> None:
-    """The default profile should describe the lightweight local path."""
+def test_default_settings_resolve_to_the_cognitive_profile() -> None:
+    """2.1.0 default flip: unconfigured settings resolve to cognitive."""
     profile = resolve_retrieval_profile(Settings(_env_file=None))
+
+    assert profile.name == "cognitive"
+
+
+def test_local_fast_profile_resolves_existing_deterministic_defaults() -> None:
+    """The explicit local_fast opt-out should describe the lightweight local path."""
+    # Pinned explicitly since 2.1.0 flipped the default profile to cognitive.
+    profile = resolve_retrieval_profile(Settings(_env_file=None, retrieval_profile="local_fast"))
 
     assert profile.name == "local_fast"
     assert profile.embedding_provider == "hash"
@@ -86,3 +94,37 @@ def test_unknown_retrieval_profile_is_rejected() -> None:
     """Unknown profiles should fail loudly instead of silently downgrading retrieval."""
     with pytest.raises(ValueError, match="RETRIEVAL_PROFILE"):
         resolve_retrieval_profile(Settings(_env_file=None, retrieval_profile="random"))
+
+
+def test_cognitive_profile_enables_cognitive_flags_over_local_fast_retrieval() -> None:
+    """The cognitive profile should layer flags on the local_fast stack."""
+    settings = Settings(_env_file=None, retrieval_profile="cognitive")
+
+    profile = resolve_retrieval_profile(settings)
+
+    assert profile.name == "cognitive"
+    assert profile.embedding_provider == "hash"
+    assert profile.reranker_provider == "lexical"
+    assert profile.scoring_profile == "balanced"
+    # Promoted out of experimental status with the 2.1.0 default flip.
+    assert profile.experimental is False
+    assert profile.salience_ranking is True
+    assert profile.cue_blending is True
+    assert profile.graph_walk is True
+    assert "graph_walk" in profile.lanes
+    assert profile.to_diagnostics()["cognitive"] == {
+        "salience_ranking": True,
+        "cue_blending": True,
+        "graph_walk": True,
+    }
+
+
+def test_existing_profiles_keep_cognitive_flags_off_and_diagnostics_unchanged() -> None:
+    """Pre-cognitive profiles must stay byte-identical: flags off, no new diagnostics key."""
+    for name in ("local_fast", "local_sota", "hosted_sota"):
+        profile = resolve_retrieval_profile(Settings(_env_file=None, retrieval_profile=name))
+
+        assert profile.salience_ranking is False
+        assert profile.cue_blending is False
+        assert profile.graph_walk is False
+        assert "cognitive" not in profile.to_diagnostics()

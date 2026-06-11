@@ -49,6 +49,16 @@ def _graph_store(*args: Any, **kwargs: Any) -> Any:
 GraphStore = _graph_store
 
 
+def _embedded_graph_store(*args: Any, **kwargs: Any) -> Any:
+    """Patchable lazy seam for CLI commands that construct EmbeddedGraphStore."""
+    from zaxy.embedded_graph_store import EmbeddedGraphStore as _EmbeddedGraphStore
+
+    return _EmbeddedGraphStore(*args, **kwargs)
+
+
+EmbeddedGraphStore = _embedded_graph_store
+
+
 def capture_codex_sessions(*args: Any, **kwargs: Any) -> Any:
     """Patchable lazy seam for local Codex capture."""
     from zaxy.codex_capture import capture_codex_sessions as _capture_codex_sessions

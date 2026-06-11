@@ -61,6 +61,15 @@ MEMORY_ACTIVATION_INSTRUCTIONS = {
     "blocker": "If activation packet or fresh checkout is absent, pause substantial work and run the CLI fallback.",
 }
 
+MEMORY_FRONT_DOOR = {
+    "tool": "memory_checkout",
+    "guidance": (
+        "memory_checkout is the front door to Zaxy memory: call it first with the current "
+        "task before substantial work. Use memory_capabilities to discover the rest of the "
+        "tool surface."
+    ),
+}
+
 INSTRUCTION_FILES = {
     "AGENTS.md": "agents",
     "CLAUDE.md": "claude",
@@ -142,6 +151,7 @@ def build_workspace_instruction_event(root: str | Path, *, session_id: str) -> d
             "summary": " ".join(str(item["summary"]) for item in discovered if item.get("summary")),
             "signature": _instruction_signature(discovered),
             "files": discovered,
+            "memory_front_door": dict(MEMORY_FRONT_DOOR),
         },
     }
 

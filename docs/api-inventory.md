@@ -29,6 +29,9 @@ are tested through `docs/examples/mcp-tool-contract.json` and
 | `memory_query`, `memory_verbatim`, `memory_feedback`, `memory_synthesis_artifact`, `memory_synthesis_evidence` | `Beta` | Graph, source-recall, feedback, synthesis artifact, and row-level synthesis evidence tools. |
 | `memory_append`, `memory_replay`, `memory_invalidate` | `Beta` | Eventloom and temporal graph operations. |
 | `memory_skill` | `Experimental` | Procedural Skill Memory lifecycle helper. |
+| `memory_consolidation`, `memory_confidence` | `Beta` | Umbrella tools dispatching to the existing consolidation and confidence handlers; the single-purpose tool names remain available. |
+| `memory_feeling_of_knowing` | `Experimental` | Metamemory pre-check; verdicts are predictions, never memory answers or evidence. |
+| `MCP_TOOL_PROFILE` listing profiles (`core` default since 2.1.0, `full`) | `Beta` | Profiles change tool listing only; every tool stays callable by name. `MCP_TOOL_PROFILE=full` restores the pre-2.1.0 listing. |
 | `coordination_start`, `coordination_worker_create`, `coordination_assign` | `Beta` | Coordinate mission setup tools. |
 | `coordination_report_finding`, `coordination_review_finding`, `coordination_promote` | `Beta` | Finding review and promotion workflow. |
 | `coordination_merge_brief`, `coordination_checkout`, `coordination_handoff`, `coordination_record_synthesis_artifact`, `coordination_proof_trace` | `Beta` | Mission state, accepted memory, Coordinate purpose policy, proof packets, proof trace replay, and handoff. |
@@ -42,6 +45,7 @@ Module-private helpers and unexported functions are `Internal`.
 | Surface | Status | Notes |
 | --- | --- | --- |
 | `MemoryFabric`, `MemoryCheckout`, `QueryPage` | `Beta` | Primary orchestration and retrieval result surfaces. |
+| `RETRIEVAL_PROFILE` named profiles (`cognitive` default since 2.1.0; `local_fast`, `local_sota`, `hosted_sota`, `custom`) | `Beta` | Named retrieval profile resolution. `RETRIEVAL_PROFILE=local_fast` restores the pre-2.1.0 plain ranking. |
 | `Context`, `ContextAssemblyPolicy` | `Beta` | Prompt assembly primitives shared by MCP and adapters. |
 | `CoordinationManager`, `CoordinationBrief`, `CoordinationCheckout` | `Beta` | Coordinate replay and checkout API. |
 | `CoordinationApprovalPacket`, `CoordinationApprovalDecisionResult`, `CoordinationReviewExport`, `CoordinationPerformanceLedger` | `Beta` | Coordinate review and audit payloads. |
@@ -70,6 +74,9 @@ treated as public release-candidate surfaces. Internal helper functions in
 | `zaxy integration-template`, `zaxy integrations`, `zaxy ide-config`, `zaxy local-profile` | `Beta` | Integration discovery and config rendering. |
 | `zaxy trace export` | `Beta` | Provider-neutral Eventloom-derived trace export. |
 | `zaxy benchmark-inventory`, `zaxy benchmark-compare`, `zaxy state-recovery-benchmark` | `Beta` | Benchmark report inventory and guardrail helpers. Public claims are scoped by [benchmarks.md](benchmarks.md). |
+| `zaxy memory re-embed` | `Beta` | Batch migration of projected vectors to the active embedding version tag; Eventloom events are never rewritten. |
+| `zaxy memory mine-procedures` | `Experimental` | Mines recurring successful tool sequences into review-pending procedure candidates. |
+| `zaxy agent-experience-lanes` | `Beta` | Internal-validation lanes for tool-adoption, budget, and cache measurements. Claims are scoped by [benchmarks.md](benchmarks.md). |
 | Backend candidate options such as `PROJECTION_BACKEND=pggraph` or `latticedb` | `Experimental` | Candidate backends stay behind explicit configuration. |
 | `zaxy experimental pattern-completion`, `zaxy experimental state-recovery` | `Experimental` | Research commands for associative projection diagnostics; do not use for production claims. |
 
@@ -88,6 +95,7 @@ additive unless a migration event documents the change.
 | Coordinate lifecycle | `Beta` | `coordination.mission.created`, `coordination.worker.created`, `coordination.assignment.created`, `coordination.finding.reported`, `coordination.finding.reviewed`, `coordination.finding.promoted`, `coordination.handoff.created`, `coordination.proof_packet.created`. |
 | Inferred edges | `Beta` | `inference.edge.generated` with explicit confidence, method, and evidence metadata. |
 | Skill Memory | `Experimental` | `skill.proposed`, `skill.validated`, `skill.revised`, `skill.deprecated`, `skill.contradicted`, `skill.applied`, `skill.outcome_recorded`. |
+| Salience and metacognition markers | `Experimental` | `memory.reinforcement` (surfaced/confirmed/promoted/invalidated), `metacognition.fok.predicted`, `hook.session_resumed`; non-authoritative observability state, additive payload conventions `cues`, `pinned`, `encoding`. |
 
 ## Projection Backend Contract
 

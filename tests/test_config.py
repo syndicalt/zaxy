@@ -95,10 +95,53 @@ def test_context_assembly_defaults_include_source_recall() -> None:
     assert settings.context_packet_memory_slots == 1
 
 
-def test_retrieval_profile_default_is_local_fast() -> None:
+def test_retrieval_profile_default_is_cognitive() -> None:
+    """2.1.0 default flip: cognitive retrieval, with local_fast as the opt-out."""
+    settings = Settings(_env_file=None)
+
+    assert settings.retrieval_profile == "cognitive"
+
+
+def test_retrieval_profile_env_opt_out_restores_local_fast(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """RETRIEVAL_PROFILE=local_fast is the documented pre-2.1.0 opt-out."""
+    monkeypatch.setenv("RETRIEVAL_PROFILE", "local_fast")
+
     settings = Settings(_env_file=None)
 
     assert settings.retrieval_profile == "local_fast"
+
+
+def test_cognitive_memory_defaults_keep_current_behavior() -> None:
+    """Salience decay matches the ledger default; the gate stays off."""
+    settings = Settings(_env_file=None)
+
+    assert settings.salience_half_life_days == 30.0
+    assert settings.salience_floor == 0.15
+    assert settings.encoding_gate_enabled is False
+
+
+def test_cognitive_memory_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SALIENCE_HALF_LIFE_DAYS", "7.5")
+    monkeypatch.setenv("SALIENCE_FLOOR", "0.3")
+    monkeypatch.setenv("ENCODING_GATE_ENABLED", "true")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.salience_half_life_days == 7.5
+    assert settings.salience_floor == 0.3
+    assert settings.encoding_gate_enabled is True
+
+
+def test_salience_half_life_rejects_non_positive_values() -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, salience_half_life_days=0.0)
+
+
+def test_salience_floor_rejects_negative_values() -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, salience_floor=-0.1)
 
 
 def test_setup_logging_json_serializes_exception(
@@ -357,3 +400,36 @@ def test_logging_uses_stderr_for_mcp_stdio(capsys: pytest.CaptureFixture[str]) -
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "startup failed" in captured.err
+
+
+def test_vector_scale_defaults() -> None:
+    """Embedding-scale settings default to exact search and no quantization.
+
+    The ANN threshold default keeps HNSW effectively opt-in: the vector-scale
+    lane measured the current ANN path below exact search on recall and latency
+    at every size up to 10^5, so no default corpus should auto-engage it.
+    """
+    settings = Settings(_env_file=None)
+
+    assert settings.vector_ann_threshold == 1_000_000
+    assert settings.vector_quantization == "none"
+
+
+def test_vector_scale_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("VECTOR_ANN_THRESHOLD", "1234")
+    monkeypatch.setenv("VECTOR_QUANTIZATION", "int8")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.vector_ann_threshold == 1234
+    assert settings.vector_quantization == "int8"
+
+
+def test_vector_quantization_rejects_unknown_mode() -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, vector_quantization="int4")
+
+
+def test_vector_ann_threshold_rejects_non_positive_values() -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, vector_ann_threshold=0)

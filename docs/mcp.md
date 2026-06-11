@@ -9,7 +9,8 @@ application code.
 
 ## Model Call Rhythm
 
-Use Zaxy tools in this order:
+`memory_checkout` is the front door to Zaxy memory; everything else is
+plumbing or power use. Use Zaxy tools in this order:
 
 1. At session start, call `memory_bootstrap`.
 2. Before substantial work, call `memory_checkout`.
@@ -20,6 +21,23 @@ Use Zaxy tools in this order:
    the answer, call `memory_synthesis_artifact`.
 6. When an individual synthesis ledger row is used or excluded, call
    `memory_synthesis_evidence`.
+
+## Tool Profiles
+
+The server lists tools through a profile selected by `MCP_TOOL_PROFILE` or
+`zaxy serve --profile core|full`. The `core` profile is the default since
+2.1.0; restore the previous every-tool listing with `MCP_TOOL_PROFILE=full`
+or `zaxy serve --profile full`.
+The `core` profile lists only the front-door verb set — `memory_checkout`,
+`memory_append`, `memory_query`, `context_assemble`, `memory_feedback`,
+`memory_invalidate`, `memory_capabilities`, and the experimental
+`memory_feeling_of_knowing` — so models facing a long tool registry select the
+right entry point more reliably. Both profiles list `memory_checkout` first:
+the front door leads the listing order. Profiles change listing,
+not capability: any tool remains callable by name under either profile, and
+`memory_capabilities` returns a `profile` block with the active profile name
+and, under `core`, the available-but-unlisted tool names so a core-profile
+agent can discover and request the full surface.
 
 `memory_append(event_type, actor, payload, thread?)` appends a typed event to
 the Eventloom log for the selected session, extracts graph entities and edges,
@@ -148,6 +166,22 @@ stale, superseded, and `valid_to`-closed candidates when those states are
 projected. Use this for review queues and diagnostics, not as evidence of
 external validation.
 
+`memory_consolidation(operation, ...)` is an additive umbrella over the four
+tools above with `operation` set to `candidate`, `propose_from_log`, `status`,
+or `review`. Remaining arguments pass through unchanged to the corresponding
+single-purpose handler, and each operation validates its own required
+arguments. The single-purpose tool names remain available and unchanged; the
+umbrella is listed in the full profile only.
+
+Procedure mining feeds the same review pipeline from the command line.
+`zaxy memory mine-procedures` reads captured `tool.call.completed` and
+`command.completed` lifecycle events, mines successful multi-step tool
+sequences that recur across at least `--min-support` (default 2) distinct
+sessions, and appends each as a review-pending `procedure`
+`consolidation.candidate.created` candidate with citations to its source
+traces. Mined candidates surface through the existing consolidation status and
+review tools and never become authoritative skills without review.
+
 The trust contract is intentionally conservative. Causal edges and
 consolidation candidates are proposed, cited, non-authoritative memory surfaces
 in alpha. They should be used as diagnostics and operator review material, not
@@ -188,6 +222,15 @@ conflicted, deprecated, contradicted, stale, superseded, closed, or uncited
 procedures are diagnostic or excluded instead of being returned as operational
 instructions.
 
+`memory_confidence(operation, ...)` is an additive umbrella over the
+confidence and metacognition tools with `operation` set to `claim`
+(`memory_claim_confidence`), `trajectory` (`memory_confidence_trajectory`),
+`reverification` (`memory_reverification_needs`), `known_unknowns`
+(`memory_known_unknowns`), or `record_known_unknown`
+(`memory_record_known_unknown`). Remaining arguments pass through unchanged,
+each operation validates its own required arguments, and the single-purpose
+tool names remain available. The umbrella is listed in the full profile only.
+
 `memory_replay(session_id, from_seq?)` rebuilds session history from the
 Eventloom log. This is useful for handoffs, audits, and debugging. In remote SSE
 mode, the authenticated session scope is enforced so a client cannot replay a
@@ -208,6 +251,22 @@ as an ambient loop: session-start awareness is not enough, so models should
 refresh memory before major work, after compaction/resume, and before roadmap or
 architecture decisions.
 
+`memory_feeling_of_knowing(query, session_id?, cues?)` is an **experimental**
+metamemory pre-check: it predicts whether `memory_checkout` would likely
+return something for a query, in roughly a millisecond, from in-memory session
+state only — no embedding call and no graph query. The response is the
+non-authoritative verdict `likely`, `possible`, or `unlikely` plus the raw
+score and the signal breakdown behind it (query term count, entity-name bloom
+hits, cue hits, salience mass). What it does *not* claim: a verdict is never a
+memory answer, never evidence, and never authority — it is a cheap prediction
+about a checkout you have not run yet, built from the session's active
+entity names alone. Optional `cues` string fields (mission, workspace, tool,
+phase) are probed alongside the query terms. Each call appends a
+non-authoritative `metacognition.fok.predicted` marker (query hash, verdict,
+raw score) so the internal calibration lane can score predictions against
+actual checkout outcomes; until that lane reports, treat verdicts as hints
+and call `memory_checkout` whenever the answer matters.
+
 `memory_bootstrap(session_id?, current_task?)` is the shorter startup packet for
 clients that want one model-facing handoff. It embeds the capabilities manifest,
 the first recommended checkout call, deterministic capture status, and a trust
@@ -222,7 +281,7 @@ roadmap/status question after stale memory activity. Treat that event as a
 runtime nudge: call `memory_bootstrap` if tool awareness is unclear, then call
 `memory_checkout` for the current task before answering.
 
-`memory_checkout(query, session_id?, ref?, replay_from_seq?, limit?, max_recent_events?, purpose?)`
+`memory_checkout(query, session_id?, ref?, replay_from_seq?, limit?, max_recent_events?, max_tokens?, purpose?)`
 returns the high-level contract an agent should condition on before a turn. It
 wraps context assembly with a `# Memory Checkout` prompt, current facts that
 exclude superseded context, cited evidence, provenance parsed from
@@ -230,7 +289,15 @@ exclude superseded context, cited evidence, provenance parsed from
 set, and Checkout diagnostics. Diagnostics include source lane counts, total
 citation count, current-fact citation count, current fact count, excluded
 superseded context count, warning count, and a `memory_feedback` recommendation
-when cited context is returned. `purpose` may be a preset such as `coding`,
+when cited context is returned. Optional `max_tokens` applies a deterministic
+prompt token budget: checkout sections are greedily packed, citation-bearing
+fields always survive, and diagnostics report `budget_requested`,
+`budget_used`, and an `elided` summary so the agent knows recall was truncated
+rather than empty. Checkout prompts render in stability tiers (consolidated,
+session-scoped, volatile) with a canonical consolidated prefix, and
+diagnostics report `stable_prefix_chars` so provider prompt-cache efficiency
+is measurable. The same budget is available on the CLI as
+`zaxy memory checkout --max-tokens`. `purpose` may be a preset such as `coding`,
 `review`, `release`, `security`, `research`, or `coordinate`, or an object with
 role, task, risk, time horizon, expected action, evidence policy, retention
 policy, and ontology lens fields. The normalized profile is returned in
@@ -433,9 +500,11 @@ Degraded checkout response fragment:
 }
 ```
 
-`context_assemble(query, session_id?, replay_from_seq?, limit?, max_recent_events?)`
+`context_assemble(query, session_id?, replay_from_seq?, limit?, max_recent_events?, max_tokens?)`
 returns a prompt-ready bundle containing bounded recent replay plus ranked
-retrieval. The assembled retrieval set includes a reserved verbatim Eventloom
+retrieval. Optional `max_tokens` applies the same greedy token-budget packing
+as `memory_checkout`, reporting `budget_requested`, `budget_used`, and the
+`elided` summary in the response's `budget` payload. The assembled retrieval set includes a reserved verbatim Eventloom
 source-recall lane by default, and each context item includes `metadata` with an
 `assembly_lane` value such as `graph` or `verbatim`.
 The response also includes `assembly_policy` and `context_counts` fields so

@@ -114,6 +114,14 @@ def test_capture_codex_sessions_imports_transcript_tool_command_and_file_edit(tm
     assert events[5].payload["role"] == "assistant"
     assert all(event.payload["source"] == "codex-local" for event in events)
     assert all(event.payload["codex_source_ref"].startswith(str(session_path)) for event in events)
+    # Capture enriches the encoding-specificity cue record with what it
+    # actually knows: workspace identity always, the tool for tool-shaped
+    # records; mission/phase are not observable and stay honestly absent.
+    assert events[1].payload["cues"] == {"workspace": str(workspace)}
+    assert events[2].payload["cues"] == {"workspace": str(workspace), "tool": "exec_command"}
+    assert events[3].payload["cues"] == {"workspace": str(workspace), "tool": "exec_command"}
+    assert events[4].payload["cues"] == {"workspace": str(workspace), "tool": "apply_patch"}
+    assert all("mission" not in event.payload.get("cues", {}) for event in events)
 
 
 def test_capture_codex_sessions_is_idempotent_by_source_ref(tmp_path: Path) -> None:

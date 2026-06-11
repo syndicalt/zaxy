@@ -114,6 +114,11 @@ class VerbatimIndex:
 
 
 def _chunk_from_event(event: Event) -> VerbatimChunk | None:
+    if event.type == "memory.reinforcement":
+        # Salience reinforcement events are non-citable observability state;
+        # indexing them would shift BM25 statistics and checkout ranking.
+        return None
+
     if event.type == "document.indexed":
         content = _text(event.payload.get("content"))
         if not content:

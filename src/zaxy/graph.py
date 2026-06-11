@@ -83,6 +83,9 @@ class SearchResult:
     rerank_score: float | None = None
     rerank_strategy: str | None = None
     warnings: tuple[str, ...] = ()
+    # True when the result came from an exhaustive scoring path; False for
+    # approximate paths (HNSW index, quantized candidate selection).
+    exact: bool = True
 
 
 @dataclass(frozen=True)

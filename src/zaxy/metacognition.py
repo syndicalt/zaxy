@@ -1,17 +1,22 @@
-"""Non-authoritative metacognition event contracts.
+"""Non-authoritative metacognition event contracts and feeling-of-knowing.
 
 These helpers build Eventloom append specs for uncertainty, conflict,
-confidence, and re-verification state. Generated metacognition is observable
-diagnostic state only; it never promotes claims to authority.
+confidence, and re-verification state, and provide the deterministic
+feeling-of-knowing pre-check core (:func:`build_feeling_of_knowing_index`,
+:func:`feeling_of_knowing`). Generated metacognition is observable diagnostic
+state only; it never promotes claims to authority, and a feeling-of-knowing
+verdict is a cheap prediction about checkout, never a memory answer.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Any
+from dataclasses import asdict, dataclass
+from typing import Any, Final, Literal
 
 _AUTHORITY_STATUS = "non_authoritative"
 _OPEN_STATUS = "open"
@@ -286,6 +291,364 @@ def summarize_metacognition_events(events: Iterable[dict[str, Any]]) -> dict[str
                 summary["reverify_requests"].append(dict(payload))
 
     return summary
+
+
+# --- Feeling-of-knowing pre-check -------------------------------------------
+#
+# The feeling-of-knowing core answers "would checkout likely return something
+# for this query?" from in-memory projection state only: an entity-name token
+# bloom filter, cue/term hit counts, and a salience summary. It is
+# deterministic, O(query terms), and performs no embedding call, no graph
+# query, and no I/O. Verdicts are calibration targets, never authority.
+
+FOK_LIKELY: Final = "likely"
+FOK_POSSIBLE: Final = "possible"
+FOK_UNLIKELY: Final = "unlikely"
+
+FoKVerdictLabel = Literal["likely", "possible", "unlikely"]
+
+# Bloom sizing math. For ``n`` distinct name tokens at design false-positive
+# rate ``p``: bits ``m = ceil(-n * ln(p) / ln(2)^2) ~= 9.59 * n`` (rounded up
+# to a byte boundary) and hash count ``k = round(log2(1 / p)) = 7``, the
+# optimal k for that m/n ratio. At the design point (n = 10,000 tokens,
+# p = 0.01) this yields m ~= 95,851 bits (~11.7 KiB) and an expected
+# false-positive rate of ``(1 - e^(-k * n / m))^k ~= 0.0100``. The filter is
+# sized from the actual distinct-token count at build time so smaller
+# projections stay smaller, with a 512-bit floor so tiny corpora are not
+# saturated by the k probes and stay at or below the design rate.
+FOK_BLOOM_FALSE_POSITIVE_RATE = 0.01
+_FOK_BLOOM_MIN_BITS = 512
+
+# Raw-score blend weights (they sum to 1.0, keeping the score in [0, 1]).
+# Bloom membership of query terms in projected entity names is the strongest
+# cheap predictor that checkout will surface something, so it dominates; cue
+# hits corroborate (the term was an encoding-time cue, not just a name token);
+# salience mass rewards queries that touch currently-reinforced memories.
+FOK_BLOOM_WEIGHT = 0.6
+FOK_CUE_WEIGHT = 0.25
+FOK_SALIENCE_WEIGHT = 0.15
+
+# Verdict thresholds. "likely" requires either every query term to be a known
+# name token (bloom ratio 1.0 alone scores 0.6) or a near-complete bloom match
+# corroborated by cue/salience signal. "possible" starts where roughly one
+# third of the query terms are known names (1/3 * 0.6 = 0.2) — partial
+# overlap that checkout may or may not convert. Below that, the projection
+# has essentially no lexical evidence for the query: "unlikely".
+FOK_LIKELY_THRESHOLD = 0.55
+FOK_POSSIBLE_THRESHOLD = 0.2
+
+# Verdict comparisons tolerate binary floating-point representation error at
+# the threshold boundaries: a 3-term query with exactly one bloom hit scores
+# 0.6 * (1/3) = 0.19999999999999998, which is mathematically exactly the
+# possible threshold 0.2 but compares below it without the tolerance,
+# misclassifying a designed-boundary "possible" as "unlikely". 1e-9 is far
+# above accumulated double rounding error for this three-term blend and far
+# below the smallest meaningful score step (one term in a 10,000-term query
+# changes the score by at least 1.5e-5).
+_FOK_THRESHOLD_EPSILON = 1e-9
+
+# Histogram bucket upper bounds for replayed salience scores (see
+# ``zaxy.salience``: scores are clamped to [0.01, 10.0] around base 1.0).
+# Buckets: strongly decayed [0, 0.5), mildly decayed [0.5, 1.0), baseline to
+# lightly reinforced [1.0, 2.0), reinforced [2.0, 5.0), and the clamp tail
+# [5.0, inf).
+FOK_SALIENCE_BUCKET_UPPER_BOUNDS: tuple[float, ...] = (0.5, 1.0, 2.0, 5.0)
+
+_FOK_BLOOM_PERSON = b"zaxy-fok-v1"
+_FOK_TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
+# Mirrors the keyword-search stop-word list used by projection backends so
+# the pre-check and lexical retrieval discount the same function words.
+_FOK_STOP_WORDS = frozenset(
+    {
+        "am",
+        "and",
+        "are",
+        "at",
+        "did",
+        "do",
+        "does",
+        "first",
+        "for",
+        "had",
+        "have",
+        "how",
+        "in",
+        "it",
+        "me",
+        "of",
+        "the",
+        "to",
+        "was",
+        "were",
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "with",
+    }
+)
+_LN_2 = math.log(2.0)
+
+
+@dataclass(frozen=True, slots=True)
+class FeelingOfKnowingIndex:
+    """Deterministic in-memory feeling-of-knowing index for one session.
+
+    Built once from projection state by :func:`build_feeling_of_knowing_index`
+    and queried by :func:`feeling_of_knowing`. All fields are plain data so
+    the index is comparable, picklable, and cheap to hold per session.
+    """
+
+    entity_count: int
+    token_count: int
+    bloom_bits: bytes
+    bloom_bit_count: int
+    bloom_hash_count: int
+    cue_counts: Mapping[str, int]
+    token_salience_mass: Mapping[str, float]
+    total_salience_mass: float
+    salience_histogram: tuple[int, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class FoKSignals:
+    """Signal breakdown behind one feeling-of-knowing verdict."""
+
+    query_term_count: int
+    bloom_hits: int
+    bloom_hit_ratio: float
+    cue_hits: int
+    cue_hit_total: int
+    cue_hit_ratio: float
+    matched_salience_mass: float
+    total_salience_mass: float
+    salience_mass_ratio: float
+
+
+@dataclass(frozen=True, slots=True)
+class FoKVerdict:
+    """A non-authoritative feeling-of-knowing verdict with its evidence."""
+
+    verdict: FoKVerdictLabel
+    score: float
+    signals: FoKSignals
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return the verdict as plain diagnostics-ready data."""
+        return {
+            "verdict": self.verdict,
+            "score": self.score,
+            "signals": asdict(self.signals),
+            "authority_status": _AUTHORITY_STATUS,
+        }
+
+
+def build_feeling_of_knowing_index(
+    entity_names: Iterable[str],
+    *,
+    cue_counts: Mapping[str, int] | None = None,
+    salience_by_name: Mapping[str, float] | None = None,
+) -> FeelingOfKnowingIndex:
+    """Build the feeling-of-knowing index from plain projection state.
+
+    The builder is deliberately decoupled from any backend: callers pass the
+    active entity names the projection already holds in memory, optional
+    cue-term hit counts (encoding-specificity cues observed at append time),
+    and optional replayed salience scores keyed by entity name
+    (``SalienceState.score`` values). Building is deterministic: identical
+    inputs produce an identical index.
+    """
+    names: list[str] = []
+    for position, name in enumerate(entity_names):
+        if not isinstance(name, str):
+            raise ValueError(f"entity_names[{position}] must be a string")
+        names.append(name)
+    validated_cues = _validate_cue_counts(cue_counts if cue_counts is not None else {})
+    validated_salience = _validate_salience_scores(
+        salience_by_name if salience_by_name is not None else {}
+    )
+
+    tokens = sorted({token for name in names for token in _fok_terms(name)})
+    bit_count, hash_count = _fok_bloom_parameters(len(tokens))
+    bits = bytearray(bit_count // 8)
+    for token in tokens:
+        for bit in _fok_bloom_positions(token, bit_count=bit_count, hash_count=hash_count):
+            bits[bit >> 3] |= 1 << (bit & 7)
+
+    token_salience_mass: dict[str, float] = {}
+    histogram = [0] * (len(FOK_SALIENCE_BUCKET_UPPER_BOUNDS) + 1)
+    total_salience_mass = 0.0
+    for name in sorted(validated_salience):
+        score = validated_salience[name]
+        histogram[_fok_salience_bucket(score)] += 1
+        total_salience_mass += score
+        for token in _fok_terms(name):
+            token_salience_mass[token] = token_salience_mass.get(token, 0.0) + score
+
+    return FeelingOfKnowingIndex(
+        entity_count=len(names),
+        token_count=len(tokens),
+        bloom_bits=bytes(bits),
+        bloom_bit_count=bit_count,
+        bloom_hash_count=hash_count,
+        cue_counts=validated_cues,
+        token_salience_mass=token_salience_mass,
+        total_salience_mass=total_salience_mass,
+        salience_histogram=tuple(histogram),
+    )
+
+
+def feeling_of_knowing(index: FeelingOfKnowingIndex, query: str) -> FoKVerdict:
+    """Predict whether checkout would likely return something for ``query``.
+
+    Deterministic and O(query terms): each unique query term costs one bloom
+    membership probe plus two dictionary lookups. A query whose terms are all
+    stop words (or an empty index) yields zero signal and an "unlikely"
+    verdict rather than an error — that is an honest prediction, not a caller
+    bug. The salience-mass ratio is capped at 1.0 because token-level masses
+    double-count multi-token entity names; it is a presence-weighted signal,
+    not a probability measure.
+    """
+    if not isinstance(index, FeelingOfKnowingIndex):
+        raise ValueError("index must be a FeelingOfKnowingIndex")
+    query = _validate_text(query, field_name="query")
+
+    terms = _fok_terms(query)
+    term_count = len(terms)
+    bloom_hits = sum(1 for term in terms if _fok_bloom_contains(index, term))
+    cue_hits = sum(1 for term in terms if index.cue_counts.get(term, 0) > 0)
+    cue_hit_total = sum(index.cue_counts.get(term, 0) for term in terms)
+    matched_salience_mass = sum(index.token_salience_mass.get(term, 0.0) for term in terms)
+
+    bloom_hit_ratio = bloom_hits / term_count if term_count else 0.0
+    cue_hit_ratio = cue_hits / term_count if term_count else 0.0
+    salience_mass_ratio = (
+        min(1.0, matched_salience_mass / index.total_salience_mass)
+        if index.total_salience_mass > 0.0
+        else 0.0
+    )
+
+    score = (
+        FOK_BLOOM_WEIGHT * bloom_hit_ratio
+        + FOK_CUE_WEIGHT * cue_hit_ratio
+        + FOK_SALIENCE_WEIGHT * salience_mass_ratio
+    )
+    verdict: FoKVerdictLabel
+    if score >= FOK_LIKELY_THRESHOLD - _FOK_THRESHOLD_EPSILON:
+        verdict = FOK_LIKELY
+    elif score >= FOK_POSSIBLE_THRESHOLD - _FOK_THRESHOLD_EPSILON:
+        verdict = FOK_POSSIBLE
+    else:
+        verdict = FOK_UNLIKELY
+
+    return FoKVerdict(
+        verdict=verdict,
+        score=score,
+        signals=FoKSignals(
+            query_term_count=term_count,
+            bloom_hits=bloom_hits,
+            bloom_hit_ratio=bloom_hit_ratio,
+            cue_hits=cue_hits,
+            cue_hit_total=cue_hit_total,
+            cue_hit_ratio=cue_hit_ratio,
+            matched_salience_mass=matched_salience_mass,
+            total_salience_mass=index.total_salience_mass,
+            salience_mass_ratio=salience_mass_ratio,
+        ),
+    )
+
+
+def _fok_terms(text: str) -> list[str]:
+    """Tokenize to unique, ordered, casefolded terms; drop stop/1-char words."""
+    terms = [term for term in _FOK_TOKEN_RE.findall(text.casefold()) if len(term) > 1]
+    return list(dict.fromkeys(term for term in terms if term not in _FOK_STOP_WORDS))
+
+
+def _fok_bloom_parameters(token_count: int) -> tuple[int, int]:
+    """Size the bloom filter for ``token_count`` distinct tokens.
+
+    Returns ``(bit_count, hash_count)`` with ``bit_count`` rounded up to a
+    byte boundary and floored at ``_FOK_BLOOM_MIN_BITS``. See the sizing math
+    next to :data:`FOK_BLOOM_FALSE_POSITIVE_RATE`. An empty token set keeps a
+    single all-zero byte so membership probes are well-defined and always
+    miss.
+    """
+    if token_count == 0:
+        return 8, 1
+    bits = math.ceil(
+        -token_count * math.log(FOK_BLOOM_FALSE_POSITIVE_RATE) / (_LN_2 * _LN_2)
+    )
+    bit_count = max(((bits + 7) // 8) * 8, _FOK_BLOOM_MIN_BITS)
+    hash_count = max(1, round(-math.log(FOK_BLOOM_FALSE_POSITIVE_RATE) / _LN_2))
+    return bit_count, hash_count
+
+
+def _fok_bloom_positions(term: str, *, bit_count: int, hash_count: int) -> list[int]:
+    """Derive ``hash_count`` deterministic bit positions for one term.
+
+    Uses salted blake2b double hashing (Kirsch-Mitzenmacher): one 128-bit
+    digest split into two 64-bit halves ``h1``/``h2`` drives the probe
+    sequence ``(h1 + i * step) % m`` with ``step = 1 + (h2 % (m - 1))`` so
+    the step is never zero modulo ``m`` and the k probes stay distinct in
+    expectation, matching k independent hash functions.
+    """
+    digest = hashlib.blake2b(
+        term.encode("utf-8"), digest_size=16, person=_FOK_BLOOM_PERSON
+    ).digest()
+    h1 = int.from_bytes(digest[:8], "big")
+    h2 = int.from_bytes(digest[8:], "big")
+    step = 1 + (h2 % (bit_count - 1)) if bit_count > 1 else 0
+    return [(h1 + probe * step) % bit_count for probe in range(hash_count)]
+
+
+def _fok_bloom_contains(index: FeelingOfKnowingIndex, term: str) -> bool:
+    if index.token_count == 0:
+        return False
+    return all(
+        index.bloom_bits[bit >> 3] >> (bit & 7) & 1
+        for bit in _fok_bloom_positions(
+            term,
+            bit_count=index.bloom_bit_count,
+            hash_count=index.bloom_hash_count,
+        )
+    )
+
+
+def _fok_salience_bucket(score: float) -> int:
+    for position, upper_bound in enumerate(FOK_SALIENCE_BUCKET_UPPER_BOUNDS):
+        if score < upper_bound:
+            return position
+    return len(FOK_SALIENCE_BUCKET_UPPER_BOUNDS)
+
+
+def _validate_cue_counts(cue_counts: Mapping[str, int]) -> dict[str, int]:
+    if not isinstance(cue_counts, Mapping):
+        raise ValueError("cue_counts must be a mapping of cue terms to hit counts")
+    validated: dict[str, int] = {}
+    for key, value in cue_counts.items():
+        cue = _validate_text(key, field_name="cue_counts key").casefold()
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise ValueError(f"cue_counts[{key!r}] must be a non-negative integer")
+        validated[cue] = validated.get(cue, 0) + value
+    return validated
+
+
+def _validate_salience_scores(salience_by_name: Mapping[str, float]) -> dict[str, float]:
+    if not isinstance(salience_by_name, Mapping):
+        raise ValueError("salience_by_name must be a mapping of entity names to scores")
+    validated: dict[str, float] = {}
+    for key, value in salience_by_name.items():
+        name = _validate_text(key, field_name="salience_by_name key")
+        if (
+            not isinstance(value, int | float)
+            or isinstance(value, bool)
+            or not math.isfinite(float(value))
+            or float(value) < 0.0
+        ):
+            raise ValueError(f"salience_by_name[{key!r}] must be a finite non-negative number")
+        validated[name] = float(value)
+    return validated
 
 
 def _validate_text(value: object, *, field_name: str) -> str:

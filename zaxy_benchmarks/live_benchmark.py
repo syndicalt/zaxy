@@ -440,6 +440,11 @@ class CachedEmbeddingProvider:
         """Number of cached embedding texts."""
         return len(self._cache)
 
+    @property
+    def version_tag(self) -> str:
+        """Delegate the embedding version tag to the wrapped provider."""
+        return self._provider.version_tag
+
     def embed(self, text: str) -> list[float]:
         """Return a cached embedding for text, computing it once."""
         cached = self._cache.get(text)

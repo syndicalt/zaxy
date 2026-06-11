@@ -12,6 +12,7 @@ import pytest
 
 import zaxy.embedded_graph_store as embedded_graph_store
 from zaxy.embedded_graph_store import (
+    LEGACY_EMBEDDING_VERSION,
     EmbeddedGraphStore,
     _keyword_candidate_terms,
     _keyword_index_from_entities,
@@ -21,6 +22,7 @@ from zaxy.embedded_graph_store import (
 )
 from zaxy.extract import ExtractedEdge, ExtractedEntity, ExtractionResult
 from zaxy.graph import GraphEntity
+from zaxy.graph_walk import AdjacencySnapshot
 
 pytestmark = pytest.mark.skipif(importlib.util.find_spec("kuzu") is None, reason="kuzu is not installed")
 
@@ -1849,7 +1851,10 @@ async def test_embedded_store_reports_missing_schema_as_empty_projection(tmp_pat
 
 @pytest.mark.asyncio
 async def test_embedded_store_searches_entity_vectors(tmp_path: Path) -> None:
-    store = EmbeddedGraphStore(tmp_path / "embedded.kuzu")
+    store = EmbeddedGraphStore(
+        tmp_path / "embedded.kuzu",
+        active_embedding_version=LEGACY_EMBEDDING_VERSION,
+    )
     await store.connect()
     await store.init_schema()
 
@@ -1886,8 +1891,10 @@ async def test_embedded_store_searches_entity_vectors(tmp_path: Path) -> None:
     assert results[0].source == "vector"
     assert results[0].score > 0
     assert results[0].entity.properties["source_event_hash"] == "hash-1"
+    assert results[0].exact is True
     index = store._vector_index_cache[("agent-1", None)]
-    group = index.groups[2]
+    group = index.groups[(2, LEGACY_EMBEDDING_VERSION)]
+    assert isinstance(group, embedded_graph_store._VectorGroup)
     assert group.entity_indexes == [0, 1]
     assert group.matrix.tolist() == [[1.0, 0.0], [0.0, 1.0]]
 
@@ -1922,8 +1929,10 @@ def test_embedded_vector_index_groups_store_unit_vectors() -> None:
 
     index = store._vector_index("agent-1", None)
 
-    assert index.groups[2].matrix.tolist() == [[0.6, 0.8]]
-    assert index.groups[2].entity_indexes == [0]
+    group = index.groups[(2, LEGACY_EMBEDDING_VERSION)]
+    assert isinstance(group, embedded_graph_store._VectorGroup)
+    assert group.matrix.tolist() == [[0.6, 0.8]]
+    assert group.entity_indexes == [0]
     assert entity.properties["embedding_dimension"] == 2
 
 
@@ -2013,7 +2022,10 @@ async def test_embedded_store_vector_search_zero_limit_skips_index(monkeypatch: 
 @pytest.mark.asyncio
 async def test_embedded_store_vector_search_computes_candidate_score_once(monkeypatch: pytest.MonkeyPatch) -> None:
     """Vector candidates should score via one matrix product and reuse it as raw_score."""
-    store = EmbeddedGraphStore(Path("unused.kuzu"))
+    store = EmbeddedGraphStore(
+        Path("unused.kuzu"),
+        active_embedding_version=LEGACY_EMBEDDING_VERSION,
+    )
 
     entity = GraphEntity(
         name="Vector Goal",
@@ -2030,7 +2042,7 @@ async def test_embedded_store_vector_search_computes_candidate_score_once(monkey
         return embedded_graph_store._VectorIndex(
             entities=[entity],
             groups={
-                1: embedded_graph_store._VectorGroup(
+                (1, LEGACY_EMBEDDING_VERSION): embedded_graph_store._VectorGroup(
                     matrix=np.array([[1.0]]),
                     entity_indexes=[0],
                 )
@@ -2048,7 +2060,10 @@ async def test_embedded_store_vector_search_computes_candidate_score_once(monkey
 
 @pytest.mark.asyncio
 async def test_embedded_store_caches_vector_index_and_invalidates_on_projection(tmp_path: Path) -> None:
-    store = EmbeddedGraphStore(tmp_path / "embedded.kuzu")
+    store = EmbeddedGraphStore(
+        tmp_path / "embedded.kuzu",
+        active_embedding_version=LEGACY_EMBEDDING_VERSION,
+    )
     await store.connect()
     await store.init_schema()
 
@@ -2073,7 +2088,8 @@ async def test_embedded_store_caches_vector_index_and_invalidates_on_projection(
     assert [result.entity.name for result in first] == ["Original Vector"]
     assert ("agent-1", None) in store._vector_index_cache
     assert not hasattr(store._vector_index_cache[("agent-1", None)], "sparse_vectors")
-    cached_group = store._vector_index_cache[("agent-1", None)].groups[2]
+    cached_group = store._vector_index_cache[("agent-1", None)].groups[(2, LEGACY_EMBEDDING_VERSION)]
+    assert isinstance(cached_group, embedded_graph_store._VectorGroup)
     assert cached_group.matrix.tolist() == [[1.0, 0.0]]
     assert cached_group.entity_indexes == [0]
 
@@ -2137,8 +2153,10 @@ async def test_embedded_store_current_vector_index_reuses_warmed_entities(
 
     assert index.entities[0] is warmed_entities[0]
     assert not hasattr(index, "sparse_vectors")
-    assert index.groups[2].matrix.tolist() == [[1.0, 0.0]]
-    assert index.groups[2].entity_indexes == [0]
+    group = index.groups[(2, LEGACY_EMBEDDING_VERSION)]
+    assert isinstance(group, embedded_graph_store._VectorGroup)
+    assert group.matrix.tolist() == [[1.0, 0.0]]
+    assert group.entity_indexes == [0]
     await store.close()
 
 
@@ -2175,8 +2193,10 @@ async def test_embedded_store_temporal_vector_index_reuses_temporal_entities_hel
     index = store._vector_index("agent-1", "2026-05-20T01:01:00Z")
 
     assert index.entities[0] is temporal_entities[0]
-    assert index.groups[2].matrix.tolist() == [[0.0, 1.0]]
-    assert index.groups[2].entity_indexes == [0]
+    group = index.groups[(2, LEGACY_EMBEDDING_VERSION)]
+    assert isinstance(group, embedded_graph_store._VectorGroup)
+    assert group.matrix.tolist() == [[0.0, 1.0]]
+    assert group.entity_indexes == [0]
     await store.close()
 
 
@@ -2412,4 +2432,657 @@ async def test_embedded_store_retires_source_projections_and_relationships(tmp_p
         session_id="agent-1",
     )
     assert [entity.name for entity in historical_neighbors] == ["Stable Goal"]
+    await store.close()
+
+
+def _versioned_vector_entity(
+    name: str,
+    embedding: list[float],
+    version: str | None = None,
+    session_id: str = "agent-1",
+) -> GraphEntity:
+    properties: dict[str, object] = {"embedding": embedding}
+    if version is not None:
+        properties["embedding_version"] = version
+    return GraphEntity(
+        name=name,
+        entity_type="goal",
+        valid_from="2026-05-20T01:00:00Z",
+        valid_to=None,
+        properties=properties,
+        session_id=session_id,
+    )
+
+
+def _seeded_unit_embeddings(count: int, dimension: int, seed: int) -> list[list[float]]:
+    rng = np.random.default_rng(seed)
+    matrix = rng.standard_normal((count, dimension))
+    return [list(map(float, row)) for row in matrix]
+
+
+@pytest.mark.asyncio
+async def test_embedded_store_vector_search_isolates_version_groups() -> None:
+    """Search must only score vectors carrying the active embedding version tag."""
+    store = EmbeddedGraphStore(Path("unused.kuzu"), active_embedding_version="hash@aaaa-dim2")
+    store._current_entity_index_cache["agent-1"] = [
+        _versioned_vector_entity("active tagged", [1.0, 0.0], "hash@aaaa-dim2"),
+        _versioned_vector_entity("other tagged", [1.0, 0.0], "openai:text-embedding-3-small@1.0.0-dim2"),
+        _versioned_vector_entity("legacy untagged", [1.0, 0.0]),
+    ]
+
+    active_results = await store.search_vector([1.0, 0.0], limit=10, session_id="agent-1")
+    assert [result.entity.name for result in active_results] == ["active tagged"]
+    assert active_results[0].exact is True
+
+    index = store._vector_index_cache[("agent-1", None)]
+    assert set(index.groups) == {
+        (2, "hash@aaaa-dim2"),
+        (2, "openai:text-embedding-3-small@1.0.0-dim2"),
+        (2, LEGACY_EMBEDDING_VERSION),
+    }
+
+
+@pytest.mark.asyncio
+async def test_embedded_store_vector_search_reaches_legacy_vectors_explicitly() -> None:
+    """Untagged vectors group under the legacy tag and stay explicitly reachable."""
+    store = EmbeddedGraphStore(Path("unused.kuzu"), active_embedding_version="hash@aaaa-dim2")
+    store._current_entity_index_cache["agent-1"] = [
+        _versioned_vector_entity("active tagged", [1.0, 0.0], "hash@aaaa-dim2"),
+        _versioned_vector_entity("legacy untagged", [1.0, 0.0]),
+    ]
+
+    legacy_results = await store.search_vector(
+        [1.0, 0.0],
+        limit=10,
+        session_id="agent-1",
+        embedding_version=LEGACY_EMBEDDING_VERSION,
+    )
+
+    assert [result.entity.name for result in legacy_results] == ["legacy untagged"]
+
+
+@pytest.mark.asyncio
+async def test_embedded_store_vector_search_resolves_active_version_from_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without an explicit version, search uses the active provider's version tag."""
+    import zaxy.embedding as embedding_module
+
+    monkeypatch.setattr(
+        embedding_module,
+        "resolved_active_embedding_version_tag",
+        lambda: "hash@settings-dim2",
+    )
+    store = EmbeddedGraphStore(Path("unused.kuzu"))
+    store._current_entity_index_cache["agent-1"] = [
+        _versioned_vector_entity("settings tagged", [1.0, 0.0], "hash@settings-dim2"),
+        _versioned_vector_entity("legacy untagged", [1.0, 0.0]),
+    ]
+
+    results = await store.search_vector([1.0, 0.0], limit=10, session_id="agent-1")
+
+    assert [result.entity.name for result in results] == ["settings tagged"]
+
+
+@pytest.mark.asyncio
+async def test_embedded_store_re_embed_session_migrates_stale_vectors(tmp_path: Path) -> None:
+    """Batch re-embedding upserts stale-version vectors onto the active tag."""
+    from zaxy.embedding import HashEmbeddingProvider
+
+    provider = HashEmbeddingProvider(dimension=8)
+    store = EmbeddedGraphStore(tmp_path / "embedded.kuzu")
+    await store.connect()
+    await store.init_schema()
+    await store.upsert_extraction(
+        ExtractionResult(
+            entities=[
+                ExtractedEntity(
+                    name="Legacy Goal",
+                    entity_type="goal",
+                    observed_at="2026-05-20T01:00:00Z",
+                    summary="needs migration",
+                    embedding=[1.0, 0.0],
+                ),
+                ExtractedEntity(
+                    name="Plain Task",
+                    entity_type="task",
+                    observed_at="2026-05-20T01:00:00Z",
+                    summary="no vector at all",
+                ),
+            ],
+            edges=[],
+            source_event_seq=1,
+            source_event_hash="hash-1",
+        ),
+        session_id="agent-1",
+    )
+
+    report = await store.re_embed_session(session_id="agent-1", provider=provider)
+
+    assert report == {"scanned": 1, "re_embedded": 1, "already_current": 0}
+    migrated = await store.search_vector(
+        provider.embed("Legacy Goal (goal) needs migration"),
+        limit=5,
+        session_id="agent-1",
+        embedding_version=provider.version_tag,
+    )
+    assert [result.entity.name for result in migrated] == ["Legacy Goal"]
+    assert await store.embedding_version_counts("agent-1") == {provider.version_tag: 1}
+
+    second = await store.re_embed_session(session_id="agent-1", provider=provider)
+    assert second == {"scanned": 1, "re_embedded": 0, "already_current": 1}
+    await store.close()
+
+
+@pytest.mark.asyncio
+async def test_embedded_store_re_embed_session_requires_version_tag(tmp_path: Path) -> None:
+    """Providers without a version tag cannot stamp migrated vectors."""
+
+    class TaglessProvider:
+        dimension = 4
+
+        def embed(self, text: str) -> list[float]:
+            return [1.0, 0.0, 0.0, 0.0]
+
+    store = EmbeddedGraphStore(tmp_path / "embedded.kuzu")
+    await store.connect()
+    await store.init_schema()
+
+    with pytest.raises(ValueError, match="version tag"):
+        await store.re_embed_session(session_id="agent-1", provider=TaglessProvider())
+    await store.close()
+
+
+@pytest.mark.asyncio
+async def test_embedded_store_ann_search_matches_exact_above_threshold(tmp_path: Path) -> None:
+    """Above the ANN threshold, HNSW search recall@10 must stay >= 0.95 vs exact."""
+    dimension = 32
+    embeddings = _seeded_unit_embeddings(300, dimension, seed=7)
+    entities = [
+        _versioned_vector_entity(f"entity-{position}", vector, "v1")
+        for position, vector in enumerate(embeddings)
+    ]
+
+    exact_store = EmbeddedGraphStore(
+        tmp_path / "exact.kuzu",
+        active_embedding_version="v1",
+        vector_ann_threshold=10_000,
+    )
+    exact_store._current_entity_index_cache["agent-1"] = entities
+
+    ann_store = EmbeddedGraphStore(
+        tmp_path / "ann.kuzu",
+        active_embedding_version="v1",
+        vector_ann_threshold=50,
+    )
+    await ann_store.connect()
+    await ann_store.init_schema()
+    ann_store._current_entity_index_cache["agent-1"] = entities
+
+    ann_group = ann_store._vector_index("agent-1", None).groups[(dimension, "v1")]
+    assert isinstance(ann_group, embedded_graph_store._AnnVectorGroup)
+    assert ann_group.vector_count == 300
+    assert ann_group.matrix_bytes == 0
+
+    queries = _seeded_unit_embeddings(20, dimension, seed=11)
+    recalls = []
+    for query in queries:
+        exact_names = [
+            result.entity.name
+            for result in await exact_store.search_vector(query, limit=10, session_id="agent-1")
+        ]
+        ann_results = await ann_store.search_vector(query, limit=10, session_id="agent-1")
+        assert all(result.exact is False for result in ann_results)
+        ann_names = [result.entity.name for result in ann_results]
+        recalls.append(len(set(exact_names) & set(ann_names)) / max(1, len(exact_names)))
+    assert sum(recalls) / len(recalls) >= 0.95
+    await ann_store.close()
+
+
+@pytest.mark.asyncio
+async def test_embedded_store_ann_threshold_boundary_keeps_exact_path(tmp_path: Path) -> None:
+    """Counts at or below the threshold stay on the exact dense path."""
+    dimension = 8
+    embeddings = _seeded_unit_embeddings(3, dimension, seed=3)
+    store = EmbeddedGraphStore(
+        tmp_path / "embedded.kuzu",
+        active_embedding_version="v1",
+        vector_ann_threshold=3,
+    )
+    await store.connect()
+    await store.init_schema()
+    store._current_entity_index_cache["agent-1"] = [
+        _versioned_vector_entity(f"entity-{position}", vector, "v1")
+        for position, vector in enumerate(embeddings)
+    ]
+
+    group = store._vector_index("agent-1", None).groups[(dimension, "v1")]
+    assert isinstance(group, embedded_graph_store._VectorGroup)
+    results = await store.search_vector(embeddings[0], limit=3, session_id="agent-1")
+    assert results and all(result.exact is True for result in results)
+
+    store._clear_read_caches("agent-1")
+    store._current_entity_index_cache["agent-1"] = [
+        _versioned_vector_entity(f"entity-{position}", vector, "v1")
+        for position, vector in enumerate(_seeded_unit_embeddings(4, dimension, seed=3))
+    ]
+    crossed_group = store._vector_index("agent-1", None).groups[(dimension, "v1")]
+    assert isinstance(crossed_group, embedded_graph_store._AnnVectorGroup)
+    crossed = await store.search_vector(embeddings[0], limit=3, session_id="agent-1")
+    assert crossed and all(result.exact is False for result in crossed)
+    await store.close()
+
+
+@pytest.mark.asyncio
+async def test_embedded_store_ann_group_rebuilds_with_projection(tmp_path: Path) -> None:
+    """ANN shadow rows follow the same rebuild trigger as the dense matrix."""
+    dimension = 8
+    store = EmbeddedGraphStore(
+        tmp_path / "embedded.kuzu",
+        active_embedding_version="v1",
+        vector_ann_threshold=2,
+    )
+    await store.connect()
+    await store.init_schema()
+    first_corpus = [
+        _versioned_vector_entity(f"first-{position}", vector, "v1")
+        for position, vector in enumerate(_seeded_unit_embeddings(5, dimension, seed=5))
+    ]
+    store._current_entity_index_cache["agent-1"] = first_corpus
+    query = first_corpus[0].properties["embedding"]
+    assert isinstance(query, list)
+    initial = await store.search_vector(query, limit=3, session_id="agent-1")
+    assert all(result.entity.name.startswith("first-") for result in initial)
+
+    store._clear_read_caches("agent-1")
+    second_corpus = [
+        _versioned_vector_entity(f"second-{position}", vector, "v1")
+        for position, vector in enumerate(_seeded_unit_embeddings(5, dimension, seed=6))
+    ]
+    store._current_entity_index_cache["agent-1"] = second_corpus
+
+    rebuilt = await store.search_vector(query, limit=3, session_id="agent-1")
+    assert rebuilt and all(result.entity.name.startswith("second-") for result in rebuilt)
+    await store.close()
+
+
+@pytest.mark.asyncio
+async def test_embedded_store_ann_capability_probe_falls_back_to_exact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A runtime without CREATE_VECTOR_INDEX keeps the exact path above threshold."""
+    dimension = 8
+    store = EmbeddedGraphStore(
+        tmp_path / "embedded.kuzu",
+        active_embedding_version="v1",
+        vector_ann_threshold=2,
+    )
+    await store.connect()
+    await store.init_schema()
+    real_connection = store._require_connection()
+
+    class NoVectorFunctionConnection:
+        def execute(self, query: str, params: dict[str, object] | None = None) -> object:
+            if "SHOW_FUNCTIONS" in query:
+                return _FakeRows([])
+            raise AssertionError(f"unexpected query during capability probe: {query}")
+
+    monkeypatch.setattr(store, "_connection", NoVectorFunctionConnection())
+    assert store._kuzu_vector_index_supported() is False
+
+    monkeypatch.setattr(store, "_connection", real_connection)
+    store._current_entity_index_cache["agent-1"] = [
+        _versioned_vector_entity(f"entity-{position}", vector, "v1")
+        for position, vector in enumerate(_seeded_unit_embeddings(5, dimension, seed=5))
+    ]
+    group = store._vector_index("agent-1", None).groups[(dimension, "v1")]
+    assert isinstance(group, embedded_graph_store._VectorGroup)
+    results = await store.search_vector(
+        group.matrix[0].tolist(),
+        limit=3,
+        session_id="agent-1",
+    )
+    assert results and all(result.exact is True for result in results)
+    await store.close()
+
+
+def test_embedded_store_ann_capability_probe_detects_vector_support(tmp_path: Path) -> None:
+    """The pinned Kuzu runtime must report native vector index support."""
+    import asyncio
+
+    store = EmbeddedGraphStore(tmp_path / "embedded.kuzu")
+    asyncio.run(store.connect())
+    try:
+        assert store._kuzu_vector_index_supported() is True
+    finally:
+        asyncio.run(store.close())
+
+
+def test_embedded_vector_quantization_is_opt_in() -> None:
+    """Without opting in, vector groups stay exact float64 matrices."""
+    store = EmbeddedGraphStore(Path("unused.kuzu"), vector_quantization="none")
+    store._current_entity_index_cache["agent-1"] = [
+        _versioned_vector_entity("plain", [3.0, 4.0], "v1"),
+    ]
+
+    group = store._vector_index("agent-1", None).groups[(2, "v1")]
+
+    assert isinstance(group, embedded_graph_store._VectorGroup)
+    assert group.matrix.dtype == np.float64
+
+
+@pytest.mark.asyncio
+async def test_embedded_vector_quantization_recall_guard() -> None:
+    """Int8 oversample + float rerank must keep top-10 recall >= 0.95 vs exact."""
+    dimension = 32
+    embeddings = _seeded_unit_embeddings(300, dimension, seed=17)
+    entities = [
+        _versioned_vector_entity(f"entity-{position}", vector, "v1")
+        for position, vector in enumerate(embeddings)
+    ]
+
+    exact_store = EmbeddedGraphStore(Path("unused-exact.kuzu"), active_embedding_version="v1")
+    exact_store._current_entity_index_cache["agent-1"] = entities
+    quantized_store = EmbeddedGraphStore(
+        Path("unused-quantized.kuzu"),
+        active_embedding_version="v1",
+        vector_quantization="int8",
+    )
+    quantized_store._current_entity_index_cache["agent-1"] = entities
+
+    group = quantized_store._vector_index("agent-1", None).groups[(dimension, "v1")]
+    assert isinstance(group, embedded_graph_store._QuantizedVectorGroup)
+    assert group.matrix.dtype == np.int8
+
+    recalls = []
+    for query in _seeded_unit_embeddings(20, dimension, seed=23):
+        exact_names = [
+            result.entity.name
+            for result in await exact_store.search_vector(query, limit=10, session_id="agent-1")
+        ]
+        quantized_results = await quantized_store.search_vector(query, limit=10, session_id="agent-1")
+        assert all(result.exact is False for result in quantized_results)
+        quantized_names = [result.entity.name for result in quantized_results]
+        recalls.append(len(set(exact_names) & set(quantized_names)) / max(1, len(exact_names)))
+    assert sum(recalls) / len(recalls) >= 0.95
+
+
+def test_embedded_vector_quantization_reports_quantized_bytes() -> None:
+    """Byte accounting must reflect int8 storage plus per-vector scales."""
+    dimension = 16
+    count = 4
+    entities = [
+        _versioned_vector_entity(f"entity-{position}", vector, "v1")
+        for position, vector in enumerate(_seeded_unit_embeddings(count, dimension, seed=29))
+    ]
+
+    dense_store = EmbeddedGraphStore(Path("unused-dense.kuzu"), active_embedding_version="v1")
+    dense_store._current_entity_index_cache["agent-1"] = entities
+    quantized_store = EmbeddedGraphStore(
+        Path("unused-quantized.kuzu"),
+        active_embedding_version="v1",
+        vector_quantization="int8",
+    )
+    quantized_store._current_entity_index_cache["agent-1"] = entities
+
+    dense_index = dense_store._vector_index("agent-1", None)
+    quantized_index = quantized_store._vector_index("agent-1", None)
+
+    assert dense_index.matrix_bytes == count * dimension * 8
+    assert quantized_index.matrix_bytes == count * dimension + count * 8
+    assert quantized_index.matrix_bytes < dense_index.matrix_bytes
+
+
+def test_embedded_vector_index_eviction_respects_quantized_bytes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Eviction must count actual quantized bytes, not float64-equivalent bytes."""
+    dimension = 16
+    count = 4
+    # One quantized index is 96 bytes (64 int8 + 32 scale); the float64
+    # equivalent is 512 bytes. A 300-byte budget holds two quantized indexes
+    # but only one dense index.
+    monkeypatch.setattr(embedded_graph_store, "VECTOR_INDEX_CACHE_MAX_BYTES", 300)
+
+    quantized_store = EmbeddedGraphStore(
+        Path("unused-quantized.kuzu"),
+        active_embedding_version="v1",
+        vector_quantization="int8",
+    )
+    for session in ("agent-1", "agent-2"):
+        quantized_store._current_entity_index_cache[session] = [
+            _versioned_vector_entity(f"{session}-{position}", vector, "v1", session_id=session)
+            for position, vector in enumerate(_seeded_unit_embeddings(count, dimension, seed=31))
+        ]
+        quantized_store._vector_index(session, None)
+    assert list(quantized_store._vector_index_cache) == [("agent-1", None), ("agent-2", None)]
+
+    dense_store = EmbeddedGraphStore(Path("unused-dense.kuzu"), active_embedding_version="v1")
+    for session in ("agent-1", "agent-2"):
+        dense_store._current_entity_index_cache[session] = [
+            _versioned_vector_entity(f"{session}-{position}", vector, "v1", session_id=session)
+            for position, vector in enumerate(_seeded_unit_embeddings(count, dimension, seed=31))
+        ]
+        dense_store._vector_index(session, None)
+    assert list(dense_store._vector_index_cache) == [("agent-2", None)]
+
+
+# --- Adjacency snapshots for graph-walk retrieval ----------------------------
+
+
+def _node_key(session_id: str, entity_type: str, name: str, seq: int) -> str:
+    return embedded_graph_store._node_key(session_id, entity_type, name, seq)
+
+
+def _snapshot_edge_pairs(snapshot: AdjacencySnapshot) -> list[tuple[str, str]]:
+    """Decode a CSR snapshot back into sorted (source, target) node-key pairs."""
+    pairs: list[tuple[str, str]] = []
+    for source_index in range(snapshot.node_count):
+        start = int(snapshot.indptr[source_index])
+        stop = int(snapshot.indptr[source_index + 1])
+        for edge_index in range(start, stop):
+            pairs.append(
+                (
+                    snapshot.node_ids[source_index],
+                    snapshot.node_ids[int(snapshot.indices[edge_index])],
+                )
+            )
+    return sorted(pairs)
+
+
+async def _adjacency_store(tmp_path: Path) -> EmbeddedGraphStore:
+    store = EmbeddedGraphStore(tmp_path / "embedded.kuzu")
+    await store.connect()
+    await store.init_schema()
+    await store.upsert_extraction(
+        ExtractionResult(
+            entities=[
+                ExtractedEntity(
+                    name="Goal A",
+                    entity_type="goal",
+                    observed_at="2026-06-10T01:00:00Z",
+                    summary="ship graph walk",
+                ),
+                ExtractedEntity(
+                    name="Task B",
+                    entity_type="task",
+                    observed_at="2026-06-10T01:00:00Z",
+                    summary="implement adjacency",
+                ),
+                ExtractedEntity(
+                    name="Task C",
+                    entity_type="task",
+                    observed_at="2026-06-10T01:00:00Z",
+                    summary="test adjacency",
+                ),
+                ExtractedEntity(
+                    name="Island D",
+                    entity_type="note",
+                    observed_at="2026-06-10T01:00:00Z",
+                    summary="isolated entity",
+                ),
+            ],
+            edges=[
+                ExtractedEdge(
+                    source="Task B",
+                    target="Goal A",
+                    relation_type="supports",
+                    valid_from="2026-06-10T01:00:00Z",
+                ),
+                ExtractedEdge(
+                    source="Task C",
+                    target="Task B",
+                    relation_type="depends_on",
+                    valid_from="2026-06-10T01:00:00Z",
+                ),
+            ],
+            source_event_seq=1,
+            source_event_hash="adjacency-hash",
+            source_event_type="task.proposed",
+            source_thread="agent-1",
+        ),
+        session_id="agent-1",
+    )
+    return store
+
+
+@pytest.mark.asyncio
+async def test_fetch_adjacency_matches_hand_seeded_graph_exactly(tmp_path: Path) -> None:
+    """Snapshot nodes and edges should match the seeded graph, reverse edges included."""
+    store = await _adjacency_store(tmp_path)
+    goal_a = _node_key("agent-1", "goal", "Goal A", 1)
+    task_b = _node_key("agent-1", "task", "Task B", 1)
+    task_c = _node_key("agent-1", "task", "Task C", 1)
+    island_d = _node_key("agent-1", "note", "Island D", 1)
+
+    snapshot = await store.fetch_adjacency("agent-1")
+
+    assert snapshot.node_ids == tuple(sorted([goal_a, task_b, task_c, island_d]))
+    assert _snapshot_edge_pairs(snapshot) == sorted(
+        [
+            (task_b, goal_a),
+            (goal_a, task_b),  # reverse of supports
+            (task_c, task_b),
+            (task_b, task_c),  # reverse of depends_on
+        ]
+    )
+    assert snapshot.signature.startswith("adjacency:sha256:")
+    await store.close()
+
+
+@pytest.mark.asyncio
+async def test_fetch_adjacency_reverse_edges_match_traversal_index_semantics(
+    tmp_path: Path,
+) -> None:
+    """Every adjacency pair the traversal index sees must appear in the snapshot."""
+    store = await _adjacency_store(tmp_path)
+
+    snapshot = await store.fetch_adjacency("agent-1")
+    traversal = store._traversal_index("agent-1")
+
+    traversal_pairs = sorted(
+        (source_key, target_key)
+        for source_key, neighbors in traversal.adjacency.items()
+        for target_key, _entity, _relation in neighbors
+    )
+    assert _snapshot_edge_pairs(snapshot) == traversal_pairs
+    await store.close()
+
+
+@pytest.mark.asyncio
+async def test_fetch_adjacency_caches_until_projection_changes(tmp_path: Path) -> None:
+    """Unchanged stores reuse the cached snapshot; upserts invalidate it."""
+    store = await _adjacency_store(tmp_path)
+
+    first = await store.fetch_adjacency("agent-1")
+    second = await store.fetch_adjacency("agent-1")
+    assert second is first  # cache hit on unchanged store
+
+    await store.upsert_extraction(
+        ExtractionResult(
+            entities=[
+                ExtractedEntity(
+                    name="Task E",
+                    entity_type="task",
+                    observed_at="2026-06-10T02:00:00Z",
+                    summary="late arrival",
+                ),
+            ],
+            edges=[
+                ExtractedEdge(
+                    source="Task E",
+                    target="Task E",
+                    relation_type="self_check",
+                    valid_from="2026-06-10T02:00:00Z",
+                ),
+            ],
+            source_event_seq=2,
+            source_event_hash="adjacency-hash-2",
+            source_event_type="task.proposed",
+            source_thread="agent-1",
+        ),
+        session_id="agent-1",
+    )
+
+    third = await store.fetch_adjacency("agent-1")
+    assert third is not first
+    assert _node_key("agent-1", "task", "Task E", 2) in third.node_ids
+    assert third.signature != first.signature  # signature changes with the graph
+    assert third.node_count == first.node_count + 1
+    await store.close()
+
+
+@pytest.mark.asyncio
+async def test_fetch_adjacency_signature_is_stable_for_identical_graphs(tmp_path: Path) -> None:
+    """Rebuilding the snapshot for an unchanged graph reproduces the signature."""
+    store = await _adjacency_store(tmp_path)
+
+    first = await store.fetch_adjacency("agent-1")
+    store._adjacency_snapshot_cache.pop("agent-1")
+    rebuilt = await store.fetch_adjacency("agent-1")
+
+    assert rebuilt is not first
+    assert rebuilt.signature == first.signature
+    assert rebuilt.node_ids == first.node_ids
+    await store.close()
+
+
+@pytest.mark.asyncio
+async def test_fetch_adjacency_empty_session_returns_empty_snapshot(tmp_path: Path) -> None:
+    store = EmbeddedGraphStore(tmp_path / "embedded.kuzu")
+    await store.connect()
+    await store.init_schema()
+
+    snapshot = await store.fetch_adjacency("agent-empty")
+
+    assert snapshot.node_ids == ()
+    assert snapshot.edge_count == 0
+    await store.close()
+
+
+@pytest.mark.asyncio
+async def test_fetch_adjacency_personalized_pagerank_end_to_end(tmp_path: Path) -> None:
+    """PPR over a fetched snapshot ranks the seeded neighborhood deterministically."""
+    from zaxy.graph_walk import personalized_pagerank
+
+    store = await _adjacency_store(tmp_path)
+    goal_a = _node_key("agent-1", "goal", "Goal A", 1)
+    task_b = _node_key("agent-1", "task", "Task B", 1)
+    task_c = _node_key("agent-1", "task", "Task C", 1)
+    island_d = _node_key("agent-1", "note", "Island D", 1)
+
+    snapshot = await store.fetch_adjacency("agent-1")
+    ranked = personalized_pagerank(snapshot, [goal_a], iterations=100, tol=1e-12, top_n=10)
+    again = personalized_pagerank(snapshot, [goal_a], iterations=100, tol=1e-12, top_n=10)
+
+    assert again == ranked  # deterministic
+    masses = dict(ranked)
+    assert set(masses) == {goal_a, task_b, task_c}  # the island gets no walk mass
+    assert island_d not in masses
+    # On the undirected chain A - B - C seeded at A, the middle hub B carries
+    # the most mass (it receives from both sides); the seed outranks the
+    # 2-hop node, which earns the least.
+    assert masses[task_b] > masses[goal_a] > masses[task_c] > 0.0
+    assert sum(masses.values()) == pytest.approx(1.0, abs=1e-9)
     await store.close()

@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from zaxy.retrieval_plan import build_evidence_plan, source_lane_candidate_limit
+from zaxy.token_budget import BudgetSection, PackResult, pack_sections
+
+TIER_CONSOLIDATED = "consolidated"
+TIER_SESSION = "session"
+TIER_VOLATILE = "volatile"
+STABILITY_TIER_ORDER: tuple[str, ...] = (TIER_CONSOLIDATED, TIER_SESSION, TIER_VOLATILE)
+_STABILITY_TIER_RANK = {tier: rank for rank, tier in enumerate(STABILITY_TIER_ORDER)}
 
 
 @dataclass(frozen=True)
@@ -157,3 +165,190 @@ def _with_assembly_lane(context: Context, lane: str) -> Context:
         valid_to=context.valid_to,
         metadata=metadata,
     )
+
+
+@dataclass(frozen=True)
+class PromptSection:
+    """One stability-tiered, budget-packable section of a rendered prompt."""
+
+    section_id: str
+    kind: str
+    tier: str
+    text: str
+    weight: float = 0.5
+    mandatory: bool = False
+
+
+@dataclass(frozen=True)
+class PromptSectionSpec:
+    """Canonical marker, tier, and budget metadata for one prompt section kind.
+
+    ``marker`` is matched against whole lines (or as a line prefix when
+    ``prefix`` is true). Spec tuples are declared in canonical render order so
+    splitting a canonically rendered prompt is a forward-only line scan.
+    """
+
+    marker: str
+    kind: str
+    tier: str
+    weight: float = 0.5
+    mandatory: bool = False
+    prefix: bool = False
+
+    def matches(self, line: str) -> bool:
+        """Return whether a prompt line starts this section."""
+        if self.prefix:
+            return line.startswith(self.marker)
+        return line == self.marker
+
+
+ASSEMBLY_PROMPT_SECTION_SPECS: tuple[PromptSectionSpec, ...] = (
+    PromptSectionSpec("# Active Memory Working Set", "working_set", TIER_SESSION, weight=0.65),
+    PromptSectionSpec("# Recent Events", "recent_events", TIER_SESSION, weight=0.45),
+    PromptSectionSpec("# Retrieved Context", "retrieved_context", TIER_VOLATILE, weight=0.7),
+    PromptSectionSpec("# Context Warnings", "context_warnings", TIER_VOLATILE, weight=0.75, mandatory=True),
+)
+
+
+def split_prompt_sections(
+    prompt: str,
+    specs: Sequence[PromptSectionSpec],
+    *,
+    preamble_kind: str = "preamble",
+    preamble_tier: str = TIER_SESSION,
+    preamble_mandatory: bool = True,
+) -> list[PromptSection]:
+    """Split a canonically rendered prompt into tiered sections.
+
+    Markers are matched in spec order with a forward-only scan, so a content
+    line can only be mistaken for a section heading when it exactly matches a
+    canonical marker that has not appeared yet; even then every line is kept in
+    some section, so splitting never loses prompt content. Text before the
+    first marker becomes a mandatory preamble section.
+    """
+    sections: list[PromptSection] = []
+    current_spec: PromptSectionSpec | None = None
+    current_lines: list[str] = []
+    next_spec_index = 0
+
+    def close_block() -> None:
+        text = "\n".join(current_lines).strip()
+        if not text:
+            return
+        if current_spec is None:
+            sections.append(
+                PromptSection(
+                    section_id=preamble_kind,
+                    kind=preamble_kind,
+                    tier=preamble_tier,
+                    text=text,
+                    mandatory=preamble_mandatory,
+                )
+            )
+            return
+        sections.append(
+            PromptSection(
+                section_id=current_spec.kind,
+                kind=current_spec.kind,
+                tier=current_spec.tier,
+                text=text,
+                weight=current_spec.weight,
+                mandatory=current_spec.mandatory,
+            )
+        )
+
+    for line in prompt.splitlines():
+        matched: tuple[int, PromptSectionSpec] | None = None
+        for spec_index in range(next_spec_index, len(specs)):
+            if specs[spec_index].matches(line):
+                matched = (spec_index, specs[spec_index])
+                break
+        if matched is None:
+            current_lines.append(line)
+            continue
+        close_block()
+        next_spec_index, current_spec = matched[0] + 1, matched[1]
+        current_lines = [line]
+    close_block()
+    return sections
+
+
+def order_prompt_sections(sections: Sequence[PromptSection]) -> list[PromptSection]:
+    """Return sections in stability-tier order, stable within each tier."""
+    return sorted(
+        sections,
+        key=lambda section: _STABILITY_TIER_RANK.get(section.tier, len(STABILITY_TIER_ORDER)),
+    )
+
+
+def render_prompt_sections(sections: Sequence[PromptSection]) -> str:
+    """Render sections into one prompt with canonical blank-line separators."""
+    return "\n\n".join(section.text for section in sections if section.text).strip()
+
+
+def stable_prefix_chars(sections: Sequence[PromptSection]) -> int:
+    """Return the rendered length of the leading consolidated-tier prefix."""
+    consolidated: list[str] = []
+    for section in order_prompt_sections(sections):
+        if section.tier != TIER_CONSOLIDATED:
+            break
+        if section.text:
+            consolidated.append(section.text)
+    return len("\n\n".join(consolidated))
+
+
+def pack_prompt_sections(
+    sections: Sequence[PromptSection],
+    *,
+    max_tokens: int,
+) -> tuple[list[PromptSection], PackResult]:
+    """Pack tier-ordered sections into a token budget.
+
+    Returns the kept sections in stability-tier render order plus the packer
+    result for diagnostics. Section ids must be unique, which holds for every
+    canonical splitter in this codebase (one section per spec kind).
+    """
+    ordered = order_prompt_sections(sections)
+    result = pack_sections(
+        [
+            BudgetSection(
+                section_id=section.section_id,
+                kind=section.kind,
+                text=section.text,
+                weight=section.weight,
+                mandatory=section.mandatory,
+            )
+            for section in ordered
+        ],
+        max_tokens,
+    )
+    kept_ids = {section.section_id for section in result.sections}
+    return [section for section in ordered if section.section_id in kept_ids], result
+
+
+def budget_diagnostics(result: PackResult) -> dict[str, Any]:
+    """Return client-facing budget diagnostics for one packing result."""
+    return {
+        "budget_requested": result.budget_requested,
+        "budget_used": result.budget_used,
+        "elided": {
+            "count": len(result.elided),
+            "kinds": sorted({record.kind for record in result.elided}),
+            "sections": [record.to_dict() for record in result.elided],
+        },
+    }
+
+
+def split_assembly_prompt(prompt: str) -> list[PromptSection]:
+    """Split an assembled context prompt into its canonical tiered sections."""
+    return split_prompt_sections(prompt, ASSEMBLY_PROMPT_SECTION_SPECS)
+
+
+def apply_assembly_prompt_budget(prompt: str, *, max_tokens: int) -> tuple[str, dict[str, Any]]:
+    """Pack an assembled context prompt into a token budget.
+
+    Returns the packed prompt (tier-ordered, mandatory sections always kept)
+    and the budget diagnostics payload reporting what was elided.
+    """
+    kept, result = pack_prompt_sections(split_assembly_prompt(prompt), max_tokens=max_tokens)
+    return render_prompt_sections(kept), budget_diagnostics(result)

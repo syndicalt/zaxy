@@ -17,6 +17,7 @@ from zaxy.observation import (
     build_tool_call_observation,
     build_transcript_turn_observation,
 )
+from zaxy.salience import build_cue_record
 from zaxy.session import SessionManager
 
 CODEX_CAPTURE_CONFIG = ".codex/zaxy-capture.json"
@@ -227,7 +228,7 @@ def _record_to_event_input(
             session_id=session_id,
             source=source,
         )
-        return _with_ref(event, ref)
+        return _with_ref(_with_capture_cues(event, workspace=workspace), ref)
     if record_type != "response_item":
         return None
     item_type = payload.get("type")
@@ -242,7 +243,7 @@ def _record_to_event_input(
             session_id=session_id,
             source=source,
         )
-        return _with_ref(event, ref)
+        return _with_ref(_with_capture_cues(event, workspace=workspace), ref)
     if item_type == "function_call":
         call_id = payload.get("call_id")
         if isinstance(call_id, str):
@@ -289,7 +290,7 @@ def _function_call_to_event(
             line_count=None,
         )
         event["payload"]["files"] = files
-        return _with_ref(event, ref)
+        return _with_ref(_with_capture_cues(event, workspace=workspace, tool=name), ref)
     event = build_tool_call_observation(
         tool_name=name,
         status="called",
@@ -299,7 +300,7 @@ def _function_call_to_event(
         call_id=_optional_str(payload.get("call_id")),
         arguments=_safe_arguments(payload.get("arguments")),
     )
-    return _with_ref(event, ref)
+    return _with_ref(_with_capture_cues(event, workspace=workspace, tool=name), ref)
 
 
 def _function_output_to_event(
@@ -329,7 +330,7 @@ def _function_output_to_event(
         workspace=str(workspace),
         stdout=output_text,
     )
-    return _with_ref(event, ref)
+    return _with_ref(_with_capture_cues(event, workspace=workspace, tool=str(name)), ref)
 
 
 def _message_content_text(content: Any) -> str:
@@ -366,6 +367,25 @@ def _patch_files(arguments: Any) -> list[str]:
 
 def _with_ref(event: dict[str, Any], ref: str) -> dict[str, Any]:
     event["payload"]["codex_source_ref"] = ref
+    return event
+
+
+def _with_capture_cues(
+    event: dict[str, Any],
+    *,
+    workspace: Path,
+    tool: str | None = None,
+) -> dict[str, Any]:
+    """Attach the encoding-specificity cue record capture actually knows.
+
+    Workspace identity is always in hand here; the originating tool only for
+    tool-call shaped records. Mission and session phase are not observable
+    from Codex session logs, so they are honestly omitted rather than
+    guessed.
+    """
+    cues = build_cue_record(workspace=str(workspace), tool=tool)
+    if cues:
+        event["payload"]["cues"] = cues
     return event
 
 

@@ -8,6 +8,7 @@ import pytest
 
 from zaxy.config import Settings
 from zaxy.graph import GraphEntity, GraphStore, SearchResult
+from zaxy.graph_walk import AdjacencySnapshot
 from zaxy.query import (
     HTTPReranker,
     LateInteractionHTTPReranker,
@@ -2814,3 +2815,163 @@ def test_prompt_visible_properties_prioritize_domain_identity() -> None:
 
     assert ("taskId", "task-0001") in visible
     assert visible.index(("taskId", "task-0001")) < visible.index(("source_event_seq", 2))
+
+
+# ------------------------------------------------------------------
+# Cognitive-profile graph-walk stage (personalized PageRank)
+# ------------------------------------------------------------------
+
+
+def _walk_node_key(name: str, seq: int = 1) -> str:
+    return f"agent-1\x1ftopic\x1f{name}\x1f{seq}"
+
+
+def _walk_entity(name: str, seq: int = 1) -> GraphEntity:
+    return GraphEntity(
+        name=name,
+        entity_type="topic",
+        valid_from="2026-06-01T00:00:00Z",
+        valid_to=None,
+        properties={"source_event_seq": seq, "source_event_hash": "a" * 64},
+        session_id="agent-1",
+    )
+
+
+class _WalkFakeStore:
+    """Minimal async store exposing keyword search plus an adjacency snapshot.
+
+    Graph shape: ``alpha — mid — bravo`` (bravo is two hops from the
+    strongest query match) while ``charlie`` is disconnected.
+    """
+
+    def __init__(self) -> None:
+        self.fetch_count = 0
+        self.snapshot = AdjacencySnapshot.from_edges(
+            [
+                _walk_node_key("alpha"),
+                _walk_node_key("mid"),
+                _walk_node_key("bravo"),
+                _walk_node_key("charlie"),
+            ],
+            [
+                (_walk_node_key("alpha"), _walk_node_key("mid")),
+                (_walk_node_key("mid"), _walk_node_key("alpha")),
+                (_walk_node_key("mid"), _walk_node_key("bravo")),
+                (_walk_node_key("bravo"), _walk_node_key("mid")),
+            ],
+            signature="sig-1",
+        )
+
+    async def search_exact(self, *args: object, **kwargs: object) -> list[SearchResult]:
+        return []
+
+    async def search_keyword(self, *args: object, **kwargs: object) -> list[SearchResult]:
+        return [
+            SearchResult(entity=_walk_entity("alpha"), score=1.0, source="keyword"),
+            SearchResult(entity=_walk_entity("bravo"), score=0.3, source="keyword"),
+            SearchResult(entity=_walk_entity("charlie"), score=0.3, source="keyword"),
+        ]
+
+    async def search_traversal(self, *args: object, **kwargs: object) -> list[GraphEntity]:
+        return []
+
+    async def has_traversal_edges(self, *args: object, **kwargs: object) -> bool:
+        return False
+
+    async def fetch_adjacency(self, session_id: str = "default") -> AdjacencySnapshot:
+        self.fetch_count += 1
+        return self.snapshot
+
+
+class TestGraphWalkStage:
+    """Bounded personalized-PageRank folding behind the cognitive profile flag."""
+
+    async def test_graph_walk_disabled_by_default_never_touches_adjacency(self) -> None:
+        store = _WalkFakeStore()
+        router = QueryRouter(store=store, default_limit=5, session_id="agent-1")
+
+        await router.query("alpha mid context")
+
+        assert router.graph_walk_enabled is False
+        assert store.fetch_count == 0
+
+    async def test_entity_bridge_gains_rank_over_disconnected_peer(self) -> None:
+        """A 2-hop bridge to query-matched seeds outranks an equally-relevant island."""
+        store = _WalkFakeStore()
+        plain = QueryRouter(store=store, default_limit=5, session_id="agent-1")
+        cognitive = QueryRouter(
+            store=store,
+            default_limit=5,
+            session_id="agent-1",
+            graph_walk_enabled=True,
+        )
+
+        plain_names = [chunk.entity_name for chunk in await plain.query("alpha mid context")]
+        walk_names = [chunk.entity_name for chunk in await cognitive.query("alpha mid context")]
+
+        assert set(plain_names) == set(walk_names) == {"alpha", "bravo", "charlie"}
+        assert walk_names.index("bravo") < walk_names.index("charlie")
+        assert plain_names.index("bravo") >= walk_names.index("bravo")
+
+    async def test_graph_walk_is_deterministic_and_cached_per_signature(self) -> None:
+        store = _WalkFakeStore()
+        router = QueryRouter(
+            store=store,
+            default_limit=5,
+            session_id="agent-1",
+            graph_walk_enabled=True,
+        )
+
+        first = await router.query("alpha mid context")
+        second = await router.query("alpha mid context")
+
+        assert [(c.entity_name, c.score) for c in first] == [
+            (c.entity_name, c.score) for c in second
+        ]
+        assert router.graph_walk_cache_misses == 1
+        assert router.graph_walk_cache_hits == 1
+
+    async def test_graph_walk_skips_snapshots_with_foreign_node_keys(self) -> None:
+        """A backend with an unknown node-key format degrades to a no-op walk."""
+        store = _WalkFakeStore()
+        store.snapshot = AdjacencySnapshot.from_edges(
+            ["alpha", "bravo"],
+            [("alpha", "bravo")],
+            signature="sig-foreign",
+        )
+        router = QueryRouter(
+            store=store,
+            default_limit=5,
+            session_id="agent-1",
+            graph_walk_enabled=True,
+        )
+        plain = QueryRouter(store=store, default_limit=5, session_id="agent-1")
+
+        walk_chunks = await router.query("alpha mid context")
+        plain_chunks = await plain.query("alpha mid context")
+
+        assert [(c.entity_name, c.score) for c in walk_chunks] == [
+            (c.entity_name, c.score) for c in plain_chunks
+        ]
+
+    async def test_graph_walk_fetch_failure_degrades_to_plain_ranking(self) -> None:
+        store = _WalkFakeStore()
+
+        async def _broken(session_id: str = "default") -> AdjacencySnapshot:
+            raise RuntimeError("adjacency offline")
+
+        store.fetch_adjacency = _broken  # type: ignore[method-assign]
+        router = QueryRouter(
+            store=store,
+            default_limit=5,
+            session_id="agent-1",
+            graph_walk_enabled=True,
+        )
+        plain = QueryRouter(store=store, default_limit=5, session_id="agent-1")
+
+        walk_chunks = await router.query("alpha mid context")
+        plain_chunks = await plain.query("alpha mid context")
+
+        assert [(c.entity_name, c.score) for c in walk_chunks] == [
+            (c.entity_name, c.score) for c in plain_chunks
+        ]

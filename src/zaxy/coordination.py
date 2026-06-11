@@ -17,7 +17,9 @@ from pathlib import Path
 from typing import Any, Literal
 
 from zaxy.event import Event
+from zaxy.metrics import get_metrics
 from zaxy.purpose import coordinate_purpose_profile
+from zaxy.salience import build_promoted_reinforcement_event, target_ref
 from zaxy.security import validate_payload, validate_session_id
 from zaxy.session import SessionManager
 
@@ -840,6 +842,12 @@ class CoordinationManager:
             payload=payload,
             thread=mission_sid,
         )
+        self._record_promoted_reinforcement(
+            promotion_event=event,
+            finding=finding,
+            mission_sid=mission_sid,
+            actor=actor,
+        )
         return CoordinationEventResult(
             event=event,
             mission_id=mission_sid,
@@ -848,6 +856,42 @@ class CoordinationManager:
             summary=finding.summary,
             evidence=finding.evidence,
         )
+
+    def _record_promoted_reinforcement(
+        self,
+        *,
+        promotion_event: Event,
+        finding: FindingState,
+        mission_sid: str,
+        actor: str,
+    ) -> None:
+        """Append a 'promoted' salience reinforcement for one promotion.
+
+        Best-effort observability state targeting the promoted finding's
+        sealed source events; a failure here never fails the promotion.
+        """
+        try:
+            target = target_ref(finding.source_event_seq, finding.source_event_hash)
+            if target is None:
+                return
+            promotion_id = (
+                f"eventloom://{mission_sid}/events/"
+                f"{promotion_event.seq}#{promotion_event.hash[:12]}"
+            )
+            spec = build_promoted_reinforcement_event(
+                actor=actor,
+                session_id=mission_sid,
+                promotion_id=promotion_id,
+                targets=[target],
+            )
+            self.session_manager.get(mission_sid).eventlog.append(
+                spec["event_type"],
+                actor=spec["actor"],
+                payload=validate_payload(spec["payload"]),
+                thread=mission_sid,
+            )
+        except Exception:
+            get_metrics().record_degraded_operation("append", "salience_reinforcement_unavailable")
 
     def brief(self, mission_id: str) -> CoordinationBrief:
         """Build a governed mission brief from parent and worker sessions."""

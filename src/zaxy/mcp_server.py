@@ -12,10 +12,13 @@ Tools exposed:
 - memory_consolidation_propose_from_log: Create review-pending candidates from log segments.
 - memory_consolidation_status: Read review-gated consolidation status.
 - memory_consolidation_review: Append a consolidation review.
+- memory_consolidation: Operation-enum umbrella over the consolidation lifecycle tools.
+- memory_confidence: Operation-enum umbrella over the confidence/metacognition tools.
 - memory_explain_outcome: Explain an outcome with cited reasoning context.
 - memory_propose_belief_update: Append a review-pending belief proposal through MemoryFabric.
 - memory_claim_confidence: Score a claim against cited memory evidence.
 - memory_similar_procedures: Retrieve similar procedures for reasoning reuse.
+- memory_feeling_of_knowing: Experimental pre-check predicting checkout hit likelihood.
 - memory_feedback: Record retrieval feedback for a graph entity.
 - memory_synthesis_artifact: Persist checkout synthesis answer candidates and feedback.
 - memory_synthesis_evidence: Record feedback for one synthesis ledger row.
@@ -27,11 +30,12 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import hashlib
 import hmac
 import inspect
 import json
 import sys
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
 from pathlib import Path
@@ -48,17 +52,24 @@ from mcp.types import TextContent, Tool
 
 from zaxy.capabilities import build_memory_bootstrap, build_memory_capabilities
 from zaxy.causal import causal_query_result_from_projection, causal_relation_to_graph_relation
+from zaxy.checkout import apply_checkout_budget
 from zaxy.config import get_settings
 from zaxy.consolidation import (
     build_consolidation_candidate_event,
     build_consolidation_review_event,
 )
-from zaxy.context import Context, ContextAssemblyPolicy, context_counts
+from zaxy.context import (
+    Context,
+    ContextAssemblyPolicy,
+    apply_assembly_prompt_budget,
+    context_counts,
+)
 from zaxy.core import (
     ContextAssembly,
     MemoryCheckout,
     MemoryFabric,
     build_memory_checkout,
+    entity_reinforcement_targets,
 )
 from zaxy.extract import extract
 from zaxy.lifecycle import (
@@ -69,6 +80,12 @@ from zaxy.lifecycle import (
 from zaxy.log import get_logger, setup_logging
 from zaxy.mcp_runtime import EmbeddedMcpOwnerClaim, EmbeddedMcpRuntimeCoordinator
 from zaxy.memory_persistence import record_memory_activity
+from zaxy.metacognition import (
+    FeelingOfKnowingIndex,
+    FoKVerdict,
+    build_feeling_of_knowing_index,
+    feeling_of_knowing,
+)
 from zaxy.metrics import get_metrics
 from zaxy.pagination import encode_query_cursor, validate_query_cursor
 from zaxy.projection_backends import ProjectionBackendConfig, build_projection_store
@@ -77,6 +94,13 @@ from zaxy.query import QueryRouter, build_retention_policy
 from zaxy.refs import MemoryRef, MemoryRefStore
 from zaxy.remote_security import AuditEventExporter, RemoteAuditEvent, SessionRateLimiter
 from zaxy.runtime import LocalEmbeddedGraphRuntime, LocalNeo4jRuntime, LocalPgGraphRuntime
+from zaxy.salience import (
+    build_confirmed_reinforcement_event,
+    build_invalidated_reinforcement_event,
+    build_surfaced_reinforcement_event,
+    event_ref_index,
+    reinforcement_targets_from_citations,
+)
 from zaxy.security import (
     MAX_QUERY_LIMIT,
     MAX_REPLAY_EVENTS,
@@ -96,6 +120,7 @@ from zaxy.synthesis_artifact import (
     normalize_synthesis_outcome,
     synthesis_outcome_event_type,
 )
+from zaxy.tool_profiles import resolve_profile
 from zaxy.trace import MemoryTracer
 from zaxy.verbatim import VerbatimIndex
 from zaxy.working_set import build_working_set, format_working_set
@@ -116,6 +141,43 @@ remote_session_scope: contextvars.ContextVar[str | None] = contextvars.ContextVa
 )
 REASONING_PHASES = ["planning", "execution", "review", "reflection"]
 
+# Umbrella tool operation tables: operation -> (legacy handler name, truly
+# required arguments). Umbrella tools are additive dispatch shims; every
+# legacy single-purpose tool stays available and unchanged.
+MEMORY_CONSOLIDATION_OPERATIONS: dict[str, tuple[str, tuple[str, ...]]] = {
+    "candidate": (
+        "handle_memory_consolidation_candidate",
+        ("candidate_type", "title", "summary", "source_events", "confidence", "method"),
+    ),
+    "propose_from_log": ("handle_memory_consolidation_propose_from_log", ()),
+    "status": ("handle_memory_consolidation_status", ()),
+    "review": ("handle_memory_consolidation_review", ("candidate_id", "status", "rationale")),
+}
+MEMORY_CONFIDENCE_OPERATIONS: dict[str, tuple[str, tuple[str, ...]]] = {
+    "claim": ("handle_memory_claim_confidence", ("claim",)),
+    "trajectory": ("handle_memory_confidence_trajectory", ("claim",)),
+    "reverification": ("handle_memory_reverification_needs", ()),
+    "known_unknowns": ("handle_memory_known_unknowns", ()),
+    "record_known_unknown": (
+        "handle_memory_record_known_unknown",
+        ("question", "reason", "source_events", "claim_key"),
+    ),
+}
+
+
+def _umbrella_required_clauses(
+    operations: dict[str, tuple[str, tuple[str, ...]]],
+) -> list[dict[str, Any]]:
+    """Build JSON Schema if/then clauses marking per-operation required arguments."""
+    return [
+        {
+            "if": {"properties": {"operation": {"const": operation}}},
+            "then": {"required": list(required)},
+        }
+        for operation, (_, required) in operations.items()
+        if required
+    ]
+
 
 # ------------------------------------------------------------------
 # Tool definitions
@@ -123,8 +185,46 @@ REASONING_PHASES = ["planning", "execution", "review", "reflection"]
 
 TOOLS = [
     Tool(
+        name="memory_checkout",
+        description=(
+            "The front door to Zaxy memory: call this first, before substantial work, to "
+            "checkout current, cited, prompt-ready memory state for a session. Start here; "
+            "every other memory tool is plumbing or power use, discoverable through "
+            "memory_capabilities."
+        ),
+        inputSchema={
+            "type": "object",
+            "required": ["query"],
+            "properties": {
+                "query": {"type": "string"},
+                "session_id": {"type": "string"},
+                "ref": {"type": "string", "description": "Memory ref to checkout, e.g. HEAD or refs/heads/main"},
+                "replay_from_seq": {"type": "integer", "default": 1},
+                "limit": {"type": "integer", "default": 10},
+                "max_recent_events": {"type": "integer", "default": 20},
+                "max_tokens": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": (
+                        "Optional prompt token budget; sections are greedily packed and "
+                        "elisions are reported in diagnostics."
+                    ),
+                },
+                "purpose": {
+                    "oneOf": [{"type": "string"}, {"type": "object"}],
+                    "description": "Purpose profile name or object used to condition checkout guidance.",
+                },
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
         name="memory_append",
-        description="Append a typed event to the agent's persistent memory log.",
+        description=(
+            "Append a typed event to the agent's persistent memory log. Appended state "
+            "becomes retrievable through memory_checkout, the front door for reading "
+            "memory back."
+        ),
         inputSchema={
             "type": "object",
             "required": ["event_type", "actor", "payload"],
@@ -140,7 +240,11 @@ TOOLS = [
     ),
     Tool(
         name="memory_query",
-        description="Query the temporal knowledge graph for relevant context.",
+        description=(
+            "Query the temporal knowledge graph for relevant context. Power use behind "
+            "the memory_checkout front door: reach for it when you need targeted hits, "
+            "temporal filters, or pagination rather than a prompt-ready packet."
+        ),
         inputSchema={
             "type": "object",
             "required": ["query"],
@@ -155,6 +259,145 @@ TOOLS = [
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "Local-only explicit cross-session query scope",
+                },
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="context_assemble",
+        description=(
+            "Assemble replay plus ranked retrieval into a prompt-ready context bundle. "
+            "memory_checkout, the front door, wraps this assembly with current facts, "
+            "citations, and a trust contract."
+        ),
+        inputSchema={
+            "type": "object",
+            "required": ["query"],
+            "properties": {
+                "query": {"type": "string"},
+                "session_id": {"type": "string"},
+                "replay_from_seq": {"type": "integer", "default": 1},
+                "limit": {"type": "integer", "default": 10},
+                "max_recent_events": {"type": "integer", "default": 20},
+                "max_tokens": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": (
+                        "Optional prompt token budget; sections are greedily packed and "
+                        "elisions are reported in the budget payload."
+                    ),
+                },
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="memory_feedback",
+        description=(
+            "After using retrieved context, record whether a memory item was useful, stale, "
+            "corrected, or reinforced. This closes the loop on context surfaced by "
+            "memory_checkout, the front door."
+        ),
+        inputSchema={
+            "type": "object",
+            "required": ["entity_name", "entity_type", "feedback"],
+            "properties": {
+                "entity_name": {"type": "string", "description": "Retrieved graph entity name"},
+                "entity_type": {"type": "string", "description": "Retrieved graph entity type"},
+                "feedback": {
+                    "type": "string",
+                    "enum": ["used", "helpful", "irrelevant"],
+                    "description": "Retrieval outcome to record",
+                },
+                "actor": {"type": "string", "description": "Actor recording feedback", "default": "zaxy"},
+                "session_id": {"type": "string", "description": "Session ID for multi-agent sharding"},
+                "query": {"type": "string", "description": "Query that returned the context"},
+                "source": {"type": "string", "description": "Retrieval source", "default": "mcp"},
+                "score": {"type": "number", "description": "Original retrieval score"},
+                "citation": {"type": "string", "description": "Eventloom citation for the retrieved context"},
+                "reason": {"type": "string", "description": "Short rationale for the feedback"},
+                "purpose": {
+                    "oneOf": [{"type": "string"}, {"type": "object"}],
+                    "description": "Optional purpose profile or preset that made this memory useful",
+                },
+                "outcome": {
+                    "type": "string",
+                    "description": "Optional action outcome, e.g. supported_handoff or avoided_failed_path",
+                },
+                "importance": {
+                    "type": "number",
+                    "description": "Optional 0..1 reinforcement importance for positive feedback",
+                },
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="memory_invalidate",
+        description=(
+            "Mark a fact as invalid at a given time (bi-temporal update). History is "
+            "preserved; the correction surfaces in later memory_checkout (front door) "
+            "results."
+        ),
+        inputSchema={
+            "type": "object",
+            "required": ["entity_name", "entity_type", "invalid_at"],
+            "properties": {
+                "entity_name": {"type": "string"},
+                "entity_type": {"type": "string"},
+                "invalid_at": {"type": "string", "description": "ISO-8601 timestamp"},
+                "admin_token": {"type": "string", "description": "Admin token if configured"},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="memory_capabilities",
+        description=(
+            "Discover Zaxy's memory surface: active capabilities, the ambient usage loop, "
+            "the active tool profile, and which tools remain callable beyond the listed set. "
+            "memory_checkout is the front door; call this at session start or whenever tool "
+            "awareness is unclear."
+        ),
+        inputSchema={
+            "type": "object",
+            "required": [],
+            "properties": {
+                "session_id": {"type": "string"},
+                "current_task": {"type": "string", "description": "Current task or question to seed checkout guidance"},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="memory_feeling_of_knowing",
+        description=(
+            "Experimental metamemory pre-check: predict whether memory_checkout would likely "
+            "return something for a query, in roughly a millisecond, from in-memory session "
+            "state only (no embedding call, no graph query). Returns a non-authoritative "
+            "verdict (likely | possible | unlikely) with its signal breakdown and raw score. "
+            "It is a cheap prediction about checkout, never a memory answer or evidence, and "
+            "its calibration against real checkout outcomes is still being measured — when in "
+            "doubt, call memory_checkout."
+        ),
+        inputSchema={
+            "type": "object",
+            "required": ["query"],
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The query you are considering sending to memory_checkout",
+                },
+                "session_id": {"type": "string", "description": "Session ID for scoped prediction"},
+                "cues": {
+                    "type": "object",
+                    "description": (
+                        "Optional encoding-specificity cue fields (e.g. mission, workspace, "
+                        "tool, phase); cue values are probed against session memory alongside "
+                        "the query terms."
+                    ),
+                    "additionalProperties": {"type": "string"},
                 },
             },
             "additionalProperties": False,
@@ -544,43 +787,6 @@ TOOLS = [
         },
     ),
     Tool(
-        name="memory_feedback",
-        description="After using retrieved context, record whether a memory item was useful, stale, corrected, or reinforced.",
-        inputSchema={
-            "type": "object",
-            "required": ["entity_name", "entity_type", "feedback"],
-            "properties": {
-                "entity_name": {"type": "string", "description": "Retrieved graph entity name"},
-                "entity_type": {"type": "string", "description": "Retrieved graph entity type"},
-                "feedback": {
-                    "type": "string",
-                    "enum": ["used", "helpful", "irrelevant"],
-                    "description": "Retrieval outcome to record",
-                },
-                "actor": {"type": "string", "description": "Actor recording feedback", "default": "zaxy"},
-                "session_id": {"type": "string", "description": "Session ID for multi-agent sharding"},
-                "query": {"type": "string", "description": "Query that returned the context"},
-                "source": {"type": "string", "description": "Retrieval source", "default": "mcp"},
-                "score": {"type": "number", "description": "Original retrieval score"},
-                "citation": {"type": "string", "description": "Eventloom citation for the retrieved context"},
-                "reason": {"type": "string", "description": "Short rationale for the feedback"},
-                "purpose": {
-                    "oneOf": [{"type": "string"}, {"type": "object"}],
-                    "description": "Optional purpose profile or preset that made this memory useful",
-                },
-                "outcome": {
-                    "type": "string",
-                    "description": "Optional action outcome, e.g. supported_handoff or avoided_failed_path",
-                },
-                "importance": {
-                    "type": "number",
-                    "description": "Optional 0..1 reinforcement importance for positive feedback",
-                },
-            },
-            "additionalProperties": False,
-        },
-    ),
-    Tool(
         name="memory_synthesis_artifact",
         description="Persist Memory Checkout answer candidates as synthesis artifacts and optional outcome feedback.",
         inputSchema={
@@ -713,34 +919,6 @@ TOOLS = [
         },
     ),
     Tool(
-        name="memory_invalidate",
-        description="Mark a fact as invalid at a given time (bi-temporal update).",
-        inputSchema={
-            "type": "object",
-            "required": ["entity_name", "entity_type", "invalid_at"],
-            "properties": {
-                "entity_name": {"type": "string"},
-                "entity_type": {"type": "string"},
-                "invalid_at": {"type": "string", "description": "ISO-8601 timestamp"},
-                "admin_token": {"type": "string", "description": "Admin token if configured"},
-            },
-            "additionalProperties": False,
-        },
-    ),
-    Tool(
-        name="memory_capabilities",
-        description="Describe Zaxy's active memory capabilities and ambient usage loop for this session.",
-        inputSchema={
-            "type": "object",
-            "required": [],
-            "properties": {
-                "session_id": {"type": "string"},
-                "current_task": {"type": "string", "description": "Current task or question to seed checkout guidance"},
-            },
-            "additionalProperties": False,
-        },
-    ),
-    Tool(
         name="memory_bootstrap",
         description="At session start, return compact Zaxy memory guidance and the recommended first checkout call.",
         inputSchema={
@@ -749,43 +927,6 @@ TOOLS = [
             "properties": {
                 "session_id": {"type": "string"},
                 "current_task": {"type": "string", "description": "Current task or question to seed checkout guidance"},
-            },
-            "additionalProperties": False,
-        },
-    ),
-    Tool(
-        name="memory_checkout",
-        description="Before substantial work, checkout current, cited, prompt-ready memory state for a session.",
-        inputSchema={
-            "type": "object",
-            "required": ["query"],
-            "properties": {
-                "query": {"type": "string"},
-                "session_id": {"type": "string"},
-                "ref": {"type": "string", "description": "Memory ref to checkout, e.g. HEAD or refs/heads/main"},
-                "replay_from_seq": {"type": "integer", "default": 1},
-                "limit": {"type": "integer", "default": 10},
-                "max_recent_events": {"type": "integer", "default": 20},
-                "purpose": {
-                    "oneOf": [{"type": "string"}, {"type": "object"}],
-                    "description": "Purpose profile name or object used to condition checkout guidance.",
-                },
-            },
-            "additionalProperties": False,
-        },
-    ),
-    Tool(
-        name="context_assemble",
-        description="Assemble replay plus ranked retrieval into a prompt-ready context bundle.",
-        inputSchema={
-            "type": "object",
-            "required": ["query"],
-            "properties": {
-                "query": {"type": "string"},
-                "session_id": {"type": "string"},
-                "replay_from_seq": {"type": "integer", "default": 1},
-                "limit": {"type": "integer", "default": 10},
-                "max_recent_events": {"type": "integer", "default": 20},
             },
             "additionalProperties": False,
         },
@@ -1038,6 +1179,160 @@ TOOLS = [
             "additionalProperties": False,
         },
     ),
+    Tool(
+        name="memory_consolidation",
+        description=(
+            "Run one consolidation lifecycle operation: candidate (append a cited candidate), "
+            "propose_from_log (generate candidates from Eventloom segments), status (read "
+            "review-gated counts), or review (append a review). Additive umbrella over the "
+            "memory_consolidation_* tools; remaining arguments pass through unchanged. "
+            "memory_checkout stays the front door for reading memory state."
+        ),
+        inputSchema={
+            "type": "object",
+            "required": ["operation"],
+            "properties": {
+                "operation": {
+                    "type": "string",
+                    "enum": list(MEMORY_CONSOLIDATION_OPERATIONS),
+                    "description": "Consolidation lifecycle operation to run",
+                },
+                "candidate_type": {
+                    "type": "string",
+                    "enum": ["episode", "claim", "procedure"],
+                    "description": "Consolidation candidate type (candidate)",
+                },
+                "title": {"type": "string", "description": "Candidate title (candidate)"},
+                "summary": {"type": "string", "description": "Candidate summary (candidate)"},
+                "source_events": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "required": ["seq", "hash"],
+                        "properties": {
+                            "seq": {"type": "integer", "minimum": 1},
+                            "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                        },
+                        "additionalProperties": False,
+                    },
+                    "description": "Cited Eventloom source events (candidate)",
+                },
+                "confidence": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "Candidate confidence from 0.0 to 1.0 (candidate)",
+                },
+                "method": {"type": "string", "description": "Consolidation method identifier (candidate)"},
+                "window_size": {
+                    "type": "integer",
+                    "description": "Number of source events per proposal window (propose_from_log)",
+                    "default": 5,
+                    "minimum": 1,
+                    "maximum": 200,
+                },
+                "candidate_id": {
+                    "type": "string",
+                    "pattern": "^consolidation:(episode|claim|procedure):[0-9a-f]{24}$",
+                    "description": "Consolidation candidate ID (review)",
+                },
+                "status": {
+                    "type": "string",
+                    "enum": ["accepted", "rejected", "deferred", "conflicted"],
+                    "description": "Review lifecycle status (review)",
+                },
+                "rationale": {"type": "string", "description": "Review rationale (review)"},
+                "purpose": {"type": "string", "description": "Optional consolidation purpose"},
+                "session_id": {"type": "string", "description": "Session ID for multi-agent sharding"},
+                "actor": {
+                    "type": "string",
+                    "description": (
+                        "Actor recording the event; defaults to zaxy-consolidation for "
+                        "candidate/propose_from_log and zaxy-reviewer for review"
+                    ),
+                },
+            },
+            "allOf": _umbrella_required_clauses(MEMORY_CONSOLIDATION_OPERATIONS),
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="memory_confidence",
+        description=(
+            "Run one confidence/metacognition operation: claim (score claim confidence), "
+            "trajectory (list confidence assessments for a claim), reverification (list "
+            "re-verification needs), known_unknowns (list known unknowns), or "
+            "record_known_unknown (record a cited known unknown). Additive umbrella over the "
+            "single-purpose confidence tools; remaining arguments pass through unchanged. "
+            "memory_checkout stays the front door for reading memory state."
+        ),
+        inputSchema={
+            "type": "object",
+            "required": ["operation"],
+            "properties": {
+                "operation": {
+                    "type": "string",
+                    "enum": list(MEMORY_CONFIDENCE_OPERATIONS),
+                    "description": "Confidence/metacognition operation to run",
+                },
+                "claim": {"type": "string", "description": "Claim to score or inspect (claim, trajectory)"},
+                "question": {"type": "string", "description": "Known-unknown question to track (record_known_unknown)"},
+                "reason": {"type": "string", "description": "Reason this uncertainty was recorded (record_known_unknown)"},
+                "source_events": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "required": ["seq", "hash"],
+                        "properties": {
+                            "seq": {"type": "integer", "minimum": 1},
+                            "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                        },
+                        "additionalProperties": False,
+                    },
+                    "description": "Cited Eventloom source events (record_known_unknown)",
+                },
+                "claim_key": {"type": "string", "description": "Stable claim or uncertainty key (record_known_unknown)"},
+                "gap_type": {
+                    "type": "string",
+                    "description": "Uncertainty gap type (record_known_unknown)",
+                    "default": "missing_evidence",
+                },
+                "reverify_query": {
+                    "type": "string",
+                    "description": "Suggested query for re-verification (record_known_unknown)",
+                },
+                "query": {"type": "string", "description": "Optional query filter (reverification)"},
+                "status": {
+                    "type": "string",
+                    "description": "Known-unknown status filter or all (known_unknowns)",
+                    "default": "open",
+                },
+                "min_confidence": {
+                    "type": "number",
+                    "description": "Confidence threshold (reverification)",
+                    "default": 0.7,
+                    "minimum": 0,
+                    "maximum": 1,
+                },
+                "limit": {"type": "integer", "description": "Max results", "minimum": 1},
+                "phase": {
+                    "type": "string",
+                    "enum": REASONING_PHASES,
+                    "description": "Reasoning phase for purpose-conditioned retrieval (claim, record_known_unknown)",
+                },
+                "actor": {
+                    "type": "string",
+                    "description": "Actor recording the event (record_known_unknown)",
+                    "default": "zaxy-reasoning",
+                },
+                "session_id": {"type": "string", "description": "Session ID for scoped reasoning"},
+            },
+            "allOf": _umbrella_required_clauses(MEMORY_CONFIDENCE_OPERATIONS),
+            "additionalProperties": False,
+        },
+    ),
 ]
 
 
@@ -1067,17 +1362,24 @@ class ZaxyMCPServer:
         latticedb_path: str | Path | None = None,
         workspace_root: str | Path | None = None,
         default_session_id: str | None = None,
+        tool_profile: str | None = None,
     ) -> None:
         settings = get_settings()
         self._settings = settings
         backend = projection_backend or settings.projection_backend
         self._projection_backend = backend
+        self._tool_profile = resolve_profile(tool_profile or settings.mcp_tool_profile)
+        self._tool_profile_name = "full" if self._tool_profile is None else "core"
         self._admin_token = settings.mcp_admin_token
         self._default_session_id = validate_session_id(default_session_id or settings.eventloom_thread)
         self._lifecycle_capture_enabled = settings.mcp_lifecycle_capture_enabled
         self._workspace_root = Path(workspace_root or Path.cwd()).resolve()
         self._initialized_workspaces: dict[tuple[str, str], WorkspaceProfile] = {}
         self._initialized_instruction_signatures: dict[tuple[str, str], str] = {}
+        # Per-session feeling-of-knowing index, keyed by the session log-tail
+        # signature so any append rebuilds it (the log-signature pattern used
+        # by the projection's derived read caches).
+        self._fok_index_cache: dict[str, tuple[str, FeelingOfKnowingIndex]] = {}
         self._eventloom_path = eventloom_path or settings.eventloom_path
         self.session_manager = SessionManager(base_path=self._eventloom_path)
         self.refs = MemoryRefStore(self._eventloom_path)
@@ -1159,6 +1461,36 @@ class ZaxyMCPServer:
             image=settings.neo4j_auto_start_image,
             container_name=settings.neo4j_auto_start_container,
         )
+
+    def visible_tools(self) -> list[Tool]:
+        """Return the Tool table filtered through the active listing profile.
+
+        Profiles only affect listing; dispatch stays unfiltered, so every tool
+        remains callable by name regardless of the active profile.
+        """
+        if self._tool_profile is None:
+            return list(TOOLS)
+        return [tool for tool in TOOLS if tool.name in self._tool_profile]
+
+    def unlisted_tool_names(self) -> list[str]:
+        """Return tool names hidden from listing but still callable by name."""
+        if self._tool_profile is None:
+            return []
+        return sorted(tool.name for tool in TOOLS if tool.name not in self._tool_profile)
+
+    def _tool_profile_block(self) -> dict[str, Any]:
+        """Build the memory_capabilities block describing the active tool profile."""
+        block: dict[str, Any] = {
+            "active": self._tool_profile_name,
+            "listed_tools": [tool.name for tool in self.visible_tools()],
+        }
+        if self._tool_profile is not None:
+            block["available_but_unlisted"] = self.unlisted_tool_names()
+            block["note"] = (
+                "Profiles change tool listing only; every available-but-unlisted tool "
+                "remains callable by name."
+            )
+        return block
 
     async def setup(self) -> None:
         """Connect to the selected projection backend and initialize schema."""
@@ -1444,6 +1776,49 @@ class ZaxyMCPServer:
         )
         event = await self._append_project_and_trace_event(event_input, session_id=session_id)
         return [TextContent(type="text", text=json.dumps({"seq": event.seq, "hash": event.hash}))]
+
+    async def handle_memory_consolidation(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_consolidation umbrella tool calls."""
+        return await self._handle_umbrella_operation(
+            arguments,
+            tool_name="memory_consolidation",
+            operations=MEMORY_CONSOLIDATION_OPERATIONS,
+        )
+
+    async def handle_memory_confidence(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_confidence umbrella tool calls."""
+        return await self._handle_umbrella_operation(
+            arguments,
+            tool_name="memory_confidence",
+            operations=MEMORY_CONFIDENCE_OPERATIONS,
+        )
+
+    async def _handle_umbrella_operation(
+        self,
+        arguments: dict[str, Any],
+        *,
+        tool_name: str,
+        operations: Mapping[str, tuple[str, tuple[str, ...]]],
+    ) -> list[TextContent]:
+        """Dispatch an operation-enum umbrella call to its legacy handler unchanged."""
+        operation = arguments.get("operation")
+        if not isinstance(operation, str) or operation not in operations:
+            valid = ", ".join(operations)
+            raise ValueError(
+                f"{tool_name} requires 'operation' to be one of: {valid}; got {operation!r}"
+            )
+        handler_name, required = operations[operation]
+        forwarded = {key: value for key, value in arguments.items() if key != "operation"}
+        missing = [name for name in required if forwarded.get(name) is None]
+        if missing:
+            raise ValueError(
+                f"{tool_name} operation {operation!r} requires arguments: {', '.join(missing)}"
+            )
+        handler = cast(
+            Callable[[dict[str, Any]], Awaitable[list[TextContent]]],
+            getattr(self, handler_name),
+        )
+        return await handler(forwarded)
 
     async def handle_memory_explain_outcome(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Handle memory_explain_outcome tool calls."""
@@ -2045,12 +2420,53 @@ class ZaxyMCPServer:
         await self.graph.upsert_extraction(extraction, session_id=session_id)
         await self.tracer.trace_append(event_type, actor, event.seq)
 
+        if event_type == "memory.reinforced":
+            self._record_confirmed_reinforcement(
+                citation=payload.get("citation"),
+                feedback_event=event,
+                session_id=session_id,
+                actor=actor,
+            )
+
         return [
             TextContent(
                 type="text",
                 text=json.dumps({"seq": event.seq, "hash": event.hash, "event_type": event_type}),
             )
         ]
+
+    def _record_confirmed_reinforcement(
+        self,
+        *,
+        citation: Any,
+        feedback_event: Any,
+        session_id: str,
+        actor: str,
+    ) -> None:
+        """Append a 'confirmed' salience reinforcement for positive feedback.
+
+        Best-effort observability state: emitted only when the feedback cites
+        a sealed event in this session's log. A failure here never fails the
+        feedback itself.
+        """
+        try:
+            if not isinstance(citation, str) or not citation:
+                return
+            eventlog = self.session_manager.get(session_id).eventlog
+            index = event_ref_index(eventlog.read_all())
+            targets = reinforcement_targets_from_citations([citation], event_index=index)
+            if not targets:
+                return
+            feedback_id = _activity_event_citation(feedback_event) or f"{session_id}:feedback"
+            spec = build_confirmed_reinforcement_event(
+                actor=actor,
+                session_id=session_id,
+                feedback_id=feedback_id,
+                targets=targets,
+            )
+            self._append_reinforcement_spec(spec, session_id=session_id)
+        except Exception:
+            get_metrics().record_degraded_operation("append", "salience_reinforcement_unavailable")
 
     async def handle_memory_synthesis_artifact(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Handle memory_synthesis_artifact tool call."""
@@ -2252,13 +2668,33 @@ class ZaxyMCPServer:
         name = arguments["entity_name"]
         entity_type = arguments["entity_type"]
         invalid_at = arguments["invalid_at"]
+        session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
 
+        reinforcement: dict[str, Any] | None = None
+        try:
+            # Resolve source-event provenance before the validity window closes.
+            entities = await self.graph.search_exact(name, entity_type, session_id=session_id)
+            targets = entity_reinforcement_targets(entities)
+            if targets:
+                reinforcement = build_invalidated_reinforcement_event(
+                    actor="zaxy-memory",
+                    session_id=session_id,
+                    invalidation_id=f"invalidate:{entity_type}:{name}@{invalid_at}",
+                    targets=targets,
+                )
+        except Exception:
+            get_metrics().record_degraded_operation("append", "salience_reinforcement_unavailable")
         await self.graph.invalidate_entity(
             name,
             entity_type,
             invalid_at,
-            session_id=self._session_id_from_arguments(arguments, default=self._default_session_id),
+            session_id=session_id,
         )
+        if reinforcement is not None:
+            try:
+                self._append_reinforcement_spec(reinforcement, session_id=session_id)
+            except Exception:
+                get_metrics().record_degraded_operation("append", "salience_reinforcement_unavailable")
         return [TextContent(type="text", text=json.dumps({"status": "invalidated"}))]
 
     async def handle_memory_capabilities(self, arguments: dict[str, Any]) -> list[TextContent]:
@@ -2270,7 +2706,103 @@ class ZaxyMCPServer:
             workspace_root=self._workspace_root,
             current_task=_optional_text(arguments.get("current_task")),
         )
+        manifest["profile"] = self._tool_profile_block()
+        manifest["vector_search"] = {
+            "quantization": self._settings.vector_quantization,
+            "ann_threshold": self._settings.vector_ann_threshold,
+        }
         return [TextContent(type="text", text=json.dumps(manifest, indent=2))]
+
+    async def handle_memory_feeling_of_knowing(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_feeling_of_knowing tool calls.
+
+        The per-session :class:`FeelingOfKnowingIndex` is built from the
+        active entity names the projection store already holds in memory
+        (``active_entity_names``, served from the embedded store's cached
+        current-entity index; backends without that surface degrade to an
+        empty index and an honest "unlikely"). Cue counts and salience scores
+        are deliberately omitted: the server has no cached per-entity salience
+        state — the only salience source is a full Eventloom replay
+        (``SalienceLedger.replay``), which would bust the ~1 ms budget — so
+        the index is built from entity names alone and the cue/salience terms
+        of the verdict stay zero. Caller-supplied ``cues`` values are probed
+        as additional query terms instead.
+        """
+        query = validate_query(cast(str, arguments.get("query")))
+        session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
+        probe_text = _fok_probe_text(query, arguments.get("cues"))
+
+        index = await self._feeling_of_knowing_index(session_id)
+        verdict = feeling_of_knowing(index, probe_text)
+        self._record_fok_prediction(query=query, verdict=verdict, session_id=session_id)
+        return [TextContent(type="text", text=json.dumps(verdict.to_dict(), indent=2))]
+
+    async def _feeling_of_knowing_index(self, session_id: str) -> FeelingOfKnowingIndex:
+        """Return the session's feeling-of-knowing index, rebuilding on log change.
+
+        The cache key is the session log-tail signature (``seq:hash`` of the
+        last event), mirroring the log-signature invalidation pattern of the
+        projection's derived read caches: any append to the session — for
+        example a new projected entity — produces a new tail and forces a
+        rebuild from the store's current entity names.
+        """
+        signature = self._eventlog_signature(session_id)
+        cached = self._fok_index_cache.get(session_id)
+        if cached is not None and cached[0] == signature:
+            return cached[1]
+        index = build_feeling_of_knowing_index(await self._active_entity_names(session_id))
+        self._fok_index_cache[session_id] = (signature, index)
+        return index
+
+    async def _active_entity_names(self, session_id: str) -> list[str]:
+        """Return cached active entity names when the backend exposes them.
+
+        Mirrors the ``warm_session``/``has_traversal_edges`` feature-detection
+        pattern: projection backends without the in-memory accessor yield an
+        empty list, so the pre-check degrades to an honest "unlikely" rather
+        than issuing a per-call graph query.
+        """
+        provider = getattr(self.graph, "active_entity_names", None)
+        if provider is None:
+            return []
+        return list(await provider(session_id=session_id))
+
+    def _eventlog_signature(self, session_id: str) -> str:
+        """Return the session log-tail signature without a full log read."""
+        last = self.session_manager.get(session_id).eventlog.last_event()
+        if last is None:
+            return "empty"
+        return f"{last.seq}:{last.hash}"
+
+    def _record_fok_prediction(self, *, query: str, verdict: FoKVerdict, session_id: str) -> None:
+        """Append a non-authoritative feeling-of-knowing calibration marker.
+
+        Best-effort observability state mirroring the reinforcement-marker
+        pattern: the event records the query hash, verdict, and raw score so
+        the calibration lane can join predictions against subsequent checkout
+        outcomes. It projects no entities and needs no graph upsert. On
+        success the cached index signature advances to the appended marker so
+        the marker itself never invalidates the per-session index cache. A
+        failure here never fails the tool call.
+        """
+        try:
+            payload = {
+                "query_hash": hashlib.sha256(query.encode("utf-8")).hexdigest(),
+                "verdict": verdict.verdict,
+                "score": verdict.score,
+                "authority_status": "non_authoritative",
+            }
+            event = self.session_manager.get(session_id).eventlog.append(
+                "metacognition.fok.predicted",
+                actor="zaxy-memory",
+                payload=validate_payload(payload),
+                thread=session_id,
+            )
+            cached = self._fok_index_cache.get(session_id)
+            if cached is not None:
+                self._fok_index_cache[session_id] = (f"{event.seq}:{event.hash}", cached[1])
+        except Exception:
+            get_metrics().record_degraded_operation("append", "fok_calibration_unavailable")
 
     async def handle_memory_bootstrap(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Handle memory_bootstrap tool call."""
@@ -2297,6 +2829,7 @@ class ZaxyMCPServer:
         replay_from_seq = validate_from_seq(arguments.get("replay_from_seq"))
         limit = validate_limit(arguments.get("limit"), default=10)
         max_recent_events = validate_limit(arguments.get("max_recent_events"), default=20)
+        max_tokens = _optional_max_tokens(arguments.get("max_tokens"))
 
         output = await self._assemble_context_payload(
             query=query,
@@ -2305,6 +2838,13 @@ class ZaxyMCPServer:
             limit=limit,
             max_recent_events=max_recent_events,
         )
+        if max_tokens is not None:
+            packed_prompt, budget = apply_assembly_prompt_budget(
+                str(output.get("prompt") or ""),
+                max_tokens=max_tokens,
+            )
+            output["prompt"] = packed_prompt
+            output["budget"] = budget
         return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
     async def handle_memory_checkout(self, arguments: dict[str, Any]) -> list[TextContent]:
@@ -2314,11 +2854,12 @@ class ZaxyMCPServer:
         replay_from_seq = validate_from_seq(arguments.get("replay_from_seq"))
         limit = validate_limit(arguments.get("limit"), default=10)
         max_recent_events = validate_limit(arguments.get("max_recent_events"), default=20)
+        max_tokens = _optional_max_tokens(arguments.get("max_tokens"))
         ref = _optional_text(arguments.get("ref"))
         resolved_ref = self._resolve_checkout_ref(ref, session_id=session_id)
         checkout_session_id = resolved_ref.session_id if resolved_ref is not None else session_id
 
-        assembly = await self._assemble_context_payload(
+        assembly, replay_events = await self._assemble_context(
             query=query,
             session_id=checkout_session_id,
             replay_from_seq=replay_from_seq,
@@ -2328,11 +2869,13 @@ class ZaxyMCPServer:
         )
         output = build_memory_checkout(
             query=query,
-            assembly=_context_assembly_from_payload(assembly),
+            assembly=_context_assembly_from_payload(assembly, replay_events=replay_events),
             ref=resolved_ref,
             purpose=arguments.get("purpose"),
+            now=datetime.now(UTC),
         ).to_dict()
-        record_memory_activity(
+        output = apply_checkout_budget(output, max_tokens=max_tokens)
+        activity = record_memory_activity(
             self._eventloom_path,
             session_id=session_id,
             activity="checkout",
@@ -2340,7 +2883,65 @@ class ZaxyMCPServer:
             query=query,
             metadata=_checkout_activity_metadata(output),
         )
+        self._record_surfaced_reinforcement(
+            output,
+            replay_events=replay_events,
+            session_id=checkout_session_id,
+            activity_event=activity,
+        )
         return [TextContent(type="text", text=json.dumps(output, indent=2))]
+
+    def _record_surfaced_reinforcement(
+        self,
+        payload: dict[str, Any],
+        *,
+        replay_events: list[Any],
+        session_id: str,
+        activity_event: Any,
+    ) -> None:
+        """Append one batched 'surfaced' salience reinforcement for a checkout.
+
+        Best-effort observability state mirroring the fabric checkout path:
+        targets are the sealed refs of facts/evidence carried by the packet,
+        and the checkout is identified by its memory.checkout.completed
+        activity event. A failure here never fails the checkout response.
+        """
+        try:
+            index = event_ref_index(replay_events)
+            citations = [
+                item.get("citation")
+                for item in [
+                    *_dict_list_payload(payload.get("current_facts")),
+                    *_dict_list_payload(payload.get("evidence")),
+                ]
+            ]
+            targets = reinforcement_targets_from_citations(citations, event_index=index)
+            if not targets:
+                return
+            checkout_id = _activity_event_citation(activity_event) or f"{session_id}:checkout"
+            spec = build_surfaced_reinforcement_event(
+                actor="zaxy-memory",
+                session_id=session_id,
+                checkout_id=checkout_id,
+                targets=targets,
+            )
+            self._append_reinforcement_spec(spec, session_id=session_id)
+        except Exception:
+            get_metrics().record_degraded_operation("append", "salience_reinforcement_unavailable")
+
+    def _append_reinforcement_spec(self, spec: dict[str, Any], *, session_id: str) -> None:
+        """Append a reinforcement spec as a plain hash-chained log event.
+
+        Mirrors the memory-activity marker pattern: reinforcement events are
+        observability state replayed by the salience ledger, project no
+        entities (their extractor is empty), and need no graph upsert.
+        """
+        self.session_manager.get(session_id).eventlog.append(
+            str(spec["event_type"]),
+            actor=str(spec["actor"]),
+            payload=validate_payload(cast(dict[str, Any], spec["payload"])),
+            thread=session_id,
+        )
 
     async def handle_context_after_turn(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Handle context_after_turn tool call."""
@@ -2430,6 +3031,32 @@ class ZaxyMCPServer:
         max_recent_events: int,
         as_of_seq: int | None = None,
     ) -> dict[str, Any]:
+        payload, _events = await self._assemble_context(
+            query=query,
+            session_id=session_id,
+            replay_from_seq=replay_from_seq,
+            limit=limit,
+            max_recent_events=max_recent_events,
+            as_of_seq=as_of_seq,
+        )
+        return payload
+
+    async def _assemble_context(
+        self,
+        *,
+        query: str,
+        session_id: str,
+        replay_from_seq: int,
+        limit: int,
+        max_recent_events: int,
+        as_of_seq: int | None = None,
+    ) -> tuple[dict[str, Any], list[Any]]:
+        """Assemble the context payload plus the replayed events it was built from.
+
+        The events stay out of the serialized payload; checkout uses them to
+        resolve citations into sealed refs and to replay diagnostics-only
+        salience without an extra log scan.
+        """
         replay = self.session_manager.replay(
             session_id,
             from_seq=replay_from_seq,
@@ -2476,7 +3103,7 @@ class ZaxyMCPServer:
             contexts = _contexts_as_of_seq(contexts, as_of_seq)
         working_set = build_working_set(recent_events, contexts)
         await self.tracer.trace_query(query, len(results), 0.0, None)
-        return {
+        payload: dict[str, Any] = {
             "session_id": session_id,
             "prompt": _format_prompt(recent_events, contexts, working_set=working_set),
             "contexts": [_context_payload(context) for context in contexts],
@@ -2486,6 +3113,7 @@ class ZaxyMCPServer:
             "context_counts": context_counts(contexts, replay_count=len(recent_events)),
             "working_set": working_set.to_dict(),
         }
+        return payload, events
 
     def _require_admin(self, arguments: dict[str, Any]) -> None:
         """Require an admin token for destructive or bulk-read tools when configured."""
@@ -2740,7 +3368,26 @@ def _checkout_activity_metadata(payload: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
-def _context_assembly_from_payload(payload: dict[str, Any]) -> ContextAssembly:
+def _activity_event_citation(event: Any) -> str | None:
+    """Return the stable citation of a sealed memory-activity marker event."""
+    thread = getattr(event, "thread", None)
+    seq = getattr(event, "seq", None)
+    event_hash = getattr(event, "hash", None)
+    if (
+        not isinstance(thread, str)
+        or not isinstance(seq, int)
+        or isinstance(seq, bool)
+        or not isinstance(event_hash, str)
+    ):
+        return None
+    return f"eventloom://{thread}/events/{seq}#{event_hash[:12]}"
+
+
+def _context_assembly_from_payload(
+    payload: dict[str, Any],
+    *,
+    replay_events: list[Any] | None = None,
+) -> ContextAssembly:
     """Convert an MCP context payload into the shared core assembly contract."""
     contexts = [
         _context_from_payload(context)
@@ -2761,6 +3408,7 @@ def _context_assembly_from_payload(payload: dict[str, Any]) -> ContextAssembly:
         assembly_policy=assembly_policy if isinstance(assembly_policy, dict) else {},
         context_counts=counts if isinstance(counts, dict) else {},
         working_set=working_set if isinstance(working_set, dict) else {},
+        replay_events=list(replay_events) if replay_events else [],
     )
 
 
@@ -3019,6 +3667,39 @@ def _optional_text(value: object) -> str | None:
     return text or None
 
 
+def _fok_probe_text(query: str, cues: object) -> str:
+    """Combine the query with optional cue field values for the FoK probe.
+
+    Cues are an object of string fields (mission, workspace, tool, phase,
+    ...); their values are probed against the session index as additional
+    query terms, so a cue naming a known entity raises the verdict and an
+    unknown cue honestly dilutes it.
+    """
+    if cues is None:
+        return query
+    if not isinstance(cues, dict):
+        raise ValueError("cues must be an object of string fields")
+    values: list[str] = []
+    for key, value in cues.items():
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"cues[{key!r}] must be a non-empty string")
+        values.append(value.strip())
+    if not values:
+        return query
+    return " ".join([query, *values])
+
+
+def _optional_max_tokens(value: object) -> int | None:
+    """Validate an optional non-negative integer prompt token budget."""
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError("max_tokens must be an integer")
+    if value < 0:
+        raise ValueError("max_tokens must be >= 0")
+    return value
+
+
 def _optional_strict_text(value: object, field: str) -> str | None:
     if value is None:
         return None
@@ -3151,6 +3832,10 @@ async def _dispatch_tool_call(
         return await active_server.handle_memory_consolidation_status(arguments)
     if name == "memory_consolidation_review":
         return await active_server.handle_memory_consolidation_review(arguments)
+    if name == "memory_consolidation":
+        return await active_server.handle_memory_consolidation(arguments)
+    if name == "memory_confidence":
+        return await active_server.handle_memory_confidence(arguments)
     if name == "memory_explain_outcome":
         return await active_server.handle_memory_explain_outcome(arguments)
     if name == "memory_propose_belief_update":
@@ -3185,6 +3870,8 @@ async def _dispatch_tool_call(
         return await active_server.handle_memory_invalidate(arguments)
     if name == "memory_capabilities":
         return await active_server.handle_memory_capabilities(arguments)
+    if name == "memory_feeling_of_knowing":
+        return await active_server.handle_memory_feeling_of_knowing(arguments)
     if name == "memory_bootstrap":
         return await active_server.handle_memory_bootstrap(arguments)
     if name == "memory_checkout":
@@ -3453,7 +4140,7 @@ async def main(owner_claim: EmbeddedMcpOwnerClaim | None = None) -> None:
 
     @app.list_tools()  # type: ignore[untyped-decorator, no-untyped-call]
     async def list_tools() -> list[Tool]:
-        return TOOLS
+        return active_server.visible_tools()
 
     @app.call_tool()  # type: ignore[untyped-decorator]
     async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:

@@ -45,6 +45,16 @@ audit export is controlled by `MCP_AUDIT_ENABLED` and `MCP_AUDIT_PATH`.
 Automatic MCP tool-call lifecycle events are controlled by
 `MCP_LIFECYCLE_CAPTURE_ENABLED`; when enabled, Zaxy records redacted
 `tool.call.completed` metadata for successful and failed tool dispatch.
+`MCP_TOOL_PROFILE` selects the MCP tool listing profile: `core` (default
+since 2.1.0) lists only the front-door verb set centered on
+`memory_checkout`, while `full` lists every tool. The default flipped from
+`full` in 2.1.0 backed by the internal tool-adoption lane (listing surface
+8,165 → 1,344 estimated tokens, an 83.5% reduction); set
+`MCP_TOOL_PROFILE=full` to restore the previous listing. Profiles change
+listing, not capability: every tool remains callable by name under either
+profile, and `zaxy serve --profile core|full` overrides the setting per
+process. `memory_capabilities` reports the active profile and any tools that
+are available but unlisted.
 
 Embedding settings include `EMBEDDING_ENABLED`, `EMBEDDING_PROVIDER`,
 `EMBEDDING_DIMENSION`, `OPENAI_EMBEDDING_MODEL`, `OPENAI_BASE_URL`, and
@@ -52,11 +62,36 @@ Embedding settings include `EMBEDDING_ENABLED`, `EMBEDDING_PROVIDER`,
 offline development. The hosted OpenAI-compatible provider is useful when vector
 similarity quality matters. See [embeddings.md](embeddings.md).
 
-Retrieval settings include `QUERY_DEFAULT_LIMIT`, `QUERY_SCORING_PROFILE`,
-`RETENTION_POLICY`, `RETENTION_DECAY_HALF_LIFE_DAYS`,
-`RETENTION_EXPIRED_WEIGHT`, `CONTEXT_VERBATIM_ENABLED`,
-`CONTEXT_VERBATIM_SLOTS`, `RERANKER_PROVIDER`, `RERANKER_URL`,
-`RERANKER_API_KEY`, `OPENAI_RERANK_MODEL`, and `OPENAI_BASE_URL`.
+Embedded vector index scale settings include `VECTOR_ANN_THRESHOLD` and
+`VECTOR_QUANTIZATION`. Stored vectors carry the producing provider's version
+tag (for example `hash@<fingerprint>-dim1536`); search never compares vectors
+across version tags, `zaxy doctor` reports mixed-version corpora, and
+`zaxy memory re-embed --session-id <session>` migrates stale-version vectors to
+the active provider. `VECTOR_ANN_THRESHOLD` (default `1000000`) is the
+per-session vector count above which the embedded backend switches from the
+exact dense matrix to a Kuzu-native HNSW index; results from the HNSW path
+report `exact: false`. The 2.1.0 default keeps ANN effectively opt-in: the
+vector-scale lane measured the current HNSW path below exact search on both
+recall and latency, so no default corpus size auto-engages it. `VECTOR_QUANTIZATION=int8` (default `none`) opts in to
+int8 matrix storage with per-vector scale factors; quantized search oversamples
+candidates with integer dot products and reranks them with exact float scores.
+
+Retrieval settings include `RETRIEVAL_PROFILE`, `QUERY_DEFAULT_LIMIT`,
+`QUERY_SCORING_PROFILE`, `RETENTION_POLICY`,
+`RETENTION_DECAY_HALF_LIFE_DAYS`, `RETENTION_EXPIRED_WEIGHT`,
+`CONTEXT_VERBATIM_ENABLED`, `CONTEXT_VERBATIM_SLOTS`, `RERANKER_PROVIDER`,
+`RERANKER_URL`, `RERANKER_API_KEY`, `OPENAI_RERANK_MODEL`, and
+`OPENAI_BASE_URL`. `RETRIEVAL_PROFILE` names the retrieval profile:
+`cognitive` (default since 2.1.0), `local_fast`, `local_sota`, `hosted_sota`,
+or `custom`. The default flipped from `local_fast` in 2.1.0 backed by the
+internal forgetting lane (exact cold-start parity, no-recall-loss 1.0,
+pin/authority exemptions 1.0, ranking lift 1.0 vs 0.0); the cognitive profile
+composes the same local stack as `local_fast` plus the salience-ranking,
+cue-blending, and graph-walk flags. Set `RETRIEVAL_PROFILE=local_fast` to
+restore the previous plain ranking. Leaving the profile unset while
+explicitly customizing embedding/reranker/scoring knobs still resolves to the
+`custom` profile, exactly as before the flip. See
+[retrieval.md](retrieval.md).
 `RETENTION_POLICY=none` is the default and preserves current retrieval
 behavior. `filter_expired` removes expired candidates at query time, while
 `decay` keeps candidates eligible but downranks stale or expired memory without
@@ -70,6 +105,25 @@ context slots are reserved for those cited source chunks.
 `CONTEXT_PACKET_MEMORY_ENABLED=true` adds a bounded proactive lane for recent
 `llm.packet.projected` memory, and `CONTEXT_PACKET_MEMORY_SLOTS` controls how
 many assembled context slots are reserved for that packet-derived memory.
+
+Cognitive memory settings include `SALIENCE_HALF_LIFE_DAYS`, `SALIENCE_FLOOR`,
+and `ENCODING_GATE_ENABLED`. `SALIENCE_HALF_LIFE_DAYS` (default `30.0`, must
+be greater than zero) is the exponential recency-decay half-life used by the
+salience reinforcement ledger. `SALIENCE_FLOOR` (default `0.15`) only takes
+effect under the `RETRIEVAL_PROFILE=cognitive` profile (the default since
+2.1.0): memories whose
+replayed salience falls below the floor leave default checkout ranking,
+labeled `attenuated` in checkout diagnostics, while staying fully reachable
+via explicit `memory_query`/`memory_replay`; authority-accepted state and
+events appended with `"pinned": true` payload metadata are exempt.
+`ENCODING_GATE_ENABLED` (default `false`) tags each append's payload with a
+`novel`/`reinforcing`/`redundant` encoding classification computed from
+verbatim-index and entity-name overlap (no embedding calls); events are
+always appended and hash-chained regardless, redundant appends additionally
+emit a weak reinforcement toward the duplicated memory, and the tags are
+purely observational — re-projecting with the gate off yields identical
+ranking state. See [retrieval.md](retrieval.md) for the `cognitive`
+retrieval profile.
 
 Supported secret-file variants are `NEO4J_PASSWORD_FILE`,
 `MCP_ADMIN_TOKEN_FILE`, `MCP_REMOTE_AUTH_TOKEN_FILE`,

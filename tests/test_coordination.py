@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import importlib.util
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from zaxy.coordination import ConflictState, CoordinationManager, LocalSemanticConflictDetector
 from zaxy.coordination_git import build_test_result_evidence, capture_git_metadata
+from zaxy.salience import EventRef, SalienceLedger
 
 _EXAMPLE_PATH = Path(__file__).resolve().parents[1] / "examples" / "coordinate_three_worker_project.py"
 _EXAMPLE_SPEC = importlib.util.spec_from_file_location("coordinate_three_worker_project", _EXAMPLE_PATH)
@@ -84,10 +86,44 @@ def test_coordination_manager_promotes_accepted_findings_to_parent_session(tmp_p
         "coordination.assignment.created",
         "coordination.finding.reviewed",
         "coordination.finding.promoted",
+        "memory.reinforcement",
     ]
+    assert parent_events[-1].payload["kind"] == "promoted"
     assert [event.type for event in worker_events] == ["coordination.finding.reported"]
     assert promotion.summary == finding.summary
     assert promotion.evidence[0]["reference"] == "pytest tests/test_auth.py -q"
+
+
+def test_promote_finding_appends_promoted_reinforcement_targeting_finding_sources(
+    tmp_path: Path,
+) -> None:
+    """Promotion should emit one promoted salience reinforcement citing the finding's source events."""
+    manager = CoordinationManager(eventloom_path=tmp_path / ".eventloom")
+    manager.start_mission("auth-main", objective="Ship auth refactor", actor="lead")
+    manager.create_worker("auth-main", "auth-api", actor="lead")
+    finding = manager.report_finding(
+        "auth-main",
+        "auth-api",
+        summary="API failures trace to expired JWKS cache handling.",
+        actor="auth-api-agent",
+    )
+    manager.review_finding("auth-main", finding.finding_id, status="accepted", actor="lead")
+
+    promotion = manager.promote_finding("auth-main", finding.finding_id, actor="lead")
+
+    parent_events = manager.session_manager.replay("auth-main").events
+    reinforcements = [event for event in parent_events if event.type == "memory.reinforcement"]
+    assert len(reinforcements) == 1
+    payload = reinforcements[0].payload
+    assert payload["kind"] == "promoted"
+    assert payload["authority_status"] == "non_authoritative"
+    assert payload["targets"] == [{"seq": finding.event.seq, "hash": finding.event.hash}]
+    assert payload["source"]["promotion_id"] == (
+        f"eventloom://auth-main/events/{promotion.event.seq}#{promotion.event.hash[:12]}"
+    )
+    state = SalienceLedger().replay(parent_events, now=datetime.now(UTC))
+    entry = state[EventRef(seq=finding.event.seq, hash=finding.event.hash)]
+    assert entry.reinforcement_counts["promoted"] == 1
 
 
 def test_coordination_proof_packet_scopes_and_labels_authority(tmp_path: Path) -> None:
@@ -878,7 +914,7 @@ def test_coordination_audit_report_cites_eventloom_sequence_and_hash(tmp_path: P
 
     assert report.mission_id == "auth-main"
     assert report.read_only is True
-    assert report.summary["event_count"] == 7
+    assert report.summary["event_count"] == 8
     assert report.summary["worker_count"] == 1
     assert report.summary["accepted_findings"] == 1
     assert [event["event_type"] for event in report.events] == [
@@ -888,6 +924,7 @@ def test_coordination_audit_report_cites_eventloom_sequence_and_hash(tmp_path: P
         "coordination.finding.reported",
         "coordination.finding.reviewed",
         "coordination.finding.promoted",
+        "memory.reinforcement",
         "coordination.handoff.created",
     ]
     for result in [mission, worker, assignment, finding, review, promotion, handoff]:

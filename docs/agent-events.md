@@ -141,6 +141,36 @@ Projection: unknown-event fallback today, preserving the feedback as an
 Eventloom-backed audit record without deleting, invalidating, or downranking the
 target entity.
 
+Use `memory.reinforcement` for the salience ledger. These events are appended
+automatically — checkout surfacing emits one batched `surfaced` event per
+checkout, positive `memory_feedback` emits `confirmed`, coordination promotion
+emits `promoted`, and `memory_invalidate` emits `invalidated` — and replaying
+them fully rebuilds per-memory salience state, so attenuation is always
+reversible.
+
+```json
+{
+  "kind": "surfaced",
+  "targets": [{"seq": 42, "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}],
+  "source": {"checkout_id": "checkout-123"},
+  "authority_status": "non_authoritative"
+}
+```
+
+`kind` is `surfaced`, `confirmed`, `promoted`, or `invalidated`; `targets`
+cites the reinforced memories by event sequence and hash; `source` names the
+originating checkout, feedback, or promotion; and an optional `weight`
+overrides the default multiplier for the kind. Salience only changes ranking
+under the `cognitive` retrieval profile (see [retrieval.md](retrieval.md)) and
+never changes what is citable.
+
+Related payload conventions: appends may carry an optional `cues` mapping with
+`mission`, `workspace`, `tool`, and `phase` string fields for
+encoding-specificity blending; `"pinned": true` exempts a memory from the
+attenuation floor; and when `ENCODING_GATE_ENABLED=true`, append payloads gain
+an observational `encoding` tag (`novel`, `reinforcing`, or `redundant`) that
+never blocks or drops the append.
+
 ## Metacognition
 
 Use `metacognition.*` events for uncertainty, confidence trajectories,
@@ -159,6 +189,11 @@ Supported beta.2 events:
   source-event sets for a claim.
 - `metacognition.reverify.requested`: records an open re-verification request
   with priority and cited source events.
+- `metacognition.fok.predicted`: records one non-authoritative
+  feeling-of-knowing calibration marker (`query_hash`, `verdict`, `score`)
+  each time the experimental `memory_feeling_of_knowing` tool runs, so the
+  internal calibration lane can score predictions against actual checkout
+  outcomes.
 
 Example known unknown:
 
