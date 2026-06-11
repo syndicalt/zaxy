@@ -3213,10 +3213,14 @@ async def test_embedded_store_ann_copy_and_unwind_loads_are_equivalent(
 ) -> None:
     """The COPY-from-parquet load and the UNWIND fallback must serve identical results.
 
+    Requires pyarrow (a transitive, not guaranteed, dependency): without it the
+    COPY arm degrades to the UNWIND fallback and the comparison is vacuous.
+
     pyarrow is a transitive (not guaranteed) dependency, so the bulk loader
     degrades to batched UNWIND when it is absent; both loads store the same
     float32 rows and must answer the same queries identically.
     """
+    pytest.importorskip("pyarrow")
     dimension = 16
     embeddings = _seeded_unit_embeddings(60, dimension, seed=23)
     entities = [
@@ -3342,7 +3346,11 @@ async def test_embedded_store_ann_delta_policy_boundary(tmp_path: Path) -> None:
     An unchanged corpus reuses the resident generation with zero writes; an
     extension at the fraction boundary inserts only the delta into the live
     index; one row past the boundary triggers a full COPY generation swap.
+
+    Requires pyarrow: the swap arm asserts COPY-specific behavior, which
+    degrades to the UNWIND fallback (covered separately) when it is absent.
     """
+    pytest.importorskip("pyarrow")
     dimension = 8
     store = EmbeddedGraphStore(
         tmp_path / "embedded.kuzu",

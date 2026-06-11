@@ -1419,7 +1419,9 @@ class EmbeddedGraphStore:
                 pa.array(matrix.reshape(-1), type=pa.float32()),
                 matrix.shape[1],
             )
-            pq.write_table(  # type: ignore[no-untyped-call]  # pyarrow ships no signature for write_table
+            # no-untyped-call fires only where pyarrow is installed; unused-ignore
+            # covers environments (CI) where it is absent and treated as Any.
+            pq.write_table(  # type: ignore[no-untyped-call, unused-ignore]
                 pa.table({"entity_row": pa.array(entity_rows, type=pa.int64()), "vec": vec_column}),
                 str(parquet_path),
             )
