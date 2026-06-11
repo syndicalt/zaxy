@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>X Article Draft: Zaxy 2.2.0 - Zaxy Docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,600&family=Inter:wght@400;550;650;750;850&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../../index.html">Overview</a>
+      <a href="../../docs/coordinate-roadmap.html">Coordinate</a>
+      <a href="../../docs/why-zaxy.html">Why Zaxy</a>
+      <a href="../../docs/benchmarks.html">Benchmarks</a>
+      <a href="../getting-started.html">Start</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="x-article-draft-zaxy-220">X Article Draft: Zaxy 2.2.0</h1>
+      <p><img src="../../assets/zaxy-v2.2-header.png" alt="Zaxy 2.2 release header" /></p>
+      <p>Zaxy 2.2.0 is out: evidence-bounded vector search.</p>
+      <p>The short version: in 2.1, our own benchmark caught our ANN path being worse than brute force — slower, less accurate, with 20-minute index builds — so we shipped it disabled. In 2.2 we fixed it, and the defaults moved exactly as far as the evidence extends and not one dimension further.</p>
+      <p>That ordering matters. The standard failure mode for approximate nearest-neighbor search is shipping it because it is supposed to be fast, then discovering in production that recall quietly cratered or the index takes the better part of an hour to build. Zaxy&#x27;s release rule is the opposite: a default changes only when an evaluation lane that ships in the repo proves the change at the scale it claims.</p>
+      <p>What the lane said at the 2.1 baseline, at 100k vectors:</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th>ANN (HNSW)</th>
+            <th>Exact</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Recall@10</td>
+            <td>0.8969, varying per rebuild</td>
+            <td>1.000</td>
+          </tr>
+          <tr>
+            <td>Query p50</td>
+            <td>37.9 ms</td>
+            <td>17.0 ms</td>
+          </tr>
+          <tr>
+            <td>Full index build</td>
+            <td>~20 minutes</td>
+            <td>seconds</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>What it says after 2.2, same scale, double-pass plus a confirmatory run:</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th>ANN (HNSW)</th>
+            <th>Exact</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Recall@10</td>
+            <td>1.000, identical across rebuilds</td>
+            <td>1.000</td>
+          </tr>
+          <tr>
+            <td>Query p50</td>
+            <td>parity to better, in-run</td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td>Full index build</td>
+            <td>92 seconds (12.9x)</td>
+            <td>seconds</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>What ships:</p>
+      <ul>
+        <li>an exact float64 rerank over approximate candidates, which both fixed recall and made it deterministic across HNSW&#x27;s nondeterministic builds;</li>
+        <li>bulk index builds through a COPY-based generation swap instead of row inserts — 1,180 seconds down to 92 at 100k;</li>
+        <li>unfiltered direct-table queries via per-session shadow generations (the real overhead was a 16 ms per-query filter scan, not what we suspected);</li>
+        <li>engagement defaults bounded to the measured envelope: ANN turns on at 100k+ vectors up to 64 dimensions. Above that, exact search remains the recommendation — measured, not assumed;</li>
+        <li>a research paper with the full evidence chain, cited theory, explicit math, and the negative results in the same tables as the wins.</li>
+      </ul>
+      <p>The plot twist is the part worth reading the paper for.</p>
+      <p>At high dimension, recall looked catastrophic — 0.52 — and stayed broken through every fix. The diagnosis: it was the benchmark, not the index. Our synthetic test corpus at 1536 dimensions produces a median of 210 vectors <em>exactly tied</em> with the true top-10. When hundreds of candidates are equally correct, recall@10 against one arbitrary tie-break ordering is not a measurement; it is a coin flip the index cannot win. Even exact float32 search scores 0.53 against it.</p>
+      <p>So we fixed the metric in the open: tie-aware recall (standard ann-benchmarks practice) is now reported alongside the strict number — never instead of it — and a realistic-distribution control corpus confirmed the index is healthy at production dimensions. The same correction resurrected int8 quantization&#x27;s high-dim score from 0.61 to 1.0. Benchmarks need the same skepticism as the systems they judge.</p>
+      <p>Along the way we hit three undocumented crash-or-corrupt defects in our embedded graph engine — whose upstream is frozen, final release, archived repo — and designed around all three. They are documented in the paper with reproductions. That is what depending on frozen infrastructure honestly looks like.</p>
+      <p>The claim boundary, because it always matters: every number above is from internal lanes on synthetic corpora, labeled as such, with raw artifacts versioned in the repo. Nothing here is an external benchmark claim.</p>
+      <p>Paper: https://docs.zaxy.io/docs/research/ann-engineering-2026-06.html Release: https://github.com/syndicalt/zaxy/releases/tag/v2.2.0 Install: <code>pip install zaxy-memory</code></p>
+      <p>Zaxy is event-sourced memory for agent work: a hash-chained append-only log as the source of truth, cited Memory Checkout as the trust contract, and defaults that move on lane evidence. https://docs.zaxy.io</p>
+    </article>
+  </main>
+</body>
+</html>
