@@ -24,8 +24,8 @@
   <main class="doc-layout">
     <article class="doc-content">
       <h1 id="operations">Operations</h1>
-      <p>Zaxy operations center on four tasks: keep Eventloom logs durable, keep the embedded Kuzu projection rebuildable, validate deployments before exposure, and preserve enough observability to debug memory behavior. The full incident checklist remains in <a href="runbook.html">runbook.md</a>; this page is the day-to-day operator summary.</p>
-      <p>Backups should include Eventloom logs, relevant configuration, and only the projection data that is expensive to rebuild. Eventloom is the required source of truth. The embedded Kuzu projection and optional sidecar projections can be rebuilt by replay, but backing them up can reduce recovery time for large deployments. Use <code>scripts/backup.sh</code> and <code>scripts/restore.sh</code> for tested local archive flows.</p>
+      <p>Zaxy operations center on four tasks: keep Eventloom logs durable, keep the embedded LadybugDB projection rebuildable, validate deployments before exposure, and preserve enough observability to debug memory behavior. The full incident checklist remains in <a href="runbook.html">runbook.md</a>; this page is the day-to-day operator summary.</p>
+      <p>Backups should include Eventloom logs, relevant configuration, and only the projection data that is expensive to rebuild. Eventloom is the required source of truth. The embedded LadybugDB projection and optional sidecar projections can be rebuilt by replay, but backing them up can reduce recovery time for large deployments. Use <code>scripts/backup.sh</code> and <code>scripts/restore.sh</code> for tested local archive flows.</p>
       <p>Log rotation is available through <code>scripts/rotate-logs.sh</code>. Rotation should not discard active history until backups are verified. After rotation, run replay on the archived log to confirm hash-chain integrity. A corrupted archive is not a backup.</p>
       <p>Deployment validation is run with:</p>
       <pre><code class="language-bash">scripts/validate-deployment.sh --root .</code></pre>

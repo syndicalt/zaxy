@@ -1,7 +1,7 @@
 # Graph Schema
 
 The graph projection is Zaxy's structured reasoning layer. It is not the source
-of truth; the Eventloom log is. The default implementation is embedded Kuzu,
+of truth; the Eventloom log is. The default implementation is embedded LadybugDB,
 with Neo4j retained as an optional sidecar and control backend. The graph stores
 projections that make memory queryable by entity, relation, keyword, vector
 similarity, and temporal validity.
@@ -295,7 +295,7 @@ LIMIT 25;
 
 The manual Cypher file under `scripts/setup_neo4j_indexes.cypher` documents the
 optional Neo4j sidecar index setup for environments that apply Cypher
-separately. Embedded Kuzu creates its projection schema through the embedded
+separately. Embedded LadybugDB creates its projection schema through the embedded
 adapter and does not use that Cypher file.
 
 Invalidation does not delete nodes. `memory_invalidate` closes validity windows

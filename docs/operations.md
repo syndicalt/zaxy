@@ -1,13 +1,13 @@
 # Operations
 
 Zaxy operations center on four tasks: keep Eventloom logs durable, keep the
-embedded Kuzu projection rebuildable, validate deployments before exposure, and
+embedded LadybugDB projection rebuildable, validate deployments before exposure, and
 preserve enough observability to debug memory behavior. The full incident checklist remains in
 [runbook.md](runbook.md); this page is the day-to-day operator summary.
 
 Backups should include Eventloom logs, relevant configuration, and only the
 projection data that is expensive to rebuild. Eventloom is the required source
-of truth. The embedded Kuzu projection and optional sidecar projections can be
+of truth. The embedded LadybugDB projection and optional sidecar projections can be
 rebuilt by replay, but backing them up can reduce recovery time for large
 deployments. Use `scripts/backup.sh` and `scripts/restore.sh` for tested local
 archive flows.

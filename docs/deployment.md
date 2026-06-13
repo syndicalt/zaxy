@@ -13,7 +13,7 @@ secrets are useful for validation and staging, but real deployments should
 replace them with platform-managed secrets or files mounted by Docker,
 Kubernetes, or a vault sidecar.
 
-The default production backend is the embedded Kuzu projection, which requires
+The default production backend is the embedded LadybugDB projection, which requires
 no graph service endpoint and does not start Neo4j. Optional sidecar backends
 must be configured explicitly. For Neo4j, install `zaxy-memory[neo4j]`, generate
 certificate material, and start the compose profile:

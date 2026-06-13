@@ -196,7 +196,7 @@ New settings (all documented in [configuration.md](configuration.md)):
   hash-chained regardless.
 - `VECTOR_ANN_THRESHOLD` (default `1000000` in 2.1.0, lowered to `100000` in
   2.2 — see the 2.2 subsection below): per-scope vector count at which the
-  embedded backend uses a Kuzu-native HNSW index; results from the
+  embedded backend uses an engine-native HNSW index; results from the
   approximate path report `exact: false`.
 - `VECTOR_QUANTIZATION` (`none` default, or `int8`): opt-in quantized vector
   storage with exact float rerank of oversampled candidates.
@@ -284,6 +284,54 @@ budget bounds multi-scope cache totals). An explicit
 `VECTOR_QUANTIZATION=int8` opt-in keeps its precedence below the count
 threshold and is exempt from the byte clause. `memory_capabilities` reports
 the effective rule under `vector_search`.
+
+## From 2.2 to 2.3: embedded engine moves to LadybugDB
+
+2.3 replaces the embedded projection engine. The Kuzu project was archived
+upstream in October 2025 with 0.11.3 as its final release: it already ships
+no macOS or Windows wheels for Python 3.14, and no Python 3.15 wheels will
+ever exist (3.15 lands ~October 2026), so staying was a countdown, not an
+option — **there is no opt-out**. Zaxy now exact-pins
+[LadybugDB](https://github.com/LadybugDB/ladybug) (`ladybug==0.17.1`), the
+actively maintained fork of the same engine. The adoption was gated on
+re-running Zaxy's own defect reproductions and the full vector-scale and
+graph-walk lanes against the fork.
+
+What changes for you:
+
+- **Storage format.** LadybugDB cannot read a projection file written by the
+  pre-fork engine. On first open of an old `embedded.kuzu`, Zaxy
+  automatically moves it (and its `.wal`) aside to
+  `<path>.pre-ladybug.bak` — **no data is deleted** — opens a fresh store at
+  the same path, and logs the rebuild instructions. Projections are derived
+  state: replay full history with `zaxy reproject <eventloom log>`, or let
+  new checkins project incrementally. `zaxy doctor` reports a leftover
+  `.pre-ladybug.bak` with a remediation line; it is safe to delete once the
+  rebuilt projection is verified. Eventloom logs — the source of truth — are
+  untouched.
+- **Paths stay put.** The default projection path remains
+  `.eventloom/projections/embedded.kuzu`; the extension is cosmetic and
+  changing the default would orphan configured paths.
+- **Dependency.** `pip install "zaxy-memory"` now pulls `ladybug==0.17.1`
+  instead of `kuzu`. The pin is exact on purpose (single-maintainer fork;
+  every defect verdict was verified against this version) — and pins the
+  `ladybug` PyPI name, not the stale pre-rename `real-ladybug`.
+- **Behavior.** Query semantics, schema, retrieval results, and the ANN
+  engagement defaults are unchanged; the vector index code is unchanged
+  since the fork, and the 2.3 lane reruns reproduced the 2.2 deterministic
+  blocks (identical corpus hashes and recall). Superseded ANN shadow
+  generations are now dropped instead of emptied (full space reclaim,
+  enabled by an upstream fix verified through Zaxy's own rebuild cycle).
+- **Vector extension fetch (local-first, one-time).** Kuzu 0.11.3 bundled the
+  vector index; LadybugDB ships it as an official `vector` extension fetched
+  on first use (a small one-time download cached under `~/.lbdb`), much like
+  installing the package itself. Zaxy fetches it automatically the first time
+  the ANN path engages, then it runs entirely on-box. Air-gapped deployments
+  that want ANN run `INSTALL vector` once on a networked host and ship the
+  `~/.lbdb` cache; with no network and no cache, approximate (HNSW) search is
+  simply unavailable and retrieval falls back to **exact** float search —
+  correct results, no error, fully on-box. The default exact path is pure
+  NumPy and needs nothing fetched.
 
 ## Compatibility Tests
 

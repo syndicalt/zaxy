@@ -1,6 +1,6 @@
 """Projection backend construction.
 
-Embedded Kuzu is the default local projection. Neo4j remains the sidecar control
+Embedded LadybugDB is the default local projection. Neo4j remains the sidecar control
 backend, and pgGraph is exposed only as an explicit experimental target until it
 passes the same contract and benchmarks.
 """

@@ -608,7 +608,7 @@ def test_build_dashboard_graph_provider_can_use_pggraph_projection_store(
     assert isinstance(provider.primary, ProjectionDashboardGraphProvider)
 
 
-@pytest.mark.skipif(importlib.util.find_spec("kuzu") is None, reason="kuzu is not installed")
+@pytest.mark.skipif(importlib.util.find_spec("ladybug") is None, reason="ladybug is not installed")
 def test_build_dashboard_graph_provider_can_use_embedded_projection_store(
     tmp_path: Path,
 ) -> None:
@@ -703,7 +703,7 @@ def test_build_dashboard_graph_provider_can_use_embedded_projection_store(
     assert body["graph"]["nodes"][1]["id"] == "event:agent-1:7"
 
 
-@pytest.mark.skipif(importlib.util.find_spec("kuzu") is None, reason="kuzu is not installed")
+@pytest.mark.skipif(importlib.util.find_spec("ladybug") is None, reason="ladybug is not installed")
 def test_embedded_dashboard_graph_provider_reports_empty_uninitialized_projection(
     tmp_path: Path,
 ) -> None:

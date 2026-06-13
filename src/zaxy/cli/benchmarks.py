@@ -1549,7 +1549,7 @@ def graph_scale_lanes(
         "--scale-sizes",
         help=(
             "Vector-scale corpus sizes, comma-separated positive integers. "
-            "100000 is opt-in: the Kuzu HNSW shadow sync takes minutes at 10^5."
+            "100000 is opt-in: the HNSW shadow sync takes minutes at 10^5."
         ),
     ),
     scale_dimension: int = typer.Option(

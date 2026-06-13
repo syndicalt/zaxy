@@ -103,6 +103,9 @@ class Settings(BaseSettings):
         default="embedded",
         description="Projection backend: embedded, neo4j, pggraph, or latticedb",
     )
+    # The .kuzu extension is cosmetic/historic: changing the default would
+    # orphan every configured path, and LadybugDB (the maintained Kuzu fork
+    # that backs the embedded store since 2.3) does not care about extensions.
     embedded_graph_path: str = Field(
         default=".eventloom/projections/embedded.kuzu",
         description="Repo-local embedded graph projection path",
@@ -399,7 +402,7 @@ class Settings(BaseSettings):
         ge=1,
         description=(
             "Per-scope vector count at or above which the embedded backend uses "
-            "a Kuzu-native HNSW index instead of the exact dense matrix, "
+            "an engine-native (LadybugDB) HNSW index instead of the exact dense matrix, "
             "provided the scope's vector dimension is at or below "
             "vector_ann_max_dimension; independently of this count, the ANN "
             "path also engages when a scope's exact float64 matrix would "
@@ -423,7 +426,7 @@ class Settings(BaseSettings):
         ge=1,
         description=(
             "Maximum vector dimension at which the embedded backend's ANN "
-            "(Kuzu HNSW) path may engage; scopes with higher-dimensional "
+            "(LadybugDB HNSW) path may engage; scopes with higher-dimensional "
             "vectors always use exact float64 (or explicitly opted-in int8) "
             "search regardless of corpus size. The default is the dimension "
             "the vector-scale lane proved ANN better at; raise it only with "

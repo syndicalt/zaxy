@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Zaxy 2.3 Release-Readiness Research - Zaxy Docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,600&family=Inter:wght@400;550;650;750;850&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../../../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../../../index.html">Overview</a>
+      <a href="../../../docs/coordinate-roadmap.html">Coordinate</a>
+      <a href="../../../docs/why-zaxy.html">Why Zaxy</a>
+      <a href="../../../docs/benchmarks.html">Benchmarks</a>
+      <a href="../../getting-started.html">Start</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="zaxy-23-release-readiness-research">Zaxy 2.3 Release-Readiness Research</h1>
+      <p>Synthesis of four parallel research tracks completed 2026-06-11. Full findings with evidence: <code>docs/research/artifacts/2-3-research/</code> (backend-options.md, kuzu-usage-audit.md, promotion-pass.md, external-validation.md, int8 benchmark JSON).</p>
+      <h2 id="the-shape-of-23">The shape of 2.3</h2>
+      <p>2.3 is a continuity-and-credibility release, not a feature release: replace the frozen storage engine before its countdown expires, repair the external-reproduction story before inviting anyone to use it, and run the promotion pass where evidence (not assertion) says a default should move.</p>
+      <h2 id="track-1-backend-continuity-adopt-ladybugdb-design-the-exit">Track 1 — Backend continuity: adopt LadybugDB, design the exit</h2>
+      <p><strong>The countdown is already running.</strong> Frozen kuzu 0.11.3 has no macOS or Windows cp314 wheels today, and Python 3.15 (Oct 2026) is a hard cliff — no compatible wheels will ever exist.</p>
+      <p><strong>The engine is barely load-bearing.</strong> On a warm cache under default config, effectively zero request-time retrieval work happens in Kuzu: 2.2 moved everything (traversal BFS, PageRank, BM25, vector selection + rerank) to cached Python/numpy. What remains: durable bitemporal storage, per-event writes, cold-start hydration, one uncached per-call scan (<code>search_causal_neighbors</code> — repair candidate), and maintenance surfaces. Every MATCH in the repo is depth ≤ 1.</p>
+      <p><strong>LadybugDB is viable, locally verified.</strong> Active fork (monthly releases, cp310–cp314 wheels on all platforms, MIT); three of our six documented defects are fixed and verified by running our own reproductions against 0.17.1 (DROP_VECTOR_INDEX corruption, Arrow-COPY segfault, crash-on-unbound parameter — now a silent NULL, so the choke point stays). SET-on-indexed remains rejected; the vector index is unchanged since the fork (numpy stays primary regardless). Storage files are incompatible but projections rebuild by design — blast radius is two lazy import sites plus an exact pin (<code>ladybug==</code>, NOT the stale <code>real-ladybug</code> name). Open counter-signal the acceptance lane must clear: reported write-throughput collapse at ~60k nodes on 0.16.x (LadybugDB#452).</p>
+      <p><strong>Bus factor ≈ 1</strong> (one maintainer cut every release). Therefore the decision is two-stage: LadybugDB as the 2.3 bridge, with a parallel design study for a Zaxy-owned SQLite + numpy store (~1.2k LOC changed, ~600 deleted, kills the C++-wheel risk class permanently) as the structural destination. A new full graph backend is dominated — nothing left uses a graph-database-distinguishing capability.</p>
+      <p><strong>Prerequisite artifact for any path: the conformance suite.</strong> Today there is no backend-parametrized behavioral parity suite; embedded-only extras degrade via silent <code>getattr</code>; the protocol has drifted in three places. The suite converts every option&#x27;s risk into mechanical verification.</p>
+      <h2 id="track-2-promotion-pass-one-promotion-one-demotion-one-instrumentation">Track 2 — Promotion pass: one promotion, one demotion, one instrumentation</h2>
+      <ul>
+        <li><strong>int8 default: DO NOT promote.</strong> The high-dim latency cliff is a per-query <code>astype(int32)</code> allocation (125ms of the 224ms) plus non-BLAS int32 matmul (48ms). No int8-resident prototype clears the beat-exact bar. What does clear it is plain <strong>float32 selection</strong> (12.0ms vs exact 21.6ms at 50k×1536, recall 1.0 measured) at 0.5× the float64 bytes — a new lane-gated mode candidate, honestly labeled as not int8. Free repair regardless: block-wise int32 accumulation halves the opt-in int8 path (182→96ms) with bit-identical scores.</li>
+        <li><strong>Encoding gate: the most promotable item.</strong> Lane spec is written (promotion-pass.md): controlled-Jaccard probe families including the adversarial one — a single negation flip in a 20-token memory sits at J=0.905, ABOVE the redundant threshold, so the false-redundant risk is real and must measure 0 across two consecutive runs before any flip.</li>
+        <li><strong>FoK: zero organic markers exist.</strong> Across all 24 local workspaces, no agent has ever called <code>memory_feeling_of_knowing</code> — opt-in telemetry yields no telemetry. 2.3 must auto-emit a FoK prediction inside <code>handle_memory_checkout</code> (~7 days to the ~400 predictions needed for a powered calibration join) or the promotion question stays unanswerable forever. Join design (query_hash ⨝ in-thread checkout outcome) is specified.</li>
+      </ul>
+      <h2 id="track-3-external-validation-fix-before-inviting">Track 3 — External validation: fix before inviting</h2>
+      <ul>
+        <li><strong>The Harvey rerun would die at step one</strong>: the adapter kit&#x27;s runner still sets <code>ZAXY_PYTHONPATH</code> to the pre-extraction <code>src/</code> path while the shim imports <code>zaxy_benchmarks</code> (verified ModuleNotFoundError). Fix before any author contact; the email-ready ask is drafted.</li>
+        <li><strong>Fresh-clone friction (P0)</strong>: documented subset test runs exit red (coverage gate fires at 0.79% on partial runs); both lane commands fail from a fresh checkout (<code>zaxy_benchmarks</code> not packaged, cwd not on sys.path) with a misleading error. Workarounds exist; none documented.</li>
+        <li><strong>The archived artifact corpus is not reproducible as published</strong>: 2.2&#x27;s determinism machinery proved bit-exact cross-machine (corpus hashes, bytes, recall), but the archive was generated mid-development under a pre-release schema with no per-artifact commit. Regenerate from released 2.2.0 with provenance blocks (commit, version, host, schema).</li>
+        <li>Then the reproduction packet: runner script with committed expected-output checksums (verified it would pass today), pinned eval environment, reproducible-vs-environment-dependent number separation.</li>
+      </ul>
+      <h2 id="proposed-increment-order">Proposed increment order</h2>
+      <ol>
+        <li><strong>2.3-a</strong>: conformance suite + P0 reproduction fixes (lane entrypoint, Harvey runner, artifact regeneration with provenance) + FoK auto-emit instrumentation (starts the data clock) + the two free repairs (causal-neighbors caching, int8 block-wise).</li>
+        <li><strong>2.3-b</strong>: LadybugDB adoption behind the conformance suite + full lane rerun acceptance (incl. the #452 write-throughput check); encoding-gate lane built and run.</li>
+        <li><strong>2.3-c</strong>: promotion decisions on lane evidence (gate flip or hold; float32 selection mode); Harvey author invitation with the fixed kit; SQLite-store design study published for 2.4+.</li>
+        <li><strong>FoK calibration join</strong> lands whenever its data matures (~2 weeks after 2.3-a), independent of the release train.</li>
+      </ol>
+      <h2 id="readiness-verdict">Readiness verdict</h2>
+      <p>Research complete. No unknowns block planning; every 2.3 decision now has either the evidence in hand or a specified instrument to produce it. The two highest-risk discoveries (Harvey kit breakage, FoK zero-data) were both silent failures that would have surfaced at the worst possible moments — found at research cost instead.</p>
+    </article>
+  </main>
+</body>
+</html>

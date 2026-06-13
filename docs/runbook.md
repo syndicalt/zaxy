@@ -6,7 +6,7 @@ Zaxy is an event-sourced temporal knowledge graph fabric for AI agent memory.
 It consists of three layers:
 
 1. **Eventloom** (bottom): Immutable append-only JSONL logs with SHA-256 hash chains.
-2. **Embedded Kuzu projection** (default): Repo-local bi-temporal graph projection with entity/relationship validity windows.
+2. **Embedded LadybugDB projection** (default): Repo-local bi-temporal graph projection with entity/relationship validity windows.
 3. **Pathlight** (optional top layer): Observability, tracing, and debugging dashboard.
 
 Neo4j and pgGraph are optional sidecar projection backends. Use them only when
@@ -174,7 +174,7 @@ When the MCP server is running, any MCP client can:
 | Data | Location | Backup Priority |
 |------|----------|-----------------|
 | Eventloom logs | `.eventloom/*.jsonl` | **Critical** — immutable source of truth |
-| Embedded Kuzu projection | `.eventloom/projections/embedded.kuzu` | Medium — can be rebuilt from Eventloom |
+| Embedded LadybugDB projection | `.eventloom/projections/embedded.kuzu` | Medium — can be rebuilt from Eventloom |
 | Optional sidecar projection | Backend-specific volume or service | Medium — can be rebuilt from Eventloom |
 | Pathlight traces | Pathlight deployment volume, if enabled | Medium — observability only |
 
@@ -355,7 +355,7 @@ Verify rotated logs with `zaxy replay .eventloom/archive/<name>.jsonl`.
 ### Current
 
 - One Eventloom file per session/agent
-- Repo-local embedded Kuzu projection by default
+- Repo-local embedded LadybugDB projection by default
 - Optional Pathlight tracing
 - Embedded read-index warmup and hot caches for current entities, exact lookup,
   keyword, vector, traversal, temporal snapshots, and verbatim source lanes
@@ -530,7 +530,7 @@ groups:
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `PROJECTION_BACKEND` | `embedded` | Projection backend: `embedded`, `neo4j`, `pggraph`, or `latticedb` |
-| `EMBEDDED_GRAPH_PATH` | `.eventloom/projections/embedded.kuzu` | Repo-local embedded Kuzu projection path |
+| `EMBEDDED_GRAPH_PATH` | `.eventloom/projections/embedded.kuzu` | Repo-local embedded LadybugDB projection path |
 | `NEO4J_URI` | `bolt://localhost:7687` | Neo4j Bolt URI |
 | `NEO4J_USER` | `neo4j` | Neo4j username |
 | `NEO4J_PASSWORD` | `testpassword` | Neo4j password |

@@ -367,7 +367,7 @@ Lower-level modules are public enough for advanced integration but should be
 used carefully: `EventLog` for direct JSONL operations, `extract` for rule-based
 projection, projection backends for graph operations, `QueryRouter` for
 retrieval, and `MemoryTracer` for Pathlight spans. The plain install uses
-embedded Kuzu; install `zaxy-memory[neo4j]` for the optional Neo4j sidecar and
+embedded LadybugDB; install `zaxy-memory[neo4j]` for the optional Neo4j sidecar and
 `zaxy-memory[pathlight]` for Pathlight tracing. Prefer `MemoryFabric` unless you
 are building tests, migrations, or specialized tooling.
 

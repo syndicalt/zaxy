@@ -75,7 +75,7 @@ The v1.0 stability commitment does not cover:
 - direct imports from modules that are not exported by `zaxy.__all__`;
 - candidate backends such as pgGraph or LatticeDB until promoted by release
   gates;
-- private graph storage details, Cypher/Kuzu SQL details, or row IDs;
+- private graph storage details, Cypher/LadybugDB SQL details, or row IDs;
 - local diagnostic files ignored by benchmark contribution policy;
 - provider-specific SDK behavior outside Zaxy's dependency-light wrappers.
 

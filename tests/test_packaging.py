@@ -102,7 +102,7 @@ def test_core_install_includes_embedded_default_backend() -> None:
     dependencies = pyproject["project"]["dependencies"]
     extras = pyproject["project"]["optional-dependencies"]
 
-    assert "kuzu>=0.11.0" in dependencies
+    assert "ladybug==0.17.1" in dependencies  # exact pin: bus-factor-1 fork, see pyproject comment
     assert extras["embedded"] == []
     assert "neo4j>=5.20.0" not in dependencies
     assert extras["neo4j"] == ["neo4j>=5.20.0"]
@@ -114,7 +114,7 @@ def test_package_keywords_center_embedded_local_memory() -> None:
 
     keywords = pyproject["project"]["keywords"]
     assert "embedded-memory" in keywords
-    assert "kuzu" in keywords
+    assert "ladybugdb" in keywords
     assert "local-first" in keywords
     assert "neo4j" not in keywords
 

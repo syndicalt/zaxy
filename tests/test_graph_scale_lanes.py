@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import importlib.util
 import json
+import tempfile
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +16,7 @@ from typer.testing import CliRunner
 
 from zaxy.__main__ import app
 from zaxy.cli import benchmarks as cli_benchmarks
-from zaxy.embedded_graph_store import VECTOR_INDEX_CACHE_MAX_BYTES
+from zaxy.embedded_graph_store import VECTOR_INDEX_CACHE_MAX_BYTES, EmbeddedGraphStore
 from zaxy_benchmarks.graph_walk_lane import (
     BRIDGE_CASES,
     DIRECT_CASES,
@@ -37,6 +41,28 @@ _SCALE_TEST_KWARGS: dict[str, Any] = {
     "query_count": 16,
     "latency_passes": 1,
 }
+
+
+@lru_cache(maxsize=1)
+def _native_vector_index_available() -> bool:
+    """Return whether this LadybugDB wheel exposes the native vector index."""
+    if importlib.util.find_spec("ladybug") is None:
+        return False
+    store = EmbeddedGraphStore(Path(tempfile.mkdtemp()) / "vector-probe.kuzu")
+    try:
+        asyncio.run(store.connect())
+        asyncio.run(store.init_schema())
+        return store._vector_index_supported()
+    except RuntimeError:
+        return False
+    finally:
+        asyncio.run(store.close())
+
+
+requires_native_vector_index = pytest.mark.skipif(
+    not _native_vector_index_available(),
+    reason="LadybugDB native vector index extension is not available in this environment",
+)
 
 
 @pytest.fixture(scope="module")
@@ -156,6 +182,7 @@ class TestGraphWalkLane:
             run_graph_walk_lane(tmp_path, top_k=0)
 
 
+@requires_native_vector_index
 class TestVectorScaleLane:
     def test_deterministic_block_is_reproducible(
         self, vector_scale_results: tuple[dict[str, Any], dict[str, Any]]
@@ -194,7 +221,7 @@ class TestVectorScaleLane:
         assert modes["quantized"]["resident_index_bytes"] == (
             _SCALE_TEST_SIZE * dimension + _SCALE_TEST_SIZE * 8
         )
-        # ANN vectors are resident in the Kuzu database, not in process memory.
+        # ANN vectors are resident in the embedded database, not in process memory.
         assert modes["ann"]["resident_index_bytes"] == 0
         assert modes["quantized"]["bytes_vs_exact_ratio"] < 1.0
 

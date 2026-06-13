@@ -28,7 +28,7 @@
       <p>Zaxy is an event-sourced temporal knowledge graph fabric for AI agent memory. It consists of three layers:</p>
       <ol>
         <li><strong>Eventloom</strong> (bottom): Immutable append-only JSONL logs with SHA-256 hash chains.</li>
-        <li><strong>Embedded Kuzu projection</strong> (default): Repo-local bi-temporal graph projection with entity/relationship validity windows.</li>
+        <li><strong>Embedded LadybugDB projection</strong> (default): Repo-local bi-temporal graph projection with entity/relationship validity windows.</li>
         <li><strong>Pathlight</strong> (optional top layer): Observability, tracing, and debugging dashboard.</li>
       </ol>
       <p>Neo4j and pgGraph are optional sidecar projection backends. Use them only when you explicitly need same-harness control runs or existing infrastructure interop. Install Neo4j support with <code>zaxy-memory[neo4j]</code>. Install Pathlight tracing support with <code>zaxy-memory[pathlight]</code> before setting <code>PATHLIGHT_ENABLED=true</code>.</p>
@@ -160,7 +160,7 @@ python -m zaxy compact .eventloom/work.jsonl --snapshot-every 10000</code></pre>
             <td><strong>Critical</strong> — immutable source of truth</td>
           </tr>
           <tr>
-            <td>Embedded Kuzu projection</td>
+            <td>Embedded LadybugDB projection</td>
             <td><code>.eventloom/projections/embedded.kuzu</code></td>
             <td>Medium — can be rebuilt from Eventloom</td>
           </tr>
@@ -329,7 +329,7 @@ MATCH (e:Entity) WHERE e.valid_to IS NULL RETURN count(e) AS active_entities;</c
       <h3 id="current">Current</h3>
       <ul>
         <li>One Eventloom file per session/agent</li>
-        <li>Repo-local embedded Kuzu projection by default</li>
+        <li>Repo-local embedded LadybugDB projection by default</li>
         <li>Optional Pathlight tracing</li>
         <li>Embedded read-index warmup and hot caches for current entities, exact lookup, keyword, vector, traversal, temporal snapshots, and verbatim source lanes</li>
       </ul>
@@ -465,7 +465,7 @@ scripts/release-check.sh --root .</code></pre>
           <tr>
             <td><code>EMBEDDED_GRAPH_PATH</code></td>
             <td><code>.eventloom/projections/embedded.kuzu</code></td>
-            <td>Repo-local embedded Kuzu projection path</td>
+            <td>Repo-local embedded LadybugDB projection path</td>
           </tr>
           <tr>
             <td><code>NEO4J_URI</code></td>

@@ -132,7 +132,7 @@ class AdjacencyProvider(Protocol):  # pragma: no cover
     Implementations project the session's active entity graph (the same
     edges the traversal index sees) into an :class:`AdjacencySnapshot`,
     stamping ``signature`` with the backend's log-signature token so callers
-    can cache walks until the log advances. Embedded (Kuzu), Neo4j, and
+    can cache walks until the log advances. Embedded (LadybugDB), Neo4j, and
     Postgres implementations land in the backend wave.
     """
 

@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Zaxy 2.3 External-Validation Readiness Audit - Zaxy Docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,600&family=Inter:wght@400;550;650;750;850&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../../../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../../../../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../../../../index.html">Overview</a>
+      <a href="../../../../docs/coordinate-roadmap.html">Coordinate</a>
+      <a href="../../../../docs/why-zaxy.html">Why Zaxy</a>
+      <a href="../../../../docs/benchmarks.html">Benchmarks</a>
+      <a href="../../../getting-started.html">Start</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="zaxy-23-external-validation-readiness-audit">Zaxy 2.3 External-Validation Readiness Audit</h1>
+      <p>Date: 2026-06-11. Auditor environment: Linux 6.17.0-29-generic, Python 3.13.13, bash. Fresh clone: https://github.com/syndicalt/zaxy @ <code>3fbe6d6</code> (2.2.0, ahead of the local working copy <code>034b95b</code>). All work in <code>/tmp/zaxy-23-research/</code>; production repo untouched.</p>
+      <p>Policy context: <code>docs/external-validation.md</code> is a v1.0-era first-run/Coordinate policy with a machine-checkable report contract (<code>scripts/check-external-validation.py</code>). It covers onboarding paths only — it has <strong>no path for reproducing benchmark lanes or the Harvey LAB rerun</strong>. 2.3 needs a benchmark-reproduction analog of this policy.</p>
+      <p>---</p>
+      <h2 id="1-fresh-clone-reproduction-test-executed-not-reviewed">1. Fresh-clone reproduction test (executed, not reviewed)</h2>
+      <h3 id="step-timings-and-outcomes">Step timings and outcomes</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Step</th>
+            <th>Command</th>
+            <th>Time</th>
+            <th>Result</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Clone</td>
+            <td><code>git clone https://github.com/syndicalt/zaxy</code></td>
+            <td>5.1 s</td>
+            <td>OK</td>
+          </tr>
+          <tr>
+            <td>venv</td>
+            <td><code>python3 -m venv .venv</code></td>
+            <td>2.3 s</td>
+            <td>OK</td>
+          </tr>
+          <tr>
+            <td>Install</td>
+            <td><code>pip install -e &quot;.[dev]&quot;</code> (per CONTRIBUTING.md)</td>
+            <td>20.1 s</td>
+            <td>OK — zaxy-memory 2.2.0 + 88 deps, no errors</td>
+          </tr>
+          <tr>
+            <td>Test smoke</td>
+            <td><code>pytest tests/test_config.py tests/test_docs_site.py</code></td>
+            <td>8.1 s</td>
+            <td><strong>EXIT 1</strong> (97/97 tests pass; coverage gate fails)</td>
+          </tr>
+          <tr>
+            <td>Test smoke (fixed)</td>
+            <td>same + <code>--no-cov</code></td>
+            <td>0.6–1.3 s</td>
+            <td>OK, 97 passed</td>
+          </tr>
+          <tr>
+            <td>AX lane</td>
+            <td><code>zaxy agent-experience-lanes --lanes tool-adoption</code></td>
+            <td>0.24 s</td>
+            <td><strong>EXIT 2</strong> (<code>zaxy_benchmarks</code> not importable)</td>
+          </tr>
+          <tr>
+            <td>AX lane (fixed)</td>
+            <td><code>PYTHONPATH=. zaxy agent-experience-lanes --lanes tool-adoption</code></td>
+            <td>1.7 s</td>
+            <td>OK, report written</td>
+          </tr>
+          <tr>
+            <td>Vector lane 1k</td>
+            <td><code>PYTHONPATH=. zaxy graph-scale-lanes --lanes vector-scale --scale-sizes 1000</code></td>
+            <td>2.4 s</td>
+            <td>OK</td>
+          </tr>
+          <tr>
+            <td>Vector lane 1k+10k (rerun)</td>
+            <td>same, <code>--scale-sizes 1000,10000</code></td>
+            <td>~14 s</td>
+            <td>OK; size-1000 deterministic block byte-identical to first run</td>
+          </tr>
+        </tbody>
+      </table>
+      <h3 id="friction-points-exact-errors">Friction points (exact errors)</h3>
+      <p><strong>F1 — documented test subset &quot;fails&quot; while passing.</strong> <code>pyproject.toml</code> ships <code>addopts = &quot;-m &#x27;not integration&#x27; --cov=zaxy --cov-report=term-missing --cov-fail-under=90&quot;</code>, so any narrow subset exits 1:</p>
+      <pre><code>FAIL Required test coverage of 90% not reached. Total coverage: 0.79%
+97 passed in 6.41s</code></pre>
+      <p><code>docs/testing.md</code> mentions <code>--no-cov</code> only for integration runs; CONTRIBUTING.md (&quot;run the narrow tests that cover your change first&quot;) never warns about this. A third-party validator&#x27;s first signal from a fully passing suite is a red FAIL.</p>
+      <p><strong>F2 — every documented benchmark command fails as documented.</strong> <code>docs/benchmarks.md</code> says to run <code>zaxy agent-experience-lanes --lanes all</code> / <code>zaxy graph-scale-lanes --lanes all</code>. From a fresh clone + editable install, the console script fails:</p>
+      <pre><code>Invalid value: Benchmark and external-evaluation commands require the
+optional source-checkout eval package `zaxy_benchmarks`. Run this command
+from a Zaxy source checkout or install the eval tooling package.</code></pre>
+      <p>The error&#x27;s own advice is wrong: I <em>was</em> at the source-checkout root. Cause: the hatch wheel only packages <code>src/zaxy</code> (<code>[tool.hatch.build.targets.wheel] packages = [&quot;src/zaxy&quot;]</code>), <code>zaxy_benchmarks/</code> lives at the repo root, and a console script never puts cwd on <code>sys.path</code>. Undocumented workarounds (both verified): <code>PYTHONPATH=. zaxy ...</code> or <code>python -m zaxy ...</code> from the checkout root. Neither appears in any doc. This guard also gates <strong>all</strong> <code>harvey-lab-*</code> subcommands, so it blocks the Harvey rerun too.</p>
+      <p><strong>F3 — no environment/provenance block in lane reports.</strong> The emitted <code>graph-scale-lanes.json</code> top-level keys are <code>lanes</code>, <code>validation</code>, <code>version</code> only: no commit SHA, zaxy version, Python version, OS, CPU, or BLAS info. A third party cannot prove <em>what</em> they reproduced or attribute latency differences.</p>
+      <p>Things that worked well: install is genuinely one command (20 s, no compile, no Docker/Neo4j/credentials needed); <code>--output-dir</code> exists on both lane commands; the lane CLIs have good <code>--help</code> with honest caveats (e.g. 100k opt-in warning).</p>
+      <h3 id="artifact-comparison-vs-docsresearchartifactsann-2026-06">Artifact comparison vs <code>docs/research/artifacts/ann-2026-06/</code></h3>
+      <p>Fresh run: dim 64, hash distribution, <code>embedding_version_tag: hash@99329f18-dim64</code>, sizes 1000 and 10000 — matched against <code>baseline-dim64.json</code>, <code>after-dim64-r1/r2/r3.json</code>, <code>ann2-d64-10k-postcopy.json</code>.</p>
+      <p>Fields that SHOULD match across machines (per docs/benchmarks.md: &quot;Corpus hashes, exact/quantized recall (both metrics), bytes, and byte budgets are two-run reproducible&quot;) and DID match:</p>
+      <ul>
+        <li><code>corpus_sha256</code> @1000: <code>befb75bd…f3b3d</code> — <strong>exact match</strong> in all archived d64 artifacts.</li>
+        <li><code>corpus_sha256</code> @10000: <code>a4673fe6…f760</code> — <strong>exact match</strong>.</li>
+        <li><code>resident_index_bytes</code>: exact 512,000 / 5,120,000; quantized 72,000 / 720,000 — <strong>match</strong>.</li>
+        <li><code>bytes_vs_exact_ratio</code> 0.1406, <code>group_type</code>, <code>engaged</code>, <code>vector_count</code> — <strong>match</strong>.</li>
+        <li>Exact-mode recall 1.0 — <strong>match</strong>.</li>
+        <li>Same-machine two-run determinism of the whole deterministic block — <strong>verified identical</strong>.</li>
+      </ul>
+      <p>Fields that did NOT match, and why:</p>
+      <ul>
+        <li><strong>Schema drift, all 20 archived artifacts.</strong> None contain the shipped 2.2.0 schema fields (<code>recall_at_k_strict</code> / <code>recall_at_k_tie_aware</code>, <code>byte_budget</code>, <code>distribution</code>); they carry the older single <code>recall_at_k</code>. Every archived JSON is a mid-development snapshot taken before the final 2.2 schema landed. A naive third-party diff fails on every artifact.</li>
+        <li><strong>Quantized recall value drift.</strong> Archived d64: 0.9938 @1k / 0.9906 @10k. Fresh 2.2.0 run: 1.0 / 1.0 (strict and tie-aware). The shipped quantized path is not the artifact-era algorithm, so the one supposedly deterministic <em>quality</em> number in the archive is unmatchable with released code.</li>
+        <li>Latency/ANN-build numbers differ, as documented and expected (environment- and HNSW-nondeterminism-dependent); e.g. ANN first-query 9.1 s here vs 53 s in <code>BASELINE.md</code> at 10k/d64 — also reflecting 2.2 code improvements.</li>
+      </ul>
+      <p><strong>Conclusion:</strong> the determinism <em>machinery</em> works (hashes/bytes/recall reproduce bit-exact cross-machine), but the <em>archive</em> is not reproducible as published: no archived artifact was generated by the released code, and no artifact records the commit it came from. <code>BASELINE.md</code> discloses only &quot;Host: local dev machine.&quot;</p>
+      <p>---</p>
+      <h2 id="2-harvey-lab-adapter-kit-audit">2. Harvey LAB adapter-kit audit</h2>
+      <p>What exists:</p>
+      <ul>
+        <li>Generator: <code>zaxy harvey-lab-adapter-kit --output-dir …</code> (in <code>zaxy_benchmarks/harvey_lab_benchmark.py</code>, <code>export_harvey_adapter_kit</code>). Emits exactly two files (verified): <code>README.md</code> (1.5 KB, 5-step runbook) and <code>raw_rg_memory.py</code> (1 KB shim exposing <code>scan_corpus</code>/<code>search</code>/<code>read</code>).</li>
+        <li>Orchestration: <code>reports/benchmarks/harvey-lab-memory-ablation/run-harvey-lab-zaxy.sh</code> (22 KB, all 10 pinned tasks end-to-end) plus <code>harvey-lab-external-run.md/.json</code> manifest, and <code>harvey-lab-doctor</code>/<code>-preflight</code>/<code>-ready</code>/<code>-status</code>/<code>-validate</code>/ <code>-gate</code>/<code>-publish</code> CLI gates. Referenced zaxy-side artifacts all exist on disk.</li>
+        <li>Pins: Harvey commit <code>29748828133dff83ad2263af353fb035504f8f77</code> (in docs/benchmarks.md, NOT in the kit README), generator <code>gpt-5.5</code>, judge <code>gpt-5.4-mini</code> (env-overridable).</li>
+      </ul>
+      <p>Readiness verdict: <strong>NOT third-party-runnable as shipped.</strong> Concrete blockers:</p>
+      <ol>
+        <li><strong>Latent import breakage (high confidence).</strong> The shim does <code>from zaxy_benchmarks.harvey_lab_benchmark import …</code>, but the run script sets <code>ZAXY_PYTHONPATH=&quot;$ZAXY_WORKTREE/src&quot;</code> — and <code>zaxy_benchmarks/</code> is at the repo root, not under <code>src/</code>. Verified: <code>PYTHONPATH=&lt;clone&gt;/src python -c &quot;import zaxy_benchmarks&quot;</code> → <code>ModuleNotFoundError: No module named &#x27;zaxy_benchmarks&#x27;</code>. The harness step (<code>uv run python -m harness.run</code>, cwd = Harvey worktree) will crash. The stale <code>src/zaxy/__pycache__/harvey_lab_benchmark.cpython-313.pyc</code> in the production repo shows the module used to live under <code>src/zaxy/</code>; the script&#x27;s PYTHONPATH was never updated after the move. The original run predates the move and is not re-runnable from the shipped script.</li>
+        <li><strong>All <code>zaxy harvey-lab-*</code> commands hit the F2 guard</strong> unless invoked from the zaxy checkout root with <code>PYTHONPATH=.</code> — the run script and kit README never say so.</li>
+        <li><strong>No dependency pinning in the kit</strong>: no zaxy version/commit, no requirements or lock file; the shim additionally needs the <code>zaxy</code> package and its deps (pydantic, kuzu, numpy, …) importable inside <em>Harvey&#x27;s</em> <code>uv</code> environment — nowhere stated or provisioned.</li>
+        <li><strong>Kit README omits prerequisites</strong>: <code>uv</code>, OpenAI API key, model access (<code>gpt-5.5</code>, <code>gpt-5.4-mini</code>), the pinned Harvey commit, and expected cost/runtime are all absent from the generated README (some live only in scattered docs).</li>
+        <li>Data dependencies are sound in design (task corpora live in the Harvey repo; <code>.ingestion/</code> paths are generated; <code>harvey-lab-doctor</code> validates the worktree), so once 1–3 are fixed the path is plausible.</li>
+      </ol>
+      <h3 id="email-ready-ask-one-paragraph">Email-ready ask (one paragraph)</h3>
+      <blockquote>Hi Rushil — we want to convert Zaxy&#x27;s Harvey LAB memory-ablation result into an externally reproduced number for our 2.3 release, with you as the original author rerunning it on your own harness. Concretely: from your harvey-labs-ablations-and-benchmarks checkout at commit <code>2974882…f8f77</code>, clone zaxy at the tag we&#x27;ll send (one <code>pip install</code> plus our adapter kit — we&#x27;ll include a fixed one-command runner and a pinned requirements file), run <code>run-harvey-lab-zaxy.sh</code> for the 10 pinned article tasks with generator <code>gpt-5.5</code> and judge <code>gpt-5.4-mini</code> (OpenAI key and ~$X API budget on your side, or we can fund it), and send back the generated <code>.ingestion/reports/comparison-zaxy.json</code> plus <code>harvey-lab-benchmark.json</code> and a short note on OS/Python/anything that broke. We estimate 1–2 hours wall-clock. We&#x27;ll publish your artifacts verbatim, labeled as an author-rerun external anchor, with any failure narrative included.</blockquote>
+      <p>(Before sending: fix blockers 1–3 above, or the rerun dies at the first harness step.)</p>
+      <p>---</p>
+      <h2 id="3-23-reproduction-packet-gap-list-prioritized">3. 2.3 reproduction-packet gap list (prioritized)</h2>
+      <p>What docs/benchmarks.md already <em>promises</em>: correct internal/external labeling, which lane fields are deterministic vs environment-dependent (explicit and accurate — verified), seeded distributions, embedding version tags in config blocks, and claim boundaries. What it does <em>not</em> deliver: any way for a third party to actually run the documented commands from a clean clone and check their output against the archive.</p>
+      <ol>
+        <li><strong>(P0) Fix the lane-command entrypoint.</strong> Either package <code>zaxy_benchmarks</code> as an extra (<code>pip install -e &quot;.[eval]&quot;</code>), or document <code>PYTHONPATH=.</code> / <code>python -m zaxy</code> in benchmarks.md + CONTRIBUTING, and fix the error message that wrongly tells source-checkout users they aren&#x27;t in a source checkout. Blocks everything else.</li>
+        <li><strong>(P0) Fix the Harvey run script PYTHONPATH</strong> (<code>$ZAXY_WORKTREE/src</code> → include the repo root) and regression-test the shim import; without it the author rerun fails at step one.</li>
+        <li><strong>(P0) Regenerate archived artifacts with released code.</strong> Re-emit <code>docs/research/artifacts/</code> (or a new <code>reproduction/</code> set) at the 2.3 tag with the shipped schema, and record per-artifact provenance: commit SHA, zaxy version, command line. Today zero archived artifacts match the shipped schema and the quantized-recall values are from pre-release code.</li>
+        <li><strong>(P1) Add an environment/provenance block to every lane report</strong>: commit, version, Python, OS, CPU model, numpy/BLAS, kuzu version. Required both for the reproduction page and for honest latency disclosure (&quot;Host: local dev machine&quot; in BASELINE.md is not a hardware disclosure).</li>
+        <li><strong>(P1) One runner script + expected-output checksums.</strong> <code>scripts/reproduce-lanes.sh</code> that runs the deterministic lanes, extracts the deterministic blocks, and diffs them against committed expected JSON (corpus_sha256, recall strict/tie-aware, resident bytes, byte budgets, group types). The cross-machine match I verified proves this will be green; it just doesn&#x27;t exist yet.</li>
+        <li><strong>(P1) Pinned environment spec.</strong> A lock/constraints file (or <code>uv.lock</code>) for the eval path; today everything is <code>&gt;=</code> ranges, so future kuzu/numpy releases can silently change ANN behavior under a &quot;reproduction&quot; page.</li>
+        <li><strong>(P2) Reproduction page itself</strong> (docs/reproduce.md): table of every published number → reproducible (hashes, recall, bytes) vs environment-dependent (all latencies, ANN build times, ANN recall variance) vs external (Harvey, LLM-judged); expected wall-clock per command; the 100k caveat; <code>VECTOR_ANN_MAX_DIMENSION</code> note for d&gt;64 runs.</li>
+        <li><strong>(P2) Make the smoke path green:</strong> document a canonical fast subset with <code>--no-cov</code> (or add a <code>smoke</code> pytest marker / make the coverage gate CI-only).</li>
+        <li><strong>(P2) Extend the external-validation report contract</strong> (scripts/check-external-validation.py) with a <code>benchmark_reproduction</code> path so third-party lane reruns produce the same machine-checkable evidence the v1.0 onboarding paths already have.</li>
+        <li><strong>(P3) Harvey kit packaging:</strong> fold the pinned Harvey commit, model pins, uv, API-key, zaxy-version pin, and cost estimate into the generated kit README, and ship a requirements pin for the shim&#x27;s zaxy-side imports.</li>
+      </ol>
+    </article>
+  </main>
+</body>
+</html>

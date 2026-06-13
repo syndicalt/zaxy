@@ -486,6 +486,35 @@ class TestIntegrity:
         assert report.broken_at_seq == tampered_seq
         assert "sequence" in (report.broken_reason or "")
 
+    def test_eventloom_v1_zaxy_id_tampering_is_rejected_consistently(
+        self,
+        tmp_path,
+    ) -> None:
+        """V1 envelope ids must not make replay and tail reads disagree."""
+        log_path = tmp_path / "events.jsonl"
+        log = EventLog(log_path)
+        log.append("goal.created", actor="user", payload={"title": "Ship it"})
+
+        record = json.loads(log_path.read_text(encoding="utf-8"))
+        record["id"] = record["id"].replace("000000000001", "000000000999")
+        from zaxy.event import _eventloom_v1_hash
+
+        record["integrity"]["hash"] = _eventloom_v1_hash(
+            {key: value for key, value in record.items() if key != "integrity"},
+            record["integrity"]["previousHash"],
+        )
+        log_path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+        replayed = log.read_all()[0]
+        tailed = log.tail_events(1)[0]
+        report = log.verify()
+
+        assert replayed.seq == 999
+        assert tailed.seq == replayed.seq
+        assert not report.ok
+        assert report.broken_at_seq == 999
+        assert "sequence" in (report.broken_reason or "")
+
 
 # ------------------------------------------------------------------
 # Replay tests

@@ -505,7 +505,12 @@ def _event_from_eventloom_v1(record: dict[str, Any], *, seq_hint: int | None) ->
     raw_security = payload_copy.pop(_ZAXY_SECURITY_PAYLOAD_KEY, None)
     if isinstance(raw_security, dict):
         security = raw_security
-    seq = seq_hint or _eventloom_v1_seq_from_id(record.get("id"))
+    # Zaxy-authored Eventloom v1 ids encode the sealed sequence number and are
+    # part of the v1 hash input. Prefer that encoded identity everywhere so
+    # full replay, tail reads, and append-tail discovery cannot disagree about
+    # the same event. Native non-Zaxy Eventloom ids do not carry this sequence,
+    # so those logs still use physical JSONL order hints.
+    seq = _eventloom_v1_seq_from_id(record.get("id")) or seq_hint
     if seq is None:
         raise ValueError("Eventloom v1 event requires a sequence hint or Zaxy event id")
 

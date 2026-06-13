@@ -101,8 +101,8 @@ def test_public_site_has_product_positioning_and_required_sections() -> None:
     assert "LongMemEval-compatible checkout diagnostic" in html
     assert "Eventloom source of truth" in html
     assert "Pathlight" in html
-    assert "embedded Kuzu" in html
-    assert "PyPI 2.2.0" in html
+    assert "embedded LadybugDB" in html
+    assert "PyPI 2.3.0" in html
     assert "Harvey LAB 10/10 tasks" in html
     assert "Harvey LAB mean 0.788" in html
     assert "Headline 500 R@5 1.000" in html
@@ -345,7 +345,7 @@ def test_zero_friction_runtime_roadmap_sets_frontier_bar() -> None:
     assert "MCP embedded runtime status: wired" in roadmap
     assert "local-embedded-codex" in roadmap
     assert "[zero-friction-runtime-roadmap.md](archive/zero-friction-runtime-roadmap.md)" in architecture
-    assert "embedded Kuzu" in architecture
+    assert "embedded LadybugDB" in architecture
     assert "Build the zero-friction embedded graph runtime path" in agents
     assert "Memory Activation Layer" in agents
 
@@ -495,7 +495,7 @@ def test_public_site_reflects_current_onboarding_and_runtime_surfaces() -> None:
     assert "writes `.env.local`" in html
     assert "records session genesis and heartbeat" in html
     assert "prints the MCP command or config path" in html
-    assert "embedded Kuzu" in html
+    assert "embedded LadybugDB" in html
     assert "advanced integration tracks" in html
     assert "zaxy init" in html
     assert "local-embedded-codex" not in html
@@ -1174,7 +1174,7 @@ def test_operations_docs_center_embedded_default_and_optional_sidecars() -> None
 
     combined = "\n".join((runbook, operations, deployment))
 
-    assert "Embedded Kuzu projection" in runbook
+    assert "Embedded LadybugDB projection" in runbook
     assert "zaxy init" in runbook
     assert "PROJECTION_BACKEND=embedded" in runbook
     assert "optional sidecar" in combined
@@ -1196,7 +1196,7 @@ def test_readme_and_api_docs_name_optional_infra_extras() -> None:
     combined = "\n".join((readme, api))
     assert "zaxy-memory[neo4j]" in combined
     assert "zaxy-memory[pathlight]" in combined
-    assert "plain install uses embedded Kuzu" in combined
+    assert "plain install uses embedded LadybugDB" in combined
 
 
 def test_readme_integration_compose_uses_explicit_profile() -> None:
@@ -1236,7 +1236,7 @@ def test_core_docs_use_backend_neutral_projection_language() -> None:
 
     assert "upserts the selected graph projection" in docs["mcp"]
     assert "The graph projection is Zaxy's structured reasoning layer" in docs["graph_schema"]
-    assert "default implementation is embedded Kuzu" in docs["graph_schema"]
+    assert "default implementation is embedded LadybugDB" in docs["graph_schema"]
     assert "selected projection backend vector search" in docs["embeddings"]
     assert "optional Neo4j sidecar" in combined
     assert "set `NEO4J_AUTO_START=true`" in combined
@@ -1266,7 +1266,7 @@ def test_optional_neo4j_index_script_is_idempotent_and_sidecar_scoped() -> None:
     assert create_lines
     assert all("IF NOT EXISTS" in line for line in create_lines)
     assert "optional Neo4j sidecar" in graph_schema
-    assert "embedded Kuzu" in graph_schema
+    assert "embedded LadybugDB" in graph_schema
 
 
 def test_runtime_docstrings_do_not_claim_neo4j_is_default_projection() -> None:
@@ -1281,7 +1281,7 @@ def test_runtime_docstrings_do_not_claim_neo4j_is_default_projection() -> None:
     assert "knowledge graph (Neo4j)" not in runtime_text
     assert "Connect to Neo4j and Pathlight" not in runtime_text
     assert "Neo4j remains the sidecar control backend until" not in runtime_text
-    assert "Kuzu-backed embedded projection store." in runtime_text
+    assert "LadybugDB-backed embedded projection store." in runtime_text
     assert "projection store shell" not in runtime_text
     assert "Methods fail clearly until the Kuzu implementation lands" not in runtime_text
 

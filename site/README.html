@@ -26,14 +26,14 @@
       <h1 id="zaxy">Zaxy</h1>
       <p><strong>Production memory for agent teams that need receipts.</strong></p>
       <p>Zaxy turns agent context into an auditable project memory fabric. It captures parent missions, worker sessions, tool observations, cited findings, conflict review, approval packets, and accepted merge-back into one durable history that can be queried, replayed, and inspected.</p>
-      <p>Under the hood, Zaxy uses Eventloom append-only JSONL as the source of truth and an embedded Kuzu graph projection for local reasoning. It is built for agents that need to remember what happened, cite where it came from, and avoid turning project state into a pile of markdown files and vector chunks.</p>
-      <p>The embedded Kuzu graph projection is the default local runtime.</p>
-      <p>The plain install uses embedded Kuzu. Install <code>zaxy-memory[neo4j]</code> only for the optional Neo4j sidecar, and <code>zaxy-memory[pathlight]</code> only for Pathlight tracing.</p>
+      <p>Under the hood, Zaxy uses Eventloom append-only JSONL as the source of truth and an embedded LadybugDB graph projection for local reasoning. It is built for agents that need to remember what happened, cite where it came from, and avoid turning project state into a pile of markdown files and vector chunks.</p>
+      <p>The embedded LadybugDB graph projection is the default local runtime.</p>
+      <p>The plain install uses embedded LadybugDB. Install <code>zaxy-memory[neo4j]</code> only for the optional Neo4j sidecar, and <code>zaxy-memory[pathlight]</code> only for Pathlight tracing.</p>
       <h2 id="why-it-matters">Why It Matters</h2>
       <ul>
         <li><strong>Auditable memory</strong>: every accepted fact can point back to Eventloom history.</li>
         <li><strong>Agent-team coordination</strong>: parent and worker sessions stay isolated until findings are reviewed and merged.</li>
-        <li><strong>Local-first runtime</strong>: the default path uses embedded Kuzu, no Neo4j sidecar.</li>
+        <li><strong>Local-first runtime</strong>: the default path uses embedded LadybugDB, no Neo4j sidecar.</li>
         <li><strong>MCP-native integration</strong>: Codex, Claude Code, Cursor, VS Code, Hermes Agent, LangGraph, CrewAI, and AutoGen can use the same memory interface.</li>
         <li><strong>External benchmark evidence</strong>: on the full Harvey LAB legal-agent memory benchmark, Zaxy scored <code>0.788</code> mean criterion pass rate across <code>10/10</code> tasks, <code>+0.184</code> vs regular/no-memory, <code>+0.081</code> vs the article-best task rows, and won <code>9/10</code> task comparisons. See <a href="docs/benchmarks.html#harvey-lab">Benchmarks</a>; the published stats artifact is <code>reports/benchmarks/harvey-lab-memory-ablation/publishable-statistics.md</code>.</li>
         <li><strong>Headline 500 evidence</strong>: the current LongMemEval-compatible checkout diagnostic is a full 500-question run with mean <code>0.956</code>, Answer@5 <code>0.910</code>, Recall@5 <code>1.000</code>, and citation coverage <code>1.000</code>. See <a href="docs/benchmarks.html#headline-500">Benchmarks</a>.</li>
@@ -65,7 +65,7 @@ zaxy doctor --eventloom-path .eventloom</code></pre>
 MCP Server — memory_append / memory_query / memory_feedback / memory_replay / memory_invalidate
     |
     v
-Eventloom (immutable JSONL log)  →  Hybrid Extraction  →  Embedded Kuzu graph
+Eventloom (immutable JSONL log)  →  Hybrid Extraction  →  Embedded LadybugDB graph
     |                                                               |
     +—————— Optional Pathlight traces ———————————————→  Query Router
                                                               |
@@ -125,7 +125,7 @@ Eventloom (immutable JSONL log)  →  Hybrid Extraction  →  Embedded Kuzu grap
           </tr>
           <tr>
             <td><code>src/zaxy/embedded_graph_store.py</code></td>
-            <td>Embedded Kuzu projection store</td>
+            <td>Embedded LadybugDB projection store</td>
           </tr>
           <tr>
             <td><code>src/zaxy/graph.py</code></td>

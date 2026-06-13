@@ -1,0 +1,175 @@
+{
+  "numpy": "2.4.4",
+  "dim": 1536,
+  "limit": 10,
+  "oversample": 4,
+  "query_count": 16,
+  "reps": 3,
+  "seed": 20260611,
+  "profile_current": {
+    "10000": {
+      "cast_matrix_int8_to_int32_ms": 26.43,
+      "int32_matmul_ms": 9.54,
+      "scale_multiply_ms": 0.01,
+      "argpartition_ms": 0.03,
+      "temp_int32_matrix_mb": 61.4
+    },
+    "50000": {
+      "cast_matrix_int8_to_int32_ms": 125.29,
+      "int32_matmul_ms": 48.19,
+      "scale_multiply_ms": 0.03,
+      "argpartition_ms": 0.16,
+      "temp_int32_matrix_mb": 307.2
+    }
+  },
+  "sizes": {
+    "10000": {
+      "exact_f64": {
+        "p50_ms": 25.02,
+        "p95_ms": 64.36,
+        "recall_strict": 1.0,
+        "recall_tie_aware": 1.0,
+        "resident_bytes": 122880000,
+        "resident_vs_exact": 1.0
+      },
+      "current_int8": {
+        "p50_ms": 38.87,
+        "p95_ms": 56.09,
+        "recall_strict": 1.0,
+        "recall_tie_aware": 1.0,
+        "resident_bytes": 15440000,
+        "resident_vs_exact": 0.1257
+      },
+      "a_cast_f32": {
+        "p50_ms": 95.82,
+        "p95_ms": 122.55,
+        "recall_strict": 1.0,
+        "recall_tie_aware": 1.0,
+        "resident_bytes": 15440000,
+        "resident_vs_exact": 0.1257
+      },
+      "b_precast_f32": {
+        "p50_ms": 5.65,
+        "p95_ms": 15.1,
+        "recall_strict": 1.0,
+        "recall_tie_aware": 1.0,
+        "resident_bytes": 76880000,
+        "resident_vs_exact": 0.6257
+      },
+      "b2_pure_f32": {
+        "p50_ms": 5.97,
+        "p95_ms": 6.35,
+        "recall_strict": 1.0,
+        "recall_tie_aware": 1.0,
+        "resident_bytes": 61440000,
+        "resident_vs_exact": 0.5
+      },
+      "c1_block_i32": {
+        "p50_ms": 34.5,
+        "p95_ms": 51.49,
+        "recall_strict": 1.0,
+        "recall_tie_aware": 1.0,
+        "resident_bytes": 15440000,
+        "resident_vs_exact": 0.1257
+      },
+      "c2_matmul_dt": {
+        "p50_ms": 53.07,
+        "p95_ms": 57.56,
+        "recall_strict": 1.0,
+        "recall_tie_aware": 1.0,
+        "resident_bytes": 15440000,
+        "resident_vs_exact": 0.1257
+      },
+      "d_asym_f32q": {
+        "p50_ms": 92.84,
+        "p95_ms": 132.86,
+        "recall_strict": 1.0,
+        "recall_tie_aware": 1.0,
+        "resident_bytes": 15440000,
+        "resident_vs_exact": 0.1257
+      },
+      "d2_asym_tensordot": {
+        "p50_ms": 52.38,
+        "p95_ms": 100.32,
+        "recall_strict": 1.0,
+        "recall_tie_aware": 1.0,
+        "resident_bytes": 15440000,
+        "resident_vs_exact": 0.1257
+      }
+    },
+    "50000": {
+      "exact_f64": {
+        "p50_ms": 21.62,
+        "p95_ms": 47.13,
+        "recall_strict": 1.0,
+        "recall_tie_aware": 1.0,
+        "resident_bytes": 614400000,
+        "resident_vs_exact": 1.0
+      },
+      "current_int8": {
+        "p50_ms": 182.07,
+        "p95_ms": 215.02,
+        "recall_strict": 1.0,
+        "recall_tie_aware": 1.0,
+        "resident_bytes": 77200000,
+        "resident_vs_exact": 0.1257
+      },
+      "a_cast_f32": {
+        "p50_ms": 213.44,
+        "p95_ms": 268.72,
+        "recall_strict": 1.0,
+        "recall_tie_aware": 1.0,
+        "resident_bytes": 77200000,
+        "resident_vs_exact": 0.1257
+      },
+      "b_precast_f32": {
+        "p50_ms": 12.39,
+        "p95_ms": 32.25,
+        "recall_strict": 1.0,
+        "recall_tie_aware": 1.0,
+        "resident_bytes": 384400000,
+        "resident_vs_exact": 0.6257
+      },
+      "b2_pure_f32": {
+        "p50_ms": 12.03,
+        "p95_ms": 24.97,
+        "recall_strict": 1.0,
+        "recall_tie_aware": 1.0,
+        "resident_bytes": 307200000,
+        "resident_vs_exact": 0.5
+      },
+      "c1_block_i32": {
+        "p50_ms": 95.52,
+        "p95_ms": 114.27,
+        "recall_strict": 1.0,
+        "recall_tie_aware": 1.0,
+        "resident_bytes": 77200000,
+        "resident_vs_exact": 0.1257
+      },
+      "c2_matmul_dt": {
+        "p50_ms": 197.81,
+        "p95_ms": 202.65,
+        "recall_strict": 1.0,
+        "recall_tie_aware": 1.0,
+        "resident_bytes": 77200000,
+        "resident_vs_exact": 0.1257
+      },
+      "d_asym_f32q": {
+        "p50_ms": 214.41,
+        "p95_ms": 272.46,
+        "recall_strict": 1.0,
+        "recall_tie_aware": 1.0,
+        "resident_bytes": 77200000,
+        "resident_vs_exact": 0.1257
+      },
+      "d2_asym_tensordot": {
+        "p50_ms": 231.56,
+        "p95_ms": 298.35,
+        "recall_strict": 1.0,
+        "recall_tie_aware": 1.0,
+        "resident_bytes": 77200000,
+        "resident_vs_exact": 0.1257
+      }
+    }
+  }
+}
