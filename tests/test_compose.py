@@ -117,6 +117,22 @@ def test_dockerfile_creates_embedded_projection_directory_without_stale_volumes(
     assert "/app/.volumes" not in dockerfile
 
 
+def test_dockerfile_preseeds_ladybugdb_vector_extension_into_cache() -> None:
+    """The image should bake the LadybugDB vector extension so containerized ANN
+    works without a runtime network fetch (2.3 LadybugDB downloads it on first use)."""
+    dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
+
+    # HOME anchored under the writable app tree so HOME/.lbdb is zaxy-owned.
+    assert "ENV HOME=/app" in dockerfile
+    # Extension pre-seeded at build time...
+    assert "INSTALL vector" in dockerfile
+    assert "LOAD vector" in dockerfile
+    # ...before the chown, so the pre-seeded cache is handed to the non-root user.
+    assert dockerfile.index("INSTALL vector") < dockerfile.index("chown -R zaxy:zaxy /app")
+    # ...and the pre-seed happens after the package (which provides ladybug) installs.
+    assert dockerfile.index("pip install --no-cache-dir /tmp/*.whl") < dockerfile.index("INSTALL vector")
+
+
 def test_sse_transport_host_is_configurable() -> None:
     """Container deployments need the SSE listener host to be explicit."""
     cli = "\n".join(
