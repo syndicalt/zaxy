@@ -1,0 +1,75 @@
+name: Publish to MCP Registry
+
+# Registers the server with the official MCP Registry (registry.modelcontextprotocol.io),
+# which PulseMCP and other aggregators mirror. Auth is GitHub OIDC — no stored secrets.
+# The registry verifies PyPI ownership by reading an `mcp-name` marker from the published
+# package description, so this job waits until PyPI is serving the released version WITH
+# that marker before publishing, to avoid racing PyPI propagation.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (e.g. 2.3.1)"
+        required: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  publish-mcp:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # OIDC authentication to the MCP registry
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            V="${GITHUB_REF#refs/tags/v}"
+          else
+            V="${{ github.event.inputs.version }}"
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $V"
+
+      - name: Wait for PyPI to serve the version with the ownership marker
+        env:
+          V: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          marker="mcp-name: io.github.syndicalt/zaxy"
+          for i in $(seq 1 40); do
+            body="$(curl -fsS "https://pypi.org/pypi/zaxy-memory/${V}/json" || true)"
+            if [ -n "$body" ] && printf '%s' "$body" | python3 -c "import sys, json; d = json.load(sys.stdin); sys.exit(0 if 'mcp-name: io.github.syndicalt/zaxy' in (d['info'].get('description') or '') else 1)"; then
+              echo "PyPI ${V} is live and carries the ownership marker."
+              exit 0
+            fi
+            echo "Attempt ${i}/40: zaxy-memory ${V} not yet on PyPI with the marker; waiting 15s..."
+            sleep 15
+          done
+          echo "::error::PyPI ${V} did not appear with the mcp-name marker within the timeout."
+          exit 1
+
+      - name: Pin server.json to the released version
+        env:
+          V: ${{ steps.ver.outputs.version }}
+        run: |
+          jq --arg v "$V" '.version = $v | (.packages[].version) = $v' server.json > server.tmp
+          mv server.tmp server.json
+          cat server.json
+
+      - name: Install mcp-publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+
+      - name: Authenticate to the MCP Registry (GitHub OIDC)
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish server to the MCP Registry
+        run: ./mcp-publisher publish

@@ -2,6 +2,17 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 2.3.1 - 2026-06-13
+
+- Added a `LICENSE` file (MIT) — the project declared MIT in metadata but
+  shipped no license text; it now ships in the source distribution.
+- Pre-seeded the LadybugDB `vector` extension into the Docker image so
+  containerized approximate (HNSW) search works with no runtime network fetch.
+- Published to the official MCP Registry: added an `mcp-name` ownership marker
+  to the README, a `server.json`, and a GitHub-OIDC `publish-mcp` workflow that
+  registers each release (PulseMCP and other aggregators mirror the registry).
+- No library code changes; the embedded runtime and APIs are identical to 2.3.0.
+
 ## 2.3.0 - 2026-06-13
 
 - Moved the default embedded projection engine from archived Kuzu to
