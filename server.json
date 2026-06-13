@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.syndicalt/zaxy",
-  "description": "Event-sourced, auditable memory for AI agents: a hash-chained Eventloom log as the source of truth, an embedded temporal knowledge graph, and cited Memory Checkout exposed over MCP.",
+  "description": "Event-sourced, auditable agent memory over MCP: cited checkout, replayable provenance.",
   "repository": {
     "url": "https://github.com/syndicalt/zaxy",
     "source": "github"
