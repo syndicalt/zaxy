@@ -3115,6 +3115,65 @@ def test_embedded_store_ann_capability_probe_suppresses_cleanup_failures() -> No
     ]
 
 
+def test_embedded_store_ensure_ann_index_is_idempotent() -> None:
+    """ANN shadow-table index creation should run once per table."""
+    store = EmbeddedGraphStore(Path("unused.kuzu"))
+
+    class IndexConnection:
+        def __init__(self) -> None:
+            self.queries: list[str] = []
+
+        def execute(self, query: str, params: dict[str, object] | None = None) -> object:
+            assert params is None
+            self.queries.append(query)
+            return _FakeRows([])
+
+    connection = IndexConnection()
+    store._connection = connection
+
+    store._ensure_ann_index("ann_table", "ann_index")
+    store._ensure_ann_index("ann_table", "ann_index")
+
+    assert connection.queries == [
+        "CALL CREATE_VECTOR_INDEX('ann_table', 'ann_index', 'vec', metric := 'cosine')"
+    ]
+    assert store._ann_indexed_tables == {"ann_table"}
+
+
+def test_embedded_store_ensure_ann_index_accepts_existing_index() -> None:
+    """A persisted shadow index may already exist after process restart."""
+    store = EmbeddedGraphStore(Path("unused.kuzu"))
+
+    class ExistingIndexConnection:
+        def execute(self, query: str, params: dict[str, object] | None = None) -> object:
+            assert params is None
+            assert query == "CALL CREATE_VECTOR_INDEX('ann_table', 'ann_index', 'vec', metric := 'cosine')"
+            raise RuntimeError("vector index already exists")
+
+    store._connection = ExistingIndexConnection()
+
+    store._ensure_ann_index("ann_table", "ann_index")
+
+    assert store._ann_indexed_tables == {"ann_table"}
+
+
+def test_embedded_store_ensure_ann_index_reraises_unexpected_errors() -> None:
+    """Only the backend's duplicate-index error should be swallowed."""
+    store = EmbeddedGraphStore(Path("unused.kuzu"))
+
+    class BrokenIndexConnection:
+        def execute(self, query: str, params: dict[str, object] | None = None) -> object:
+            assert params is None
+            assert query == "CALL CREATE_VECTOR_INDEX('ann_table', 'ann_index', 'vec', metric := 'cosine')"
+            raise RuntimeError("vector extension unavailable")
+
+    store._connection = BrokenIndexConnection()
+
+    with pytest.raises(RuntimeError, match="vector extension unavailable"):
+        store._ensure_ann_index("ann_table", "ann_index")
+    assert store._ann_indexed_tables == set()
+
+
 class _RecordingConnection:
     """Pass-through connection wrapper that records every executed query."""
 

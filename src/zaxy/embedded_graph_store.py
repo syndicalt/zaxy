@@ -278,14 +278,32 @@ class EmbeddedGraphStore:
             )
             self._database = ladybug.Database(str(self.path))
         self._connection = ladybug.Connection(self._database)
-        # The vector extension is statically linked but no longer auto-loaded
-        # (Kuzu 0.11.3 auto-registered it; LadybugDB requires an explicit LOAD
-        # per connection — verified offline-safe, no INSTALL download needed).
-        # Failure degrades the ANN capability probe instead of failing open().
+        # The `vector` extension is an official LadybugDB extension that is NOT
+        # bundled in the pip wheel (unlike Kuzu 0.11.3, which auto-registered a
+        # statically-linked vector index). It must be INSTALLed once — a small
+        # network download cached under the LadybugDB home (~/.lbdb) — before
+        # LOAD works. Fast path: LOAD an already-cached extension. On failure,
+        # attempt a one-time INSTALL then LOAD. If both fail (e.g. an offline
+        # first run), approximate (HNSW) search degrades to exact search; the
+        # default exact float path is pure numpy and stays fully offline, so
+        # only opt-in ANN engagement depends on the extension being present.
         try:
             self._execute("LOAD vector")
         except RuntimeError:
-            self._ann_supported = False
+            try:
+                self._execute("INSTALL vector")
+                self._execute("LOAD vector")
+            except RuntimeError:
+                logger.warning(
+                    "LadybugDB `vector` extension unavailable (INSTALL/LOAD failed); "
+                    "approximate HNSW vector search is disabled and queries use exact "
+                    "float search. The extension downloads on first use and is cached "
+                    "under ~/.lbdb; for offline ANN, pre-install it on a networked host "
+                    "and ship the cache."
+                )
+                self._ann_supported = False
+            else:
+                self._ann_supported = None
         else:
             self._ann_supported = None
         self._clear_all_caches()
@@ -1538,10 +1556,13 @@ class EmbeddedGraphStore:
     def _vector_index_supported(self) -> bool:
         """Probe once per connection whether the runtime ships the vector index.
 
-        ``connect()`` issues the explicit ``LOAD vector`` the LadybugDB
-        runtime requires (the extension is statically linked but, unlike
-        Kuzu 0.11.3, not auto-registered) and resets this probe, so the
-        cached answer always describes the live connection. The probe uses
+        ``connect()`` installs (once, network-cached) and ``LOAD``s the
+        ``vector`` extension the LadybugDB runtime requires — unlike Kuzu
+        0.11.3, it is neither bundled nor auto-registered — and resets this
+        probe, so the cached answer always describes the live connection.
+        When the extension cannot be installed or loaded (e.g. an offline
+        first run) the probe stays ``False`` and retrieval uses exact search.
+        The probe uses
         the actual vector-index operation instead of catalog introspection:
         LadybugDB wheels can differ in how table functions appear in
         ``SHOW_FUNCTIONS()``, but Zaxy only needs to know whether a shadow

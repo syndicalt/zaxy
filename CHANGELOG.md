@@ -15,10 +15,19 @@ All notable Zaxy release changes are recorded here.
   opened at the configured path, and operators are pointed to replay/reproject
   from Eventloom, which remains the source of truth.
 - Re-verified and updated embedded vector-index handling against LadybugDB:
-  the store explicitly loads the vector extension, keeps the unbound-parameter
-  guard at the execution choke point, continues atomic ANN generation swaps,
-  and now drops superseded ANN generations for full space reclaim where the
-  fork fixed the old drop-index corruption.
+  the store installs (once, network-cached under `~/.lbdb`) and loads the
+  `vector` extension — which LadybugDB ships as a downloadable extension
+  rather than bundling it as Kuzu did — keeps the unbound-parameter guard at
+  the execution choke point, continues atomic ANN generation swaps, and now
+  drops superseded ANN generations for full space reclaim where the fork
+  fixed the old drop-index corruption.
+- Local-first note: LadybugDB ships the vector index as a `vector` extension
+  fetched once on first ANN engagement (cached under `~/.lbdb`) and then run
+  entirely on-box, rather than bundled as Kuzu did. With no network and no
+  cache, ANN is unavailable and retrieval falls back to exact float search
+  (correct results, no error); the default exact path needs nothing fetched.
+  Air-gapped ANN deployments pre-install the extension and ship the cache.
+  See migration.md.
 - Added doctor coverage for leftover pre-LadybugDB backup artifacts so
   operators can verify the rebuilt projection and remove obsolete backups
   intentionally.

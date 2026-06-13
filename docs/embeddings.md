@@ -88,7 +88,13 @@ fork of Kuzu — the vector index code is unchanged since the fork, so all
 2.2 lane evidence carries over) that queries hit directly — no
 per-query graph projection and no predicate scan; indexes are built and
 loaded only on engagement, so default-path users below the rule pay no
-cold-start cost. The HNSW query retrieves an
+cold-start cost. LadybugDB ships the vector index as an official `vector`
+extension fetched once on first ANN engagement (cached under `~/.lbdb`) and
+then run entirely on-box; Zaxy fetches it automatically. With no network and
+no cache, ANN is unavailable and retrieval falls back to exact float search —
+the default exact path is pure NumPy and needs nothing fetched. Air-gapped
+ANN deployments run `INSTALL vector` once on a networked host and ship the
+cache. The HNSW query retrieves an
 oversampled candidate set (`VECTOR_ANN_EFS`, default `400`, controls the
 index's query-time candidate list) and the store reranks those candidates
 with exact float64 scores from the resident entity vectors, so approximate

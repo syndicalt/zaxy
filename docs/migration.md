@@ -322,6 +322,16 @@ What changes for you:
   blocks (identical corpus hashes and recall). Superseded ANN shadow
   generations are now dropped instead of emptied (full space reclaim,
   enabled by an upstream fix verified through Zaxy's own rebuild cycle).
+- **Vector extension fetch (local-first, one-time).** Kuzu 0.11.3 bundled the
+  vector index; LadybugDB ships it as an official `vector` extension fetched
+  on first use (a small one-time download cached under `~/.lbdb`), much like
+  installing the package itself. Zaxy fetches it automatically the first time
+  the ANN path engages, then it runs entirely on-box. Air-gapped deployments
+  that want ANN run `INSTALL vector` once on a networked host and ship the
+  `~/.lbdb` cache; with no network and no cache, approximate (HNSW) search is
+  simply unavailable and retrieval falls back to **exact** float search —
+  correct results, no error, fully on-box. The default exact path is pure
+  NumPy and needs nothing fetched.
 
 ## Compatibility Tests
 
