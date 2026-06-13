@@ -1,8 +1,8 @@
 # Zaxy
 
-<!-- mcp-name: io.github.syndicalt/zaxy -->
-
 **Production memory for agent teams that need receipts.**
+
+<!-- mcp-name: io.github.syndicalt/zaxy -->
 
 Zaxy turns agent context into an auditable project memory fabric. It captures
 parent missions, worker sessions, tool observations, cited findings, conflict
