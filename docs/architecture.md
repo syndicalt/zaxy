@@ -36,9 +36,12 @@ needs to be rebuilt, replay the log and re-run extraction. This is the reason
 Zaxy does not silently overwrite facts: graph entities carry `valid_from` and
 `valid_to` windows, and reasserted facts become new versions.
 
-The embedded Kuzu projection is the default graph backend because it preserves
+The embedded LadybugDB projection is the default graph backend because it preserves
 graph-native traversal, citations, temporal versioning, and replay without a
-separate graph service. Neo4j remains the quality and performance control
+separate graph service. LadybugDB is the actively maintained fork of the
+archived Kuzu engine; Zaxy 2.3 moved the embedded store to it (exact-pinned)
+after verifying the fork against Zaxy's own defect reproductions and scale
+lanes. Neo4j remains the quality and performance control
 backend, and pgGraph remains an experimental Postgres-native projection backend.
 See [zero-friction-runtime-roadmap.md](archive/zero-friction-runtime-roadmap.md) for the
 embedded runtime gates and backend lifecycle.

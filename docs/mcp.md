@@ -640,10 +640,10 @@ or `ZAXY_DOMAIN`; `zaxy serve` derives those from the current workspace at
 startup.
 
 Embedded runtime ownership: when `PROJECTION_BACKEND=embedded`, one workspace
-`zaxy serve` process owns the repo-local Kuzu graph in read-write mode. Additional
+`zaxy serve` process owns the repo-local LadybugDB graph in read-write mode. Additional
 stdio `zaxy serve` processes, including worker/subagent MCP launches, proxy to
 that owner through `.eventloom/runtime/zaxy-embedded-owner.sock` instead of
-opening Kuzu themselves. This preserves full graph-backed checkout without
+opening LadybugDB themselves. This preserves full graph-backed checkout without
 starting in degraded mode.
 
 `zaxy init` and `zaxy doctor` clean stale embedded owner records when no live
@@ -719,7 +719,7 @@ derive those values from the active project. For remote SSE configs, the same
 default is sent through the session header.
 
 For local stdio clients, the generated config is intentionally self-contained:
-it forces development-mode local settings and defaults to the embedded Kuzu
+it forces development-mode local settings and defaults to the embedded LadybugDB
 projection. Generated stdio configs set `startup_timeout_sec` to `90` so MCP
 clients do not kill startup while local indexes are opening or optional
 sidecars are warming. If you explicitly choose the optional Neo4j sidecar, Zaxy

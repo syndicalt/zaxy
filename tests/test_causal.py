@@ -814,7 +814,7 @@ def test_pggraph_causal_metadata_defaults_bad_numeric_fields_without_crashing() 
     assert metadata["evidence"] == {}
 
 
-@pytest.mark.skipif(importlib.util.find_spec("kuzu") is None, reason="kuzu is not installed")
+@pytest.mark.skipif(importlib.util.find_spec("ladybug") is None, reason="ladybug is not installed")
 @pytest.mark.asyncio
 async def test_embedded_store_search_causal_neighbors_preserves_direction(tmp_path) -> None:
     store = EmbeddedGraphStore(tmp_path / "embedded.kuzu")

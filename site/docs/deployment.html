@@ -28,7 +28,7 @@
       <pre><code class="language-bash">./scripts/setup.sh --production
 docker compose -f docker-compose.prod.yml up -d</code></pre>
       <p>Production setup writes <code>.env</code> and secret files under <code>./secrets</code>. The <code>.env</code> file references those secret files with <code>*_FILE</code> variables. Generated local secrets are useful for validation and staging, but real deployments should replace them with platform-managed secrets or files mounted by Docker, Kubernetes, or a vault sidecar.</p>
-      <p>The default production backend is the embedded Kuzu projection, which requires no graph service endpoint and does not start Neo4j. Optional sidecar backends must be configured explicitly. For Neo4j, install <code>zaxy-memory[neo4j]</code>, generate certificate material, and start the compose profile:</p>
+      <p>The default production backend is the embedded LadybugDB projection, which requires no graph service endpoint and does not start Neo4j. Optional sidecar backends must be configured explicitly. For Neo4j, install <code>zaxy-memory[neo4j]</code>, generate certificate material, and start the compose profile:</p>
       <pre><code class="language-bash">./scripts/generate-certs.sh .certs
 docker compose -f docker-compose.prod.yml --profile neo4j up -d zaxy-neo4j</code></pre>
       <p>Production compose mounts the Neo4j certificate material only for that profile; <code>NEO4J_CA_CERT</code> tells Zaxy which certificate to trust. Do not set <code>NEO4J_TRUST_ALL=true</code> in production unless you are doing a temporary emergency recovery with a written risk acceptance.</p>

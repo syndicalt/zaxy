@@ -8,13 +8,13 @@ review, approval packets, and accepted merge-back into one durable history that
 can be queried, replayed, and inspected.
 
 Under the hood, Zaxy uses Eventloom append-only JSONL as the source of truth and
-an embedded Kuzu graph projection for local reasoning. It is built for agents
+an embedded LadybugDB graph projection for local reasoning. It is built for agents
 that need to remember what happened, cite where it came from, and avoid turning
 project state into a pile of markdown files and vector chunks.
 
-The embedded Kuzu graph projection is the default local runtime.
+The embedded LadybugDB graph projection is the default local runtime.
 
-The plain install uses embedded Kuzu. Install `zaxy-memory[neo4j]` only for the
+The plain install uses embedded LadybugDB. Install `zaxy-memory[neo4j]` only for the
 optional Neo4j sidecar, and `zaxy-memory[pathlight]` only for Pathlight tracing.
 
 ## Why It Matters
@@ -22,7 +22,7 @@ optional Neo4j sidecar, and `zaxy-memory[pathlight]` only for Pathlight tracing.
 - **Auditable memory**: every accepted fact can point back to Eventloom history.
 - **Agent-team coordination**: parent and worker sessions stay isolated until
   findings are reviewed and merged.
-- **Local-first runtime**: the default path uses embedded Kuzu, no Neo4j sidecar.
+- **Local-first runtime**: the default path uses embedded LadybugDB, no Neo4j sidecar.
 - **MCP-native integration**: Codex, Claude Code, Cursor, VS Code, Hermes Agent,
   LangGraph, CrewAI, and AutoGen can use the same memory interface.
 - **External benchmark evidence**: on the full Harvey LAB legal-agent memory
@@ -126,7 +126,7 @@ Agent (LangGraph / Any MCP Client)
 MCP Server — memory_append / memory_query / memory_feedback / memory_replay / memory_invalidate
     |
     v
-Eventloom (immutable JSONL log)  →  Hybrid Extraction  →  Embedded Kuzu graph
+Eventloom (immutable JSONL log)  →  Hybrid Extraction  →  Embedded LadybugDB graph
     |                                                               |
     +—————— Optional Pathlight traces ———————————————→  Query Router
                                                               |
@@ -180,7 +180,7 @@ See [LLM Packet Analyzer](docs/packet-analyzer.md).
 |------|---------|
 | `src/zaxy/event.py` | Eventloom JSONL I/O + hash chain integrity |
 | `src/zaxy/extract.py` | Hybrid extraction engine + rule registry |
-| `src/zaxy/embedded_graph_store.py` | Embedded Kuzu projection store |
+| `src/zaxy/embedded_graph_store.py` | Embedded LadybugDB projection store |
 | `src/zaxy/graph.py` | Optional Neo4j bi-temporal wrapper via `zaxy-memory[neo4j]` |
 | `src/zaxy/query.py` | Hybrid retrieval router |
 | `src/zaxy/mcp_server.py` | MCP stdio/SSE server |

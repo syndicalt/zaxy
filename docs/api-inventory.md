@@ -111,7 +111,7 @@ operation gates.
 | Neo4j backend | `Beta` | Optional sidecar and control backend. |
 | Embedded graph backend | `Beta` | Default sidecar-free runtime path. |
 | pgGraph and LatticeDB adapters | `Experimental` | Benchmark candidates, not default release promises. |
-| Direct Cypher/Kuzu implementation helpers | `Internal` | Backend internals may change without public migration guarantees. |
+| Direct Cypher/LadybugDB implementation helpers | `Internal` | Backend internals may change without public migration guarantees. |
 
 ## Benchmark Artifact Schemas
 

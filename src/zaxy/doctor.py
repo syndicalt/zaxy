@@ -79,6 +79,7 @@ def run_doctor(
         _check_embedded_mcp_runtime(active),
         _check_projection_backend(active),
         _check_projection_freshness(active),
+        _check_projection_backup_artifacts(active),
         _check_production(active),
     ]
     return {
@@ -359,12 +360,12 @@ def _embedded_vector_version_counts(
     """Sample active embedded Entity rows and count vectors per version tag."""
     import json
 
-    import kuzu
+    import ladybug
 
     from zaxy.embedded_graph_store import _is_missing_projection_table_error
 
-    database = kuzu.Database(str(projection_path), read_only=True)
-    connection = kuzu.Connection(database)
+    database = ladybug.Database(str(projection_path), read_only=True)
+    connection = ladybug.Connection(database)
     try:
         result = connection.execute(
             "MATCH (e:Entity) "
@@ -1012,6 +1013,39 @@ def _check_neo4j(settings: Settings) -> dict[str, str]:
         "status": "warning",
         "message": f"Neo4j is configured at {settings.neo4j_uri}; reachability not checked",
         "action": "Run zaxy status to test a live graph connection.",
+    }
+
+
+def _check_projection_backup_artifacts(settings: Settings) -> dict[str, Any]:
+    """Report leftover pre-LadybugDB projection backups from the 2.3 engine swap.
+
+    When the store first opens a projection written by the pre-fork Kuzu
+    engine, the unreadable file is moved aside to ``<path>.pre-ladybug.bak``
+    (never deleted) and the projection is rebuilt from the Eventloom log.
+    The backup is purely a safety net; once the rebuilt projection is
+    verified, it is dead weight worth flagging.
+    """
+    from zaxy.embedded_graph_store import pre_ladybug_backup_paths
+
+    backups = pre_ladybug_backup_paths(Path(settings.embedded_graph_path))
+    if not backups:
+        return {
+            "name": "projection_backup_artifacts",
+            "status": "ok",
+            "message": "no pre-LadybugDB projection backups present",
+        }
+    rendered = ", ".join(str(path) for path in backups)
+    return {
+        "name": "projection_backup_artifacts",
+        "status": "warning",
+        "message": (
+            f"pre-LadybugDB projection backup present: {rendered}; the active projection "
+            "was rebuilt for the LadybugDB storage format and the backup is no longer read"
+        ),
+        "action": (
+            "Verify the rebuilt projection (zaxy status, or zaxy reproject to replay full "
+            "history), then delete the .pre-ladybug.bak file(s) to reclaim the space."
+        ),
     }
 
 

@@ -337,7 +337,7 @@ zaxy graph-scale-lanes --lanes all
 - **Vector-scale lane**: builds deterministic synthetic corpora directly
   against `EmbeddedGraphStore` (default sizes `1000,10000`; `100000` opt-in
   via `--scale-sizes`) and measures, per size, the exact float64 path, the
-  Kuzu-native HNSW path (with a lowered `vector_ann_threshold`), and the
+  engine-native (LadybugDB) HNSW path (with a lowered `vector_ann_threshold`), and the
   int8-quantized path: recall@10 versus the exact ground truth, p50/p95 query
   latency, resident index bytes, and the exact matrix's byte-budget fraction
   against the store's vector-cache ceiling. The lane lowers the count
@@ -365,7 +365,7 @@ zaxy graph-scale-lanes --lanes all
   high-dimension gate corpus, since hash value distributions are
   adversarially tie-dense at high dimension). Corpus hashes, exact/quantized
   recall (both metrics), bytes, and byte budgets are two-run reproducible;
-  ANN recall is reported under `measurements` because Kuzu's HNSW graph
+  ANN recall is reported under `measurements` because the engine's HNSW graph
   construction is not run-to-run reproducible, and all timings are
   environment-dependent. The roadmap exit criterion (>= 0.95 tie-aware
   recall@10 with latency and byte improvements) is defined at 10^5 vectors;

@@ -9,7 +9,7 @@ secrets in environment dumps.
 Projection settings are `PROJECTION_BACKEND`, `EMBEDDED_GRAPH_PATH`,
 `LATTICEDB_PATH`, `PGGRAPH_DSN`, and the Neo4j settings used only when
 `PROJECTION_BACKEND=neo4j`. The default backend is `embedded`, which stores the
-repo-local Kuzu projection at `.eventloom/projections/embedded.kuzu` and does
+repo-local LadybugDB projection at `.eventloom/projections/embedded.kuzu` and does
 not start Docker or require a graph endpoint.
 
 Neo4j settings are `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`,
@@ -73,7 +73,7 @@ migrates stale-version vectors to the active provider.
 ANN engagement is a two-clause rule since 2.2, gated by a dimension ceiling.
 A (session, version) vector scope whose dimension is at or below
 `VECTOR_ANN_MAX_DIMENSION` (default `64`) switches from the exact dense
-matrix to a Kuzu-native HNSW index when **(a)** the scope's vector count
+matrix to an engine-native (LadybugDB) HNSW index when **(a)** the scope's vector count
 reaches `VECTOR_ANN_THRESHOLD` (default `100000`), or **(b)** the scope's
 exact float64 matrix (count × dimension × 8 bytes) would exceed the 256 MiB
 vector index cache byte budget. Scopes above the dimension ceiling always
@@ -202,7 +202,7 @@ scripts/release-check.sh --root .
 
 The deployment validator checks production mode, selected sidecar TLS posture,
 remote MCP auth, admin-token configuration, and secret-file permissions. Embedded
-Kuzu production deployments do not need Neo4j certificate material unless
+LadybugDB production deployments do not need Neo4j certificate material unless
 `PROJECTION_BACKEND=neo4j` is selected. The full release gate also runs tests,
 package validation, and documentation validation. See
 [deployment.md](deployment.md), [security.md](security.md), and

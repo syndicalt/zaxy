@@ -182,8 +182,8 @@ def test_build_projection_store_requires_embedded_graph_path() -> None:
 
 
 @pytest.mark.asyncio
-async def test_embedded_store_missing_kuzu_error_points_to_core_install(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Embedded Kuzu is a core dependency, so remediation should not point to a redundant extra."""
+async def test_embedded_store_missing_engine_error_points_to_core_install(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Embedded LadybugDB is a core dependency, so remediation should not point to a redundant extra."""
     monkeypatch.setattr("zaxy.embedded_graph_store.importlib.util.find_spec", lambda name: None)
     store = EmbeddedGraphStore(tmp_path / "embedded.kuzu")
 

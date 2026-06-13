@@ -1,6 +1,6 @@
 [project]
 name = "zaxy-memory"
-version = "2.2.0"
+version = "2.3.0"
 description = "Coordinator memory for auditable multi-agent projects"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -23,7 +23,7 @@ keywords = [
     "embedded-memory",
     "event-sourcing",
     "knowledge-graph",
-    "kuzu",
+    "ladybugdb",
     "local-first",
     "mcp",
     "multi-agent",
@@ -39,7 +39,13 @@ dependencies = [
     "PyJWT[crypto]>=2.8.0",
     "tomlkit>=0.13.0",
     "PyYAML>=6.0.0",
-    "kuzu>=0.11.0",
+    # Exact pin, deliberately: LadybugDB is the maintained fork of the archived
+    # Kuzu engine, but it is a bus-factor-1 project with monthly releases and
+    # early dialect divergence; every defect verdict and lane number in
+    # docs/research/artifacts/2-3-research/ was verified against exactly this
+    # version. Bump only with a fresh workaround-matrix and lane rerun.
+    # (Pin the `ladybug` name, never the stale pre-rename `real-ladybug`.)
+    "ladybug==0.17.1",
     "numpy>=1.26.0",
 ]
 
@@ -191,5 +197,5 @@ check_untyped_defs = true
 show_error_codes = true
 
 [[tool.mypy.overrides]]
-module = ["pathlight", "psycopg", "psycopg.rows", "pyarrow", "pyarrow.parquet"]
+module = ["pathlight", "psycopg", "psycopg.rows", "pyarrow"]
 ignore_missing_imports = true

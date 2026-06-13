@@ -1,7 +1,8 @@
 """Embedded graph projection backend.
 
-This module owns the zero-friction local graph runtime. The Kuzu adapter is
-exposed through the ProjectionStore contract so local default deployments and
+This module owns the zero-friction local graph runtime. The LadybugDB adapter
+(LadybugDB is the maintained fork of the archived Kuzu engine) is exposed
+through the ProjectionStore contract so local default deployments and
 same-harness backend comparisons share the same retrieval surface.
 """
 
@@ -14,9 +15,9 @@ import json
 import math
 import re
 import shutil
-import tempfile
 from collections import Counter
 from collections.abc import Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
@@ -25,6 +26,9 @@ import numpy as np
 import numpy.typing as npt
 
 from zaxy.graph_walk import AdjacencySnapshot
+from zaxy.log import get_logger
+
+logger = get_logger("embedded_graph_store")
 
 _CacheValue = TypeVar("_CacheValue")
 _TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
@@ -104,10 +108,17 @@ _ANN_INSERT_BATCH_SIZE = 1024
 # in the 9-10% band.
 _ANN_DELTA_REBUILD_FRACTION = 0.1
 
-# Kuzu 0.11.3 segfaults (rather than raising) when a query references an
-# unbound $parameter, so every store query is checked against this pattern at
-# the single execution choke point before it reaches the runtime.
+# LadybugDB 0.17.1 silently evaluates an unbound $parameter to NULL — the
+# query "succeeds" with wrong answers (Kuzu 0.11.3 segfaulted instead, which
+# was at least loud). Every store query is therefore checked against this
+# pattern at the single execution choke point before it reaches the runtime.
 _QUERY_PARAMETER_RE = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)")
+
+# LadybugDB refuses database files written by the pre-fork Kuzu engine with
+# this message; the projection is derived state, so the incompatible file is
+# moved aside (never deleted) and the store starts fresh for a replay rebuild.
+_INCOMPATIBLE_STORAGE_MARKER = "not a valid Lbug database file"
+_PRE_LADYBUG_BACKUP_SUFFIX = ".pre-ladybug.bak"
 
 
 @dataclass(frozen=True)
@@ -142,7 +153,7 @@ class _QuantizedVectorGroup:
 
 @dataclass(frozen=True)
 class _AnnVectorGroup:
-    """Kuzu-native HNSW-backed group; vectors are resident in the database."""
+    """Engine-native HNSW-backed group; vectors are resident in the database."""
 
     table_name: str
     index_name: str
@@ -164,7 +175,7 @@ class _AnnGenerationState:
     generation table holds, so a rebuild can prove the new corpus is an
     unchanged extension before riding the incremental insert path. The swap
     to a fresh generation replaces this record atomically (single assignment)
-    before superseded generations are emptied.
+    before superseded generations are dropped.
     """
 
     table_name: str
@@ -194,7 +205,7 @@ class _TraversalIndex:
 
 
 class EmbeddedGraphStore:
-    """Kuzu-backed embedded projection store."""
+    """LadybugDB-backed embedded projection store."""
 
     def __init__(
         self,
@@ -235,14 +246,48 @@ class EmbeddedGraphStore:
         self._bulk_active_state_loaded_sessions: set[str] = set()
 
     async def connect(self) -> None:
-        """Open embedded graph resources."""
-        if importlib.util.find_spec("kuzu") is None:
+        """Open embedded graph resources.
+
+        A projection file written by the pre-fork Kuzu engine is refused by
+        LadybugDB (the storage formats are incompatible). Projections are
+        derived state, so the incompatible artifact is moved aside to
+        ``<path>.pre-ladybug.bak`` — never deleted — and a fresh store opens
+        in its place; the projection content is rebuilt from the Eventloom
+        log through the existing replay path (``zaxy reproject`` for full
+        history; new checkins project incrementally as always).
+        """
+        if importlib.util.find_spec("ladybug") is None:
             raise RuntimeError('embedded graph backend requires `pip install "zaxy-memory"`')
-        import kuzu
+        import ladybug
 
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._database = kuzu.Database(str(self.path))
-        self._connection = kuzu.Connection(self._database)
+        try:
+            self._database = ladybug.Database(str(self.path))
+        except RuntimeError as exc:
+            if not _is_incompatible_storage_error(exc):
+                raise
+            backup_path = _move_incompatible_store_aside(self.path)
+            logger.warning(
+                "embedded projection at %s was written by the pre-fork Kuzu engine and is "
+                "not readable by LadybugDB; it was moved aside to %s (no data deleted) and "
+                "a fresh projection store was created. Rebuild full history with "
+                "`zaxy reproject <eventloom log>`; the backup is safe to delete once the "
+                "rebuilt projection is verified (zaxy doctor reports it until then).",
+                self.path,
+                backup_path,
+            )
+            self._database = ladybug.Database(str(self.path))
+        self._connection = ladybug.Connection(self._database)
+        # The vector extension is statically linked but no longer auto-loaded
+        # (Kuzu 0.11.3 auto-registered it; LadybugDB requires an explicit LOAD
+        # per connection — verified offline-safe, no INSTALL download needed).
+        # Failure degrades the ANN capability probe instead of failing open().
+        try:
+            self._execute("LOAD vector")
+        except RuntimeError:
+            self._ann_supported = False
+        else:
+            self._ann_supported = None
         self._clear_all_caches()
 
     async def close(self) -> None:
@@ -390,14 +435,14 @@ class EmbeddedGraphStore:
         )
 
     async def begin_bulk_projection(self) -> None:
-        """Begin an explicit Kuzu write transaction for bulk Eventloom replay."""
+        """Begin an explicit embedded-engine write transaction for bulk Eventloom replay."""
         if self._bulk_projection_open:
             return
         self._execute("BEGIN TRANSACTION")
         self._bulk_projection_open = True
 
     async def commit_bulk_projection(self) -> None:
-        """Commit an explicit Kuzu write transaction for bulk Eventloom replay."""
+        """Commit an explicit embedded-engine write transaction for bulk Eventloom replay."""
         if not self._bulk_projection_open:
             return
         self._execute("COMMIT")
@@ -411,7 +456,7 @@ class EmbeddedGraphStore:
         self._bulk_active_state_loaded_sessions = set()
 
     async def rollback_bulk_projection(self) -> None:
-        """Rollback an explicit Kuzu write transaction for bulk Eventloom replay."""
+        """Rollback an explicit embedded-engine write transaction for bulk Eventloom replay."""
         if not self._bulk_projection_open:
             return
         self._execute("ROLLBACK")
@@ -1064,7 +1109,7 @@ class EmbeddedGraphStore:
         """Search by vector similarity within one embedding version group.
 
         All groups share one strategy pipeline: candidate selection (exact
-        dense matrix, Kuzu HNSW, or int8 dot products) followed by an exact
+        dense matrix, engine-native HNSW, or int8 dot products) followed by an exact
         float64 rerank for the approximate selectors. Dense selection already
         scores exactly, so it returns directly with ``exact=True``; the
         approximate paths stay ``exact=False`` because their candidate set is
@@ -1294,7 +1339,7 @@ class EmbeddedGraphStore:
         vectors: list[npt.NDArray[np.float64]],
         entity_indexes: list[int],
     ) -> _AnnVectorGroup | None:
-        """Sync this group into a Kuzu HNSW shadow table, if the runtime supports it.
+        """Sync this group into an HNSW shadow table, if the runtime supports it.
 
         Each (session, version, dimension) scope owns dedicated shadow tables
         so queries pass the table name straight to ``QUERY_VECTOR_INDEX`` —
@@ -1307,24 +1352,25 @@ class EmbeddedGraphStore:
         - **Small extension** (digest-verified prefix, delta at most
           ``_ANN_DELTA_REBUILD_FRACTION`` of the resident count): insert only
           the new rows into the live mutable index — inserts are reflected in
-          queries on the pinned Kuzu 0.11.3.
+          queries on LadybugDB 0.17.1.
         - **Anything else**: full rebuild into a fresh generation table via
-          ``COPY FROM`` a parquet tempfile (100x faster than batched UNWIND;
-          falls back to UNWIND without pyarrow), index built after the load,
-          then an atomic state swap.
+          ``COPY FROM`` an in-memory Arrow table (the COPY family measured
+          ~100x faster than batched UNWIND; falls back to UNWIND without
+          pyarrow), index built after the load, then an atomic state swap.
 
-        A fresh generation's HNSW index only ever sees inserts: mutating a
-        live index in place (delete + reinsert) silently breaks subsequent
-        direct-table searches on the pinned Kuzu 0.11.3, and the upstream
-        drop paths are closed too (``DROP_VECTOR_INDEX`` leaves an
-        un-checkpointed index removal per kuzu#6040, ``DROP TABLE`` is
-        rejected by the binder while an index references the table — both
-        re-verified against kuzu 0.11.3). Superseded generations are
-        therefore emptied — never queried again, near-zero load cost at
-        database open — which is the maximum reclaim the frozen runtime
-        allows.
+        A fresh generation's HNSW index only ever sees inserts. Generations
+        remain the swap mechanism for atomicity (queries only ever hit a
+        fully built table) and because one residual engine hole persists on
+        LadybugDB 0.17.1: a single-statement delete-ALL under a live index
+        permanently breaks subsequent index searches (re-verified), so a
+        live generation is never bulk-emptied. Superseded generations are
+        dropped outright — ``DROP_VECTOR_INDEX`` first, then ``DROP TABLE``,
+        because the binder still rejects dropping a table that an index
+        references — for full space reclaim; the kuzu#6040 drop-index
+        metadata corruption is fixed in the fork and re-verified through
+        this store's own rebuild cycle.
         """
-        if not self._kuzu_vector_index_supported():
+        if not self._vector_index_supported():
             return None
         entity_rows = np.asarray(entity_indexes, dtype=np.int64)
         matrix = np.ascontiguousarray(np.vstack(vectors), dtype=np.float32)
@@ -1376,7 +1422,8 @@ class EmbeddedGraphStore:
         self._ann_bulk_load(table_name, entity_rows, matrix)
         # The index is created after the bulk load: building over resident
         # rows is the documented fast path, and bulk mutation under a live
-        # index is the historically buggiest path of the frozen runtime.
+        # index remains the engine lineage's historically buggiest path
+        # (SET-on-indexed is still rejected; delete-all still breaks it).
         self._ensure_ann_index(table_name, index_name)
         self._ann_generation_states[scope_key] = _AnnGenerationState(
             table_name=table_name,
@@ -1386,10 +1433,29 @@ class EmbeddedGraphStore:
             content_digest=_ann_content_digest(entity_rows, matrix),
         )
         for old_generation in previous_generations:
-            old_table = f"{scope_prefix}{old_generation}"
-            self._execute(f"MATCH (n:{old_table}) DETACH DELETE n")
-            self._ann_indexed_tables.discard(old_table)
+            self._drop_ann_generation(
+                f"{scope_prefix}{old_generation}",
+                f"zaxy_vector_ann_{dimension}_{scope}_g{old_generation}",
+            )
         return group_for(table_name, index_name)
+
+    def _drop_ann_generation(self, table_name: str, index_name: str) -> None:
+        """Drop one superseded shadow generation (index first, then table).
+
+        Full space reclaim: LadybugDB fixed the kuzu#6040 DROP_VECTOR_INDEX
+        metadata corruption, so superseded generations no longer linger as
+        emptied husks. ``DROP TABLE`` is still binder-rejected while an index
+        references the table, so the index is dropped first; a generation
+        whose index build was interrupted has no index to drop and falls
+        through the missing-index guard to the table drop.
+        """
+        try:
+            self._execute(f"CALL DROP_VECTOR_INDEX('{table_name}', '{index_name}')")
+        except RuntimeError as exc:
+            if "have an index" not in str(exc):
+                raise
+        self._execute(f"DROP TABLE {table_name}")
+        self._ann_indexed_tables.discard(table_name)
 
     def _ann_bulk_load(
         self,
@@ -1397,38 +1463,28 @@ class EmbeddedGraphStore:
         entity_rows: npt.NDArray[np.int64],
         matrix: npt.NDArray[np.float32],
     ) -> None:
-        """Bulk load one shadow generation, preferring ``COPY FROM`` parquet.
+        """Bulk load one shadow generation, preferring in-memory Arrow ``COPY``.
 
         ``COPY FROM`` is the documented bulk path and measured ~100x faster
-        than batched UNWIND at 10k vectors. The data must round-trip through
-        a parquet tempfile: ``COPY FROM`` an in-memory Arrow table with a
-        fixed-size-list column segfaults the pinned Kuzu 0.11.3. pyarrow is a
-        transitive (not guaranteed) dependency, so its absence degrades to
-        the batched-UNWIND load rather than failing.
+        than batched UNWIND at 10k vectors. Kuzu 0.11.3 segfaulted on a COPY
+        from an in-memory Arrow table with a fixed-size-list column, forcing
+        a parquet-tempfile round-trip; LadybugDB 0.17.1 fixed that (verified
+        through this exact path and schema), so the data now flows straight
+        from the Arrow table with no disk round-trip. pyarrow is a transitive
+        (not guaranteed) dependency, so its absence degrades to the
+        batched-UNWIND load rather than failing.
         """
         if importlib.util.find_spec("pyarrow") is None:
             self._ann_insert_rows(table_name, entity_rows, matrix)
             return
         import pyarrow as pa
-        import pyarrow.parquet as pq
 
-        temp_dir = tempfile.mkdtemp(prefix="zaxy-ann-shadow-")
-        try:
-            parquet_path = Path(temp_dir) / "shadow.parquet"
-            vec_column = pa.FixedSizeListArray.from_arrays(
-                pa.array(matrix.reshape(-1), type=pa.float32()),
-                matrix.shape[1],
-            )
-            # no-untyped-call fires only where pyarrow is installed; unused-ignore
-            # covers environments (CI) where it is absent and treated as Any.
-            pq.write_table(  # type: ignore[no-untyped-call, unused-ignore]
-                pa.table({"entity_row": pa.array(entity_rows, type=pa.int64()), "vec": vec_column}),
-                str(parquet_path),
-            )
-            escaped_path = str(parquet_path).replace("\\", "\\\\").replace("'", "\\'")
-            self._execute(f"COPY {table_name} FROM '{escaped_path}'")
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
+        vec_column = pa.FixedSizeListArray.from_arrays(
+            pa.array(matrix.reshape(-1), type=pa.float32()),
+            matrix.shape[1],
+        )
+        arrow_table = pa.table({"entity_row": pa.array(entity_rows, type=pa.int64()), "vec": vec_column})
+        self._execute(f"COPY {table_name} FROM $arrow_rows", {"arrow_rows": arrow_table})
 
     def _ann_insert_rows(
         self,
@@ -1479,17 +1535,39 @@ class EmbeddedGraphStore:
                 raise
         self._ann_indexed_tables.add(table_name)
 
-    def _kuzu_vector_index_supported(self) -> bool:
-        """Probe once whether the pinned Kuzu runtime ships the vector index."""
+    def _vector_index_supported(self) -> bool:
+        """Probe once per connection whether the runtime ships the vector index.
+
+        ``connect()`` issues the explicit ``LOAD vector`` the LadybugDB
+        runtime requires (the extension is statically linked but, unlike
+        Kuzu 0.11.3, not auto-registered) and resets this probe, so the
+        cached answer always describes the live connection. The probe uses
+        the actual vector-index operation instead of catalog introspection:
+        LadybugDB wheels can differ in how table functions appear in
+        ``SHOW_FUNCTIONS()``, but Zaxy only needs to know whether a shadow
+        vector table can build and drop an index.
+        """
         if self._ann_supported is None:
+            probe_table = "zaxy_vector_capability_probe"
+            probe_index = "zaxy_vector_capability_probe_idx"
             try:
-                rows = self._execute(
-                    "CALL SHOW_FUNCTIONS() WHERE name = 'CREATE_VECTOR_INDEX' RETURN name"
-                ).get_all()
+                self._execute(
+                    f"CREATE NODE TABLE IF NOT EXISTS {probe_table}("
+                    "id INT64, vec FLOAT[2], PRIMARY KEY(id))"
+                )
+                self._execute(
+                    f"CALL CREATE_VECTOR_INDEX('{probe_table}', '{probe_index}', 'vec', metric := 'cosine')"
+                )
             except RuntimeError:
                 self._ann_supported = False
+                with suppress(RuntimeError):
+                    self._execute(f"DROP TABLE {probe_table}")
             else:
-                self._ann_supported = bool(rows)
+                self._ann_supported = True
+                with suppress(RuntimeError):
+                    self._execute(f"CALL DROP_VECTOR_INDEX('{probe_table}', '{probe_index}')")
+                with suppress(RuntimeError):
+                    self._execute(f"DROP TABLE {probe_table}")
         return self._ann_supported
 
     async def re_embed_session(
@@ -1501,7 +1579,7 @@ class EmbeddedGraphStore:
     ) -> dict[str, int]:
         """Re-embed projected entity vectors onto the provider's version tag.
 
-        This mutates only projection state (Kuzu Entity rows); Eventloom events
+        This mutates only projection state (projected Entity rows); Eventloom events
         are never touched. Both active and historical entity versions are
         migrated so temporal vector search stays version-consistent.
         """
@@ -1916,10 +1994,14 @@ class EmbeddedGraphStore:
     def _execute(self, query: str, parameters: dict[str, Any] | None = None) -> Any:
         """Execute one store query with guaranteed parameter binding.
 
-        This is the single query-execution choke point: Kuzu 0.11.3 segfaults
-        — it does not raise — when a query references an unbound
-        ``$parameter``, so every ``$placeholder`` must arrive with a binding
-        before the statement reaches the runtime.
+        This is the single query-execution choke point: LadybugDB 0.17.1
+        silently evaluates an unbound ``$parameter`` to NULL — the query
+        "succeeds" with wrong answers, strictly more dangerous than the
+        Kuzu 0.11.3 segfault this guard was built for — so every
+        ``$placeholder`` must arrive with a binding before the statement
+        reaches the runtime. JSON-shaped string bindings are additionally
+        rewritten to literals here because the runtime corrupts them (see
+        :func:`_armor_json_shaped_string_parameters`).
         """
         placeholders = set(_QUERY_PARAMETER_RE.findall(query))
         missing = placeholders.difference(parameters or ())
@@ -1928,6 +2010,7 @@ class EmbeddedGraphStore:
         connection = self._require_connection()
         if parameters is None:
             return connection.execute(query)
+        query, parameters = _armor_json_shaped_string_parameters(query, parameters)
         return connection.execute(query, parameters)
 
     def _active_node_key(self, session_id: str, entity_type: str, name: str) -> str | None:
@@ -2182,6 +2265,90 @@ def _is_missing_projection_table_error(exc: RuntimeError) -> bool:
     message = str(exc)
     missing_tables = ("Table Entity does not exist", "Table Event does not exist", "Table NEXT_EVENT does not exist")
     return any(table in message for table in missing_tables)
+
+
+def _engine_string_literal(value: str) -> str:
+    """Render a python string as an engine string literal, byte-faithfully."""
+    return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+
+def _armor_json_shaped_string_parameters(
+    query: str,
+    parameters: dict[str, Any],
+) -> tuple[str, dict[str, Any]]:
+    """Inline JSON-shaped string parameters as escaped string literals.
+
+    LadybugDB 0.17.1's parameter binding silently converts a bound string
+    whose first character is ``{`` or ``[`` — and that parses as JSON — into
+    a STRUCT/LIST value, so the engine stores its own re-rendering instead of
+    the original bytes (``'{"a": 1}'`` comes back as ``'{a: 1}'``; verified
+    write-side via ``size()``). That corrupts ``properties_json``,
+    ``evidence_json``, and any user text of that shape. Until the fork
+    offers a raw-string binding, every string parameter the sniffer could
+    touch is inlined as an escaped string literal instead — the same
+    technique the binding library itself uses for its ``to_json()``
+    rewriting — which round-trips byte-exactly (verified for backslashes,
+    quotes, raw newlines, unicode, and nested JSON payloads).
+    """
+    sniffable = {
+        key: value
+        for key, value in parameters.items()
+        if isinstance(value, str) and value[:1] in ("{", "[")
+    }
+    if not sniffable:
+        return query, parameters
+    remaining = dict(parameters)
+    for key, value in sniffable.items():
+        literal = _engine_string_literal(value)
+
+        def _as_literal(_match: re.Match[str], _literal: str = literal) -> str:
+            # A callable replacement keeps backslashes in the literal verbatim.
+            return _literal
+
+        query = re.sub(rf"\${re.escape(key)}\b", _as_literal, query)
+        del remaining[key]
+    return query, remaining
+
+
+def _is_incompatible_storage_error(exc: RuntimeError) -> bool:
+    """Match LadybugDB's refusal of a database file it cannot read.
+
+    LadybugDB 0.17.1 raises ``RuntimeError: Runtime exception: Unable to open
+    database. The file is not a valid Lbug database file!`` for a Kuzu-format
+    (or otherwise foreign) file — verified against a real kuzu-0.11.3
+    artifact. Genuinely corrupted files match too; moving aside and rebuilding
+    from the Eventloom log is the correct remediation for both.
+    """
+    return _INCOMPATIBLE_STORAGE_MARKER in str(exc)
+
+
+def pre_ladybug_backup_paths(path: Path) -> list[Path]:
+    """Return existing pre-LadybugDB backup artifacts for one projection path.
+
+    Covers the primary ``<name>.pre-ladybug.bak`` artifact plus its ``.wal``
+    sibling and any numbered variants from repeated migrations.
+    """
+    if not path.parent.exists():
+        return []
+    return sorted(path.parent.glob(f"{path.name}{_PRE_LADYBUG_BACKUP_SUFFIX}*"))
+
+
+def _move_incompatible_store_aside(path: Path) -> Path:
+    """Move an unreadable projection artifact (and its WAL) to a .bak path.
+
+    User data is never deleted: if a backup from a previous migration already
+    occupies the .bak name, a numbered suffix is used instead of overwriting.
+    """
+    backup_path = path.with_name(path.name + _PRE_LADYBUG_BACKUP_SUFFIX)
+    counter = 1
+    while backup_path.exists() or backup_path.with_name(backup_path.name + ".wal").exists():
+        backup_path = path.with_name(f"{path.name}{_PRE_LADYBUG_BACKUP_SUFFIX}.{counter}")
+        counter += 1
+    path.replace(backup_path)
+    wal_path = path.with_name(path.name + ".wal")
+    if wal_path.exists():
+        wal_path.replace(backup_path.with_name(backup_path.name + ".wal"))
+    return backup_path
 
 
 def _row_to_entity(row: list[Any]) -> GraphEntity:

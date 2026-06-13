@@ -972,7 +972,7 @@ def test_backend_shootout_rejects_empty_expected_terms(tmp_path: Path) -> None:
     assert "expected_terms must contain non-empty strings" in result.stderr
 
 
-@pytest.mark.skipif(importlib.util.find_spec("kuzu") is None, reason="kuzu is not installed")
+@pytest.mark.skipif(importlib.util.find_spec("ladybug") is None, reason="ladybug is not installed")
 def test_backend_shootout_measures_real_embedded_dashboard_graph_load(tmp_path: Path) -> None:
     """Dashboard graph load metrics should come from the dashboard provider, not projection-status proxies."""
     eventloom = tmp_path / ".eventloom"
@@ -6162,7 +6162,7 @@ def test_backend_shootout_graph_backend_error_preserves_contract_rows(
     assert all(run.query_results == [] for run in runs)
 
 
-@pytest.mark.skipif(importlib.util.find_spec("kuzu") is None, reason="kuzu is not installed")
+@pytest.mark.skipif(importlib.util.find_spec("ladybug") is None, reason="ladybug is not installed")
 def test_backend_shootout_embedded_accepts_single_eventloom_file(tmp_path: Path) -> None:
     """Graph backend shootouts should honor the documented JSONL-file Eventloom input."""
     log_path = tmp_path / "agent-1.jsonl"
@@ -6205,7 +6205,7 @@ def test_backend_shootout_embedded_accepts_single_eventloom_file(tmp_path: Path)
     assert summary["status"] == "ok"
 
 
-@pytest.mark.skipif(importlib.util.find_spec("kuzu") is None, reason="kuzu is not installed")
+@pytest.mark.skipif(importlib.util.find_spec("ladybug") is None, reason="ladybug is not installed")
 def test_backend_shootout_embedded_reports_retrieve_and_answer_ready_contracts(tmp_path: Path) -> None:
     """Graph backend reports should separate retrieval quality from answer-ready assembly quality."""
     eventloom = tmp_path / ".eventloom"
@@ -6262,7 +6262,7 @@ def test_backend_shootout_embedded_reports_retrieve_and_answer_ready_contracts(t
     assert {summary["backend"] for summary in summaries} == {"embedded"}
 
 
-@pytest.mark.skipif(importlib.util.find_spec("kuzu") is None, reason="kuzu is not installed")
+@pytest.mark.skipif(importlib.util.find_spec("ladybug") is None, reason="ladybug is not installed")
 def test_backend_shootout_query_results_are_contract_scoped(tmp_path: Path) -> None:
     """Per-query diagnostics must not collapse retrieve and answer-ready contracts."""
     eventloom = tmp_path / ".eventloom"

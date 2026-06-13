@@ -178,7 +178,7 @@ _KEYWORD_STOP_WORDS = frozenset(
 class PgGraphStore:
     """Async PostgreSQL/pgGraph projection backend.
 
-    The implementation is intentionally experimental. Embedded Kuzu remains the
+    The implementation is intentionally experimental. Embedded LadybugDB remains the
     default backend, while pgGraph is available only for explicit sidecar
     experiments until this adapter passes the same gates.
     """

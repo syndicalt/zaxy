@@ -12,7 +12,7 @@ def test_readme_leads_with_coordinator_memory_positioning() -> None:
     assert text.startswith("# Zaxy\n\n**Production memory for agent teams that need receipts.**")
     assert "auditable project memory fabric" in text
     assert "Eventloom append-only JSONL as the source of truth" in text
-    assert "embedded Kuzu graph projection" in text
+    assert "embedded LadybugDB graph projection" in text
     intro = "\n".join(text.splitlines()[:10])
     assert "temporal knowledge graph fabric" not in intro
 

@@ -567,8 +567,8 @@ class TestFeelingOfKnowing:
         assert json_loads(result[0].text)["verdict"] == "likely"
 
     @pytest.mark.skipif(
-        importlib.util.find_spec("kuzu") is None,
-        reason="kuzu is not installed",
+        importlib.util.find_spec("ladybug") is None,
+        reason="ladybug is not installed",
     )
     async def test_end_to_end_against_real_embedded_projection(self, tmp_path: Path) -> None:
         """The accessor and handler agree against a real embedded projection."""

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import builtins
 import importlib.util
+import tempfile
 from collections import Counter
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -24,7 +27,29 @@ from zaxy.extract import ExtractedEdge, ExtractedEntity, ExtractionResult
 from zaxy.graph import GraphEntity
 from zaxy.graph_walk import AdjacencySnapshot
 
-pytestmark = pytest.mark.skipif(importlib.util.find_spec("kuzu") is None, reason="kuzu is not installed")
+pytestmark = pytest.mark.skipif(importlib.util.find_spec("ladybug") is None, reason="ladybug is not installed")
+
+
+@lru_cache(maxsize=1)
+def _native_vector_index_available() -> bool:
+    """Return whether this LadybugDB wheel exposes the native vector index."""
+    if importlib.util.find_spec("ladybug") is None:
+        return False
+    store = EmbeddedGraphStore(Path(tempfile.mkdtemp()) / "vector-probe.kuzu")
+    try:
+        asyncio.run(store.connect())
+        asyncio.run(store.init_schema())
+        return store._vector_index_supported()
+    except RuntimeError:
+        return False
+    finally:
+        asyncio.run(store.close())
+
+
+requires_native_vector_index = pytest.mark.skipif(
+    not _native_vector_index_available(),
+    reason="LadybugDB native vector index extension is not available in this environment",
+)
 
 
 class _FakeRows:
@@ -2594,6 +2619,7 @@ async def test_embedded_store_re_embed_session_requires_version_tag(tmp_path: Pa
 
 
 @pytest.mark.asyncio
+@requires_native_vector_index
 async def test_embedded_store_ann_search_matches_exact_above_threshold(tmp_path: Path) -> None:
     """Above the ANN threshold, HNSW search recall@10 must stay >= 0.95 vs exact."""
     dimension = 32
@@ -2640,6 +2666,7 @@ async def test_embedded_store_ann_search_matches_exact_above_threshold(tmp_path:
 
 
 @pytest.mark.asyncio
+@requires_native_vector_index
 async def test_embedded_store_ann_threshold_boundary_keeps_exact_path(tmp_path: Path) -> None:
     """Counts below the threshold stay exact; the threshold itself engages ANN.
 
@@ -2825,6 +2852,7 @@ def test_embedded_store_quantized_opt_in_is_orthogonal_to_dimension_ceiling() ->
 
 
 @pytest.mark.asyncio
+@requires_native_vector_index
 async def test_embedded_store_dimension_ceiling_boundary_selects_group_type(tmp_path: Path) -> None:
     """At the same engaged count, dim 64 builds the ANN group and dim 65 stays exact.
 
@@ -2902,6 +2930,7 @@ async def test_embedded_store_no_shadow_build_above_dimension_ceiling(tmp_path: 
 
 
 @pytest.mark.asyncio
+@requires_native_vector_index
 async def test_embedded_store_byte_budget_clause_builds_ann_group(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -3004,12 +3033,16 @@ async def test_embedded_store_ann_capability_probe_falls_back_to_exact(
 
     class NoVectorFunctionConnection:
         def execute(self, query: str, params: dict[str, object] | None = None) -> object:
-            if "SHOW_FUNCTIONS" in query:
+            if "CREATE NODE TABLE IF NOT EXISTS zaxy_vector_capability_probe" in query:
+                return _FakeRows([])
+            if "CALL CREATE_VECTOR_INDEX('zaxy_vector_capability_probe'" in query:
+                raise RuntimeError("vector index extension is unavailable")
+            if "DROP TABLE zaxy_vector_capability_probe" in query:
                 return _FakeRows([])
             raise AssertionError(f"unexpected query during capability probe: {query}")
 
     monkeypatch.setattr(store, "_connection", NoVectorFunctionConnection())
-    assert store._kuzu_vector_index_supported() is False
+    assert store._vector_index_supported() is False
 
     monkeypatch.setattr(store, "_connection", real_connection)
     store._current_entity_index_cache["agent-1"] = [
@@ -3027,6 +3060,61 @@ async def test_embedded_store_ann_capability_probe_falls_back_to_exact(
     await store.close()
 
 
+def test_embedded_store_ann_capability_probe_uses_real_vector_index_operation() -> None:
+    """The vector capability probe should verify the operation Zaxy depends on."""
+    store = EmbeddedGraphStore(Path("unused.kuzu"))
+
+    class VectorProbeConnection:
+        def __init__(self) -> None:
+            self.queries: list[str] = []
+
+        def execute(self, query: str, params: dict[str, object] | None = None) -> object:
+            assert params is None
+            self.queries.append(query)
+            return _FakeRows([])
+
+    connection = VectorProbeConnection()
+    store._connection = connection
+
+    assert store._vector_index_supported() is True
+    assert store._vector_index_supported() is True
+    assert connection.queries == [
+        "CREATE NODE TABLE IF NOT EXISTS zaxy_vector_capability_probe("
+        "id INT64, vec FLOAT[2], PRIMARY KEY(id))",
+        "CALL CREATE_VECTOR_INDEX('zaxy_vector_capability_probe', "
+        "'zaxy_vector_capability_probe_idx', 'vec', metric := 'cosine')",
+        "CALL DROP_VECTOR_INDEX('zaxy_vector_capability_probe', "
+        "'zaxy_vector_capability_probe_idx')",
+        "DROP TABLE zaxy_vector_capability_probe",
+    ]
+
+
+def test_embedded_store_ann_capability_probe_suppresses_cleanup_failures() -> None:
+    """Cleanup failures in transient probe artifacts must not disable the store."""
+    store = EmbeddedGraphStore(Path("unused.kuzu"))
+
+    class CleanupFailureConnection:
+        def __init__(self) -> None:
+            self.queries: list[str] = []
+
+        def execute(self, query: str, params: dict[str, object] | None = None) -> object:
+            assert params is None
+            self.queries.append(query)
+            if "DROP_VECTOR_INDEX" in query or query.startswith("DROP TABLE "):
+                raise RuntimeError("probe artifact was already gone")
+            return _FakeRows([])
+
+    connection = CleanupFailureConnection()
+    store._connection = connection
+
+    assert store._vector_index_supported() is True
+    assert connection.queries[-2:] == [
+        "CALL DROP_VECTOR_INDEX('zaxy_vector_capability_probe', "
+        "'zaxy_vector_capability_probe_idx')",
+        "DROP TABLE zaxy_vector_capability_probe",
+    ]
+
+
 class _RecordingConnection:
     """Pass-through connection wrapper that records every executed query."""
 
@@ -3042,6 +3130,7 @@ class _RecordingConnection:
 
 
 @pytest.mark.asyncio
+@requires_native_vector_index
 async def test_embedded_store_ann_query_is_direct_table_without_projected_graph(tmp_path: Path) -> None:
     """ANN search hits the per-scope shadow table directly with the configured efs.
 
@@ -3081,6 +3170,7 @@ async def test_embedded_store_ann_query_is_direct_table_without_projected_graph(
 
 
 @pytest.mark.asyncio
+@requires_native_vector_index
 async def test_embedded_store_ann_efs_override_reaches_query(tmp_path: Path) -> None:
     """The efs override is inlined into the HNSW query, floored at the oversampled k."""
     dimension = 8
@@ -3114,6 +3204,7 @@ async def test_embedded_store_ann_efs_override_reaches_query(tmp_path: Path) -> 
 
 
 @pytest.mark.asyncio
+@requires_native_vector_index
 async def test_embedded_store_ann_rerank_matches_exact_when_oversample_covers_corpus(tmp_path: Path) -> None:
     """When k*oversample spans the corpus, the float64 rerank reproduces exact order."""
     dimension = 16
@@ -3154,14 +3245,15 @@ async def test_embedded_store_ann_rerank_matches_exact_when_oversample_covers_co
 
 
 @pytest.mark.asyncio
+@requires_native_vector_index
 async def test_embedded_store_ann_rebuild_writes_fresh_generation(tmp_path: Path) -> None:
-    """Rebuilds write a fresh insert-only generation table and empty the old one.
+    """Rebuilds write a fresh insert-only generation table and drop the old one.
 
-    In-place delete + reinsert under a live HNSW index silently breaks
-    subsequent direct-table searches on the pinned Kuzu 0.11.3, and both drop
-    paths are closed upstream (DROP_VECTOR_INDEX corrupts metadata, DROP TABLE
-    is rejected while indexed), so generation swap + emptying is the only
-    rebuild cycle the frozen runtime supports.
+    Generations remain the swap mechanism (queries only ever hit a fully
+    built table, and single-statement delete-ALL under a live index still
+    breaks searches on LadybugDB 0.17.1), but superseded generations are now
+    dropped outright for full space reclaim: the fork fixed the kuzu#6040
+    DROP_VECTOR_INDEX metadata corruption, verified through this very cycle.
     """
     dimension = 8
     store = EmbeddedGraphStore(
@@ -3191,8 +3283,9 @@ async def test_embedded_store_ann_rebuild_writes_fresh_generation(tmp_path: Path
 
     rebuilt = await store.search_vector(second_vectors[0], limit=3, session_id="agent-1")
     assert rebuilt and all(result.entity.name.startswith("second-") for result in rebuilt)
-    old_rows = store._execute(f"MATCH (n:{first_group.table_name}) RETURN count(n)").get_all()
-    assert old_rows == [[0]]
+    table_names = {str(row[0]) for row in store._execute("CALL SHOW_TABLES() RETURN name").get_all()}
+    assert first_group.table_name not in table_names
+    assert second_group.table_name in table_names
 
     # A second session above the threshold owns its own shadow scope.
     store._current_entity_index_cache["agent-2"] = [
@@ -3207,11 +3300,12 @@ async def test_embedded_store_ann_rebuild_writes_fresh_generation(tmp_path: Path
 
 
 @pytest.mark.asyncio
+@requires_native_vector_index
 async def test_embedded_store_ann_copy_and_unwind_loads_are_equivalent(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The COPY-from-parquet load and the UNWIND fallback must serve identical results.
+    """The in-memory Arrow COPY load and the UNWIND fallback must serve identical results.
 
     Requires pyarrow (a transitive, not guaranteed, dependency): without it the
     COPY arm degrades to the UNWIND fallback and the comparison is vacuous.
@@ -3280,13 +3374,14 @@ async def test_embedded_store_ann_copy_and_unwind_loads_are_equivalent(
 
 
 @pytest.mark.asyncio
+@requires_native_vector_index
 async def test_embedded_store_ann_generation_swap_stress(tmp_path: Path) -> None:
     """Consecutive rebuilds must swap generations cleanly, surviving reopen.
 
     Three full corpus replacements in one process, then a reopen (which
     drops the in-memory generation state) followed by another rebuild: every
     stage must answer queries from the fresh generation only, and every
-    superseded generation must be left empty.
+    superseded generation table must be dropped (full space reclaim).
     """
     dimension = 8
     path = tmp_path / "embedded.kuzu"
@@ -3314,9 +3409,9 @@ async def test_embedded_store_ann_generation_swap_stress(tmp_path: Path) -> None
         assert results and all(
             result.entity.name.startswith(f"round{round_index}-") for result in results
         )
+        table_names = {str(row[0]) for row in store._execute("CALL SHOW_TABLES() RETURN name").get_all()}
         for old_table in seen_tables[:-1]:
-            counts = store._execute(f"MATCH (n:{old_table}) RETURN count(n)").get_all()
-            assert counts == [[0]]
+            assert old_table not in table_names
 
     await store.close()
     await store.connect()
@@ -3333,13 +3428,14 @@ async def test_embedded_store_ann_generation_swap_stress(tmp_path: Path) -> None
     assert isinstance(query, list)
     results = await store.search_vector(query, limit=5, session_id="agent-1")
     assert results and all(result.entity.name.startswith("reopen-") for result in results)
+    table_names = {str(row[0]) for row in store._execute("CALL SHOW_TABLES() RETURN name").get_all()}
     for old_table in seen_tables:
-        counts = store._execute(f"MATCH (n:{old_table}) RETURN count(n)").get_all()
-        assert counts == [[0]]
+        assert old_table not in table_names
     await store.close()
 
 
 @pytest.mark.asyncio
+@requires_native_vector_index
 async def test_embedded_store_ann_delta_policy_boundary(tmp_path: Path) -> None:
     """The delta policy must pick reuse, incremental insert, or swap correctly.
 
@@ -3408,8 +3504,8 @@ async def test_embedded_store_ann_delta_policy_boundary(tmp_path: Path) -> None:
     assert swapped_group.table_name.endswith("_g1")
     assert any("CREATE NODE TABLE" in query for query in recording.queries)
     assert any(query.startswith("COPY ") for query in recording.queries)
-    old_counts = store._execute(f"MATCH (n:{first_group.table_name}) RETURN count(n)").get_all()
-    assert old_counts == [[0]]
+    table_names = {str(row[0]) for row in store._execute("CALL SHOW_TABLES() RETURN name").get_all()}
+    assert first_group.table_name not in table_names
     results = await store.search_vector(vectors[60], limit=3, session_id="agent-1")
     assert results and results[0].entity.name == "entity-60"
 
@@ -3458,8 +3554,9 @@ async def test_embedded_store_rerank_skips_embedding_mutated_after_admission() -
 def test_embedded_store_execute_rejects_unbound_parameters() -> None:
     """The query choke point must refuse placeholders without bindings.
 
-    Kuzu 0.11.3 segfaults instead of raising on an unbound $parameter, so the
-    statement must never reach the runtime.
+    LadybugDB 0.17.1 silently evaluates an unbound $parameter to NULL — the
+    query "succeeds" with wrong answers (Kuzu 0.11.3 at least crashed) — so
+    the statement must never reach the runtime.
     """
     store = EmbeddedGraphStore(Path("unused.kuzu"))
     connection = _CountingConnection()
@@ -3479,14 +3576,15 @@ def test_embedded_store_execute_rejects_unbound_parameters() -> None:
     assert len(connection.queries) == 1
 
 
+@requires_native_vector_index
 def test_embedded_store_ann_capability_probe_detects_vector_support(tmp_path: Path) -> None:
-    """The pinned Kuzu runtime must report native vector index support."""
+    """The pinned LadybugDB runtime must report native vector index support."""
     import asyncio
 
     store = EmbeddedGraphStore(tmp_path / "embedded.kuzu")
     asyncio.run(store.connect())
     try:
-        assert store._kuzu_vector_index_supported() is True
+        assert store._vector_index_supported() is True
     finally:
         asyncio.run(store.close())
 
@@ -3818,3 +3916,240 @@ async def test_fetch_adjacency_personalized_pagerank_end_to_end(tmp_path: Path) 
     assert masses[task_b] > masses[goal_a] > masses[task_c] > 0.0
     assert sum(masses.values()) == pytest.approx(1.0, abs=1e-9)
     await store.close()
+
+
+@pytest.mark.asyncio
+async def test_embedded_store_connect_migrates_pre_ladybug_projection(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A pre-fork (Kuzu-format) projection file is moved aside, never deleted.
+
+    LadybugDB refuses pre-fork storage with "The file is not a valid Lbug
+    database file!" (verified against a real kuzu-0.11.3 artifact; foreign
+    bytes raise the identical error). connect() must move the artifact and
+    its WAL to <path>.pre-ladybug.bak, open a fresh store in place, and log
+    the rebuild instructions — projections rebuild from the Eventloom log.
+    """
+    import logging
+
+    path = tmp_path / "embedded.kuzu"
+    foreign_bytes = b"pre-fork kuzu projection bytes " * 64
+    path.write_bytes(foreign_bytes)
+    wal_bytes = b"pre-fork wal bytes"
+    path.with_name(path.name + ".wal").write_bytes(wal_bytes)
+
+    store = EmbeddedGraphStore(path)
+    with caplog.at_level(logging.WARNING, logger="zaxy.embedded_graph_store"):
+        await store.connect()
+    try:
+        await store.init_schema()
+        await store.upsert_extraction(
+            ExtractionResult(
+                entities=[
+                    ExtractedEntity(
+                        name="Rebuilt Goal",
+                        entity_type="goal",
+                        observed_at="2026-06-11T01:00:00Z",
+                        summary="rebuilt after engine migration",
+                    )
+                ],
+                edges=[],
+                source_event_seq=1,
+                source_event_hash="rebuild-hash",
+            ),
+            session_id="agent-1",
+        )
+        results = await store.search_exact("Rebuilt Goal", session_id="agent-1")
+        assert [entity.name for entity in results] == ["Rebuilt Goal"]
+    finally:
+        await store.close()
+
+    backup = path.with_name(path.name + ".pre-ladybug.bak")
+    assert backup.read_bytes() == foreign_bytes
+    assert backup.with_name(backup.name + ".wal").read_bytes() == wal_bytes
+    assert not path.with_name(path.name + ".wal").exists() or path.exists()
+    assert backup in embedded_graph_store.pre_ladybug_backup_paths(path)
+    assert any("pre-ladybug.bak" in record.message for record in caplog.records)
+    assert any("zaxy reproject" in record.getMessage() for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_embedded_store_connect_migration_never_overwrites_existing_backup(tmp_path: Path) -> None:
+    """A second migration must not clobber an earlier .pre-ladybug.bak."""
+    path = tmp_path / "embedded.kuzu"
+    earlier_backup = path.with_name(path.name + ".pre-ladybug.bak")
+    earlier_backup.write_bytes(b"earlier backup, do not touch")
+    path.write_bytes(b"another foreign projection " * 64)
+
+    store = EmbeddedGraphStore(path)
+    await store.connect()
+    await store.close()
+
+    assert earlier_backup.read_bytes() == b"earlier backup, do not touch"
+    numbered = path.with_name(path.name + ".pre-ladybug.bak.1")
+    assert numbered.read_bytes() == b"another foreign projection " * 64
+    backups = embedded_graph_store.pre_ladybug_backup_paths(path)
+    assert earlier_backup in backups and numbered in backups
+
+
+def test_embedded_store_incompatible_storage_error_matcher_is_specific() -> None:
+    """Only the engine's incompatible-file refusal triggers the migration."""
+    assert embedded_graph_store._is_incompatible_storage_error(
+        RuntimeError(
+            "Runtime exception: Unable to open database. The file is not a valid Lbug database file!"
+        )
+    )
+    assert not embedded_graph_store._is_incompatible_storage_error(
+        RuntimeError("IO exception: Could not set lock on file : embedded.kuzu")
+    )
+    assert not embedded_graph_store._is_incompatible_storage_error(RuntimeError("disk full"))
+
+
+def test_embedded_store_armor_inlines_json_shaped_string_parameters() -> None:
+    """JSON-shaped string bindings are rewritten to byte-faithful literals.
+
+    LadybugDB 0.17.1's binding layer silently converts a bound string whose
+    first character is { or [ into a STRUCT/LIST and stores its re-rendering
+    (write-side corruption, verified via size()). The choke point must inline
+    exactly those values as escaped literals and leave every other binding
+    parameterized.
+    """
+    query, parameters = embedded_graph_store._armor_json_shaped_string_parameters(
+        "MERGE (e:Entity {node_key: $node_key}) SET e.properties_json = $properties_json",
+        {"node_key": "agent\x1fgoal\x1fG\x1f1", "properties_json": '{"a": "it\'s \\\\"}'},
+    )
+    assert parameters == {"node_key": "agent\x1fgoal\x1fG\x1f1"}
+    assert "$properties_json" not in query
+    assert "'{\"a\": \"it\\'s \\\\\\\\\"}'" in query
+
+    untouched_query = "MATCH (e:Entity) WHERE e.session_id = $session_id RETURN e.name"
+    untouched_params = {"session_id": "agent-1"}
+    same_query, same_params = embedded_graph_store._armor_json_shaped_string_parameters(
+        untouched_query, untouched_params
+    )
+    assert same_query == untouched_query
+    assert same_params == untouched_params
+
+    list_query, list_params = embedded_graph_store._armor_json_shaped_string_parameters(
+        "RETURN $rows", {"rows": [{"entity_row": 1}]}
+    )
+    assert list_query == "RETURN $rows"
+    assert list_params == {"rows": [{"entity_row": 1}]}
+
+
+@pytest.mark.asyncio
+async def test_embedded_store_json_properties_round_trip_byte_exact(tmp_path: Path) -> None:
+    """properties_json must survive the engine round trip byte-for-byte.
+
+    Pins the armor end-to-end: without it, LadybugDB re-renders the JSON as
+    a struct ('{"a": 1}' comes back '{a: 1}') and every stored embedding and
+    evidence payload silently corrupts.
+    """
+    import json
+
+    store = EmbeddedGraphStore(
+        tmp_path / "embedded.kuzu",
+        active_embedding_version=LEGACY_EMBEDDING_VERSION,
+    )
+    await store.connect()
+    try:
+        await store.init_schema()
+        properties = {"path": "C:\\dir\\file", "note": "it's", "nested": {"k": [1, 2]}}
+        await store.upsert_extraction(
+            ExtractionResult(
+                entities=[
+                    ExtractedEntity(
+                        name="JSON Entity",
+                        entity_type="artifact",
+                        observed_at="2026-06-11T01:00:00Z",
+                        summary="json fidelity probe",
+                        embedding=[0.6, 0.8],
+                        properties=properties,
+                    )
+                ],
+                edges=[],
+                source_event_seq=1,
+                source_event_hash="json-hash",
+            ),
+            session_id="agent-1",
+        )
+        expected = json.dumps({**properties, "embedding": [0.6, 0.8]}, sort_keys=True)
+        rows = store._execute(
+            "MATCH (e:Entity) WHERE e.session_id = $session_id RETURN e.properties_json",
+            {"session_id": "agent-1"},
+        ).get_all()
+        assert rows == [[expected]]
+        results = await store.search_vector([0.6, 0.8], limit=1, session_id="agent-1")
+        assert results and results[0].entity.name == "JSON Entity"
+    finally:
+        await store.close()
+
+
+@pytest.mark.asyncio
+@requires_native_vector_index
+async def test_embedded_store_never_issues_single_statement_delete_all(tmp_path: Path) -> None:
+    """No store path may issue the delete-ALL statement shape.
+
+    The one residual vector-index hole on LadybugDB 0.17.1: a single-statement
+    MATCH ... DELETE with no predicate under a live HNSW index permanently
+    breaks subsequent searches (re-verified). Zaxy's design avoids it —
+    deltas are pure insert extensions, rebuilds swap generations, superseded
+    generations are dropped, invalidation closes validity windows with SET —
+    so a full write-path exercise must record zero DELETE statements.
+    """
+    import re as _re
+
+    dimension = 8
+    store = EmbeddedGraphStore(
+        tmp_path / "embedded.kuzu",
+        active_embedding_version="v1",
+        vector_ann_threshold=2,
+    )
+    await store.connect()
+    await store.init_schema()
+    recording = _RecordingConnection(store._require_connection())
+    store._connection = recording
+
+    for round_index in range(2):
+        store._clear_read_caches("agent-1")
+        store._current_entity_index_cache["agent-1"] = [
+            _versioned_vector_entity(f"round{round_index}-{position}", vector, "v1")
+            for position, vector in enumerate(
+                _seeded_unit_embeddings(8, dimension, seed=400 + round_index)
+            )
+        ]
+        group = store._vector_index("agent-1", None).groups[(dimension, "v1")]
+        assert isinstance(group, embedded_graph_store._AnnVectorGroup)
+
+    await store.upsert_extraction(
+        ExtractionResult(
+            entities=[
+                ExtractedEntity(
+                    name="Guard Goal",
+                    entity_type="goal",
+                    observed_at="2026-06-11T01:00:00Z",
+                    summary="delete-all guard",
+                    properties={"source_path": "src/guard.py"},
+                )
+            ],
+            edges=[],
+            source_event_seq=1,
+            source_event_hash="guard-hash",
+        ),
+        session_id="agent-1",
+    )
+    await store.invalidate_entity("Guard Goal", "goal", "2026-06-11T02:00:00Z", session_id="agent-1")
+    await store.retire_source_projections(
+        source_path="src/guard.py",
+        invalid_at="2026-06-11T03:00:00Z",
+        session_id="agent-1",
+    )
+
+    delete_statement = _re.compile(r"\bDELETE\b", _re.IGNORECASE)
+    offending = [query for query in recording.queries if delete_statement.search(query)]
+    assert offending == []
+    assert any("DROP TABLE" in query for query in recording.queries)
+
+    source = Path(embedded_graph_store.__file__).read_text(encoding="utf-8")
+    assert "DETACH DELETE" not in source

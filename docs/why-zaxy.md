@@ -31,7 +31,7 @@ source line backs it, or which task and decision chain it belongs to.
 Zaxy splits those responsibilities:
 
 - Eventloom is the immutable append-only source of truth.
-- Embedded Kuzu is the default temporal graph projection for traversal and
+- Embedded LadybugDB is the default temporal graph projection for traversal and
   retrieval without a sidecar service.
 - Neo4j is the explicit quality-control and interoperability backend.
 - pgGraph is an experimental projection backend for teams evaluating PostgreSQL

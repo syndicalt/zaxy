@@ -52,6 +52,7 @@ def test_run_doctor_reports_local_setup_ok(tmp_path: Path, monkeypatch) -> None:
         "embedded_mcp_runtime": "ok",
         "embedded_graph": "ok",
         "projection_freshness": "ok",
+        "projection_backup_artifacts": "ok",
         "production": "ok",
     }
     assert (tmp_path / ".eventloom").is_dir()
@@ -762,6 +763,28 @@ def test_run_doctor_reports_projection_freshness_ok(tmp_path: Path) -> None:
     check = next(check for check in report["checks"] if check["name"] == "projection_freshness")
     assert check["status"] == "ok"
     assert "at least as new as the active event log" in check["message"]
+
+
+def test_run_doctor_reports_leftover_pre_ladybug_backup(tmp_path: Path) -> None:
+    """Doctor should flag a leftover pre-LadybugDB projection backup with remediation."""
+    projection_path = tmp_path / ".eventloom" / "projections" / "embedded.kuzu"
+    projection_path.parent.mkdir(parents=True)
+    backup = projection_path.with_name(projection_path.name + ".pre-ladybug.bak")
+    backup.write_bytes(b"pre-fork projection bytes")
+    settings = _local_settings(
+        tmp_path,
+        projection_backend="embedded",
+        embedded_graph_path=str(projection_path),
+    )
+
+    report = run_doctor(settings=settings, workspace_root=tmp_path)
+
+    check = next(check for check in report["checks"] if check["name"] == "projection_backup_artifacts")
+    assert check["status"] == "warning"
+    assert str(backup) in check["message"]
+    assert "safe" not in check["message"]  # remediation lives in the action line
+    assert "delete the .pre-ladybug.bak" in check["action"]
+    assert "zaxy reproject" in check["action"]
 
 
 def _seed_embedded_projection_vectors(

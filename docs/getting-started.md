@@ -2,7 +2,7 @@
 
 Zaxy is a local-first memory fabric for AI agents. It keeps the immutable
 work history in Eventloom JSONL files and projects structured facts into an
-embedded Kuzu graph so agents can retrieve connected, temporal context through MCP tools. The
+embedded LadybugDB graph so agents can retrieve connected, temporal context through MCP tools. The
 fastest path is to install the CLI, run one local onboarding command, and
 verify that Eventloom plus the model-facing bootstrap are readable. For the
 architecture tradeoffs behind this shape, see [why-zaxy.md](why-zaxy.md).
@@ -232,7 +232,7 @@ zaxy activate codex \
 Use `--dry-run` to inspect the exact `codex --cd ... <prompt>` command without
 starting Codex or managed capture.
 
-If a long-running `zaxy serve` process already owns the default embedded Kuzu
+If a long-running `zaxy serve` process already owns the default embedded LadybugDB
 projection, CLI checkout retries with a per-process isolated projection under
 `.eventloom/projections/checkout-<session>-<pid>.kuzu` and reports
 `diagnostics.projection_fallback`. This keeps memory activation from silently
@@ -342,7 +342,7 @@ you intentionally want to replace generated config. `--infra check` reports the
 selected local projection backend and Docker posture without starting
 containers. Use `--infra start` when you explicitly want onboarding to prepare
 the selected local runtime. The default embedded backend creates only the local
-projection directory and lazy Kuzu database. For experimental pgGraph bootstrap,
+projection directory and lazy LadybugDB database. For experimental pgGraph bootstrap,
 install the optional extra and point Zaxy at a local pgGraph checkout so it can
 run the extension installer instead of starting plain Postgres:
 
@@ -370,7 +370,7 @@ zaxy serve
 ```
 
 When stdio starts in local development mode, Zaxy checks the selected projection
-backend. With the default embedded backend, it opens the repo-local Kuzu
+backend. With the default embedded backend, it opens the repo-local LadybugDB
 projection path and does not start Docker. With `PROJECTION_BACKEND=neo4j`, it
 requires `pip install "zaxy-memory[neo4j]"` and checks
 `bolt://localhost:7687`. Set `NEO4J_AUTO_START=true` only when you want Zaxy to

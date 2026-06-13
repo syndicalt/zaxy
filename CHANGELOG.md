@@ -2,6 +2,34 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 2.3.0 - 2026-06-13
+
+- Moved the default embedded projection engine from archived Kuzu to
+  exact-pinned LadybugDB (`ladybug==0.17.1`), the maintained fork of the same
+  engine lineage. This keeps the local-first graph runtime on a wheel stream
+  that supports current Python releases while preserving the existing
+  `PROJECTION_BACKEND=embedded` contract.
+- Added derived-projection migration handling for pre-LadybugDB stores:
+  unreadable pre-fork projection files are moved aside to
+  `<path>.pre-ladybug.bak` without deleting data, a fresh projection store is
+  opened at the configured path, and operators are pointed to replay/reproject
+  from Eventloom, which remains the source of truth.
+- Re-verified and updated embedded vector-index handling against LadybugDB:
+  the store explicitly loads the vector extension, keeps the unbound-parameter
+  guard at the execution choke point, continues atomic ANN generation swaps,
+  and now drops superseded ANN generations for full space reclaim where the
+  fork fixed the old drop-index corruption.
+- Added doctor coverage for leftover pre-LadybugDB backup artifacts so
+  operators can verify the rebuilt projection and remove obsolete backups
+  intentionally.
+- Refreshed current docs, API inventory, operational guidance, and packaging
+  tests to describe embedded LadybugDB as the default runtime while preserving
+  historical Kuzu references in archives and research artifacts.
+- Fixed an Eventloom v1 integrity edge case where replay and tail reads could
+  disagree on a tampered Zaxy-authored v1 event id. Replay now uses the sealed
+  sequence encoded in the v1 id consistently, so integrity verification reports
+  the same event identity that tail reads expose.
+
 ## 2.2.0 - 2026-06-11
 
 - Re-engineered the embedded ANN vector path end to end, every change backed
