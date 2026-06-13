@@ -2,6 +2,22 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 2.3.2 - 2026-06-13
+
+- Closed the recall persistence gap with deterministic per-turn memory injection
+  on Claude Code. A new `UserPromptSubmit` hook (`zaxy hook-event
+  user-prompt-submit`) re-injects a terse, one-line declarative memory-state
+  nudge — session, staleness, and a recommended `memory_checkout` — into the
+  model's context when memory is stale, and stays silent when fresh to avoid
+  noise. Previously, staleness reminders were written to the event log but never
+  re-injected, so long sessions silently drifted away from memory use.
+- `render_hook_config("claude-code")` now emits the `UserPromptSubmit` hook
+  alongside the unchanged `Stop`/`PreCompact` hooks; `hook_event_type` maps the
+  new `user-prompt-submit` trigger to `hook.user_prompt_submitted`.
+- Per-turn injection is Claude Code-only — Codex/generic clients expose no
+  equivalent per-prompt hook and continue to rely on advisory reminders.
+- No changes to the embedded runtime, graph projection, or MCP tool APIs.
+
 ## 2.3.1 - 2026-06-13
 
 - Added a `LICENSE` file (MIT) — the project declared MIT in metadata but
