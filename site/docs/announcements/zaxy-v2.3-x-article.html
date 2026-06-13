@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>X Article Draft: Zaxy 2.3.0 - Zaxy Docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,600&family=Inter:wght@400;550;650;750;850&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../../index.html">Overview</a>
+      <a href="../../docs/coordinate-roadmap.html">Coordinate</a>
+      <a href="../../docs/why-zaxy.html">Why Zaxy</a>
+      <a href="../../docs/benchmarks.html">Benchmarks</a>
+      <a href="../getting-started.html">Start</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="x-article-draft-zaxy-230">X Article Draft: Zaxy 2.3.0</h1>
+      <p><img src="../../assets/zaxy-v2.3-header.png" alt="Zaxy 2.3 release header" /></p>
+      <p>Zaxy 2.3.0 is out: the embedded engine moves off archived infrastructure, and nothing you rely on moves with it.</p>
+      <p>The short version: Zaxy&#x27;s default local graph runtime was built on Kuzu, which shipped its final release and archived its repository — no more fixes, no more wheels for new Python versions. 2.3 moves the embedded backend to LadybugDB, the maintained fork of the same engine lineage, and keeps the <code>PROJECTION_BACKEND=embedded</code> contract, the schema, query semantics, and the ANN engagement defaults exactly where 2.2 left them.</p>
+      <p>Depending on a dead dependency is a slow-motion outage. But swapping the engine under a memory system is also exactly how you lose someone&#x27;s data if you are careless about it. So the rule for this release was: the source of truth never moves, and the migration deletes nothing.</p>
+      <p>How the move works:</p>
+      <ul>
+        <li>Eventloom — the append-only, hash-chained log — is untouched. It was always the source of truth; projections were always rebuildable from it. That design is what makes an engine swap a projection-layer change instead of a data migration.</li>
+        <li>On first open of a pre-fork projection file LadybugDB cannot read, Zaxy moves it (and its WAL) aside to <code>&lt;path&gt;.pre-ladybug.bak</code> — <strong>no data deleted</strong> — opens a fresh store, and rebuilds from the log via <code>zaxy reproject</code>. <code>zaxy doctor</code> reports the leftover backup until you have verified the rebuild and chosen to delete it.</li>
+        <li>The move also collects a dividend: LadybugDB fixed the upstream <code>DROP_VECTOR_INDEX</code> corruption defect 2.2 had to work around, so superseded ANN index generations are now dropped for full space reclaim.</li>
+      </ul>
+      <p>Now the part that is the reason to trust the rest of it.</p>
+      <p>The release branch arrived with a confident comment in the code: the vector index extension was &quot;statically linked, offline-safe, no INSTALL needed.&quot; It was wrong. LadybugDB ships the vector index as a downloadable extension, not a bundled one. It happened to work on the machine that built the release — because that machine had the extension cached from earlier use — and it would have silently failed on every fresh install, disabling approximate search for new users while swallowing the error.</p>
+      <p>Nothing in a human read of the diff would have caught that. What caught it was the coverage ratchet: on a clean CI runner the extension was absent, the native vector tests skipped, and total coverage slipped 0.02% under the floor. A two-hundredths-of-a-percent tripwire is the only thing standing between &quot;looks done&quot; and a marquee feature that is dead on arrival. We traced the skip to the missing extension, reproduced the fresh-machine condition locally, and fixed the cause: the store now installs-then-loads the extension, cached after first use, and degrades to exact search with a clear warning when it genuinely cannot.</p>
+      <p>A note on framing, because we got it wrong first and corrected it: this is <em>local-first</em>, not offline-only. A one-time extension fetch that then runs entirely on-box is no more a network dependency than <code>pip install</code> itself — the data, the engine, and the compute all stay local. The default exact-search path is pure NumPy and fetches nothing. Air-gapped deployments that want approximate search pre-seed the extension cache; everyone else never notices.</p>
+      <p>The claim boundary, as always: the engine swap was gated on a readiness-research pass and lane reruns that reproduced 2.2&#x27;s deterministic evidence — identical corpus hashes and recall — with raw artifacts versioned in the repo. The fork is single-maintainer and the dependency pin is exact on purpose; that is what depending on infrastructure honestly looks like, archived or forked.</p>
+      <p>Release: https://github.com/syndicalt/zaxy/releases/tag/v2.3.0 Migration: https://docs.zaxy.io/docs/migration.html Install: <code>pip install zaxy-memory</code></p>
+      <p>Zaxy is event-sourced memory for agent work: a hash-chained append-only log as the source of truth, cited Memory Checkout as the trust contract, and a runtime where the engine is replaceable because the log is authoritative. https://docs.zaxy.io</p>
+    </article>
+  </main>
+</body>
+</html>
