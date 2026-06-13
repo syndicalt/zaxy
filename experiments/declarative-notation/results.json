@@ -1,0 +1,533 @@
+{
+  "meta": {
+    "log": "../../.eventloom/zaxy-default.jsonl",
+    "total_events": 77845,
+    "rung1_density": {
+      "n": 50,
+      "prose": {
+        "median_ratio_vs_glyph": 0.988,
+        "mean_ratio_vs_glyph": 1.026,
+        "min": 0.845,
+        "max": 1.179
+      },
+      "json_compact": {
+        "median_ratio_vs_glyph": 1.0,
+        "mean_ratio_vs_glyph": 1.05,
+        "min": 0.843,
+        "max": 1.321
+      },
+      "json_pretty": {
+        "median_ratio_vs_glyph": 1.296,
+        "mean_ratio_vs_glyph": 1.421,
+        "min": 1.019,
+        "max": 2.179
+      },
+      "total_tokens": {
+        "glyph": 8060,
+        "prose": 7907,
+        "json_compact": 7943,
+        "json_pretty": 9845
+      }
+    },
+    "rung2_fidelity": {
+      "sampled": 8000,
+      "representable": 8000,
+      "representable_pct": 100.0,
+      "roundtrip_pass": 8000,
+      "roundtrip_rate_among_representable": 1.0,
+      "roundtrip_rate_among_all": 1.0,
+      "failures": {},
+      "fail_examples": [],
+      "by_type": {
+        "tool.call.completed": {
+          "pass": 2934,
+          "total": 2934,
+          "rate": 1.0
+        },
+        "command.completed": {
+          "pass": 1579,
+          "total": 1579,
+          "rate": 1.0
+        },
+        "transcript.turn": {
+          "pass": 1134,
+          "total": 1134,
+          "rate": 1.0
+        },
+        "code.symbol.indexed": {
+          "pass": 1029,
+          "total": 1029,
+          "rate": 1.0
+        },
+        "code.import.indexed": {
+          "pass": 655,
+          "total": 655,
+          "rate": 1.0
+        },
+        "file.edit.applied": {
+          "pass": 391,
+          "total": 391,
+          "rate": 1.0
+        },
+        "code.file.indexed": {
+          "pass": 111,
+          "total": 111,
+          "rate": 1.0
+        },
+        "task.completed": {
+          "pass": 63,
+          "total": 63,
+          "rate": 1.0
+        },
+        "hook.checkpoint": {
+          "pass": 24,
+          "total": 24,
+          "rate": 1.0
+        },
+        "llm.packet.completed": {
+          "pass": 17,
+          "total": 17,
+          "rate": 1.0
+        },
+        "llm.packet.projected": {
+          "pass": 17,
+          "total": 17,
+          "rate": 1.0
+        },
+        "task.started": {
+          "pass": 15,
+          "total": 15,
+          "rate": 1.0
+        },
+        "hook.session_started": {
+          "pass": 9,
+          "total": 9,
+          "rate": 1.0
+        },
+        "observation.recorded": {
+          "pass": 5,
+          "total": 5,
+          "rate": 1.0
+        },
+        "workspace.instructions.updated": {
+          "pass": 3,
+          "total": 3,
+          "rate": 1.0
+        },
+        "session.ended": {
+          "pass": 3,
+          "total": 3,
+          "rate": 1.0
+        },
+        "task.progress": {
+          "pass": 2,
+          "total": 2,
+          "rate": 1.0
+        },
+        "benchmark.completed": {
+          "pass": 2,
+          "total": 2,
+          "rate": 1.0
+        },
+        "maintenance.completed": {
+          "pass": 1,
+          "total": 1,
+          "rate": 1.0
+        },
+        "session.memory_capture_gap": {
+          "pass": 1,
+          "total": 1,
+          "rate": 1.0
+        },
+        "session.genesis": {
+          "pass": 1,
+          "total": 1,
+          "rate": 1.0
+        },
+        "workspace.instructions.discovered": {
+          "pass": 1,
+          "total": 1,
+          "rate": 1.0
+        },
+        "hook.heartbeat": {
+          "pass": 1,
+          "total": 1,
+          "rate": 1.0
+        },
+        "decision.made": {
+          "pass": 1,
+          "total": 1,
+          "rate": 1.0
+        },
+        "task.proposed": {
+          "pass": 1,
+          "total": 1,
+          "rate": 1.0
+        }
+      },
+      "envelope_excluded_by_design": [
+        "caused_by",
+        "envelope_version",
+        "hash",
+        "id",
+        "parent_event_id",
+        "prev_hash",
+        "security",
+        "seq",
+        "timestamp"
+      ]
+    }
+  },
+  "rung1_rows": [
+    {
+      "type": "goal.created",
+      "glyph": 401,
+      "prose": 379,
+      "json_compact": 375,
+      "json_pretty": 433
+    },
+    {
+      "type": "decision.made",
+      "glyph": 179,
+      "prose": 173,
+      "json_compact": 174,
+      "json_pretty": 210
+    },
+    {
+      "type": "task.completed",
+      "glyph": 129,
+      "prose": 126,
+      "json_compact": 127,
+      "json_pretty": 163
+    },
+    {
+      "type": "task.started",
+      "glyph": 60,
+      "prose": 61,
+      "json_compact": 62,
+      "json_pretty": 95
+    },
+    {
+      "type": "task.progress",
+      "glyph": 70,
+      "prose": 73,
+      "json_compact": 78,
+      "json_pretty": 101
+    },
+    {
+      "type": "memory.checkout.completed",
+      "glyph": 42,
+      "prose": 46,
+      "json_compact": 48,
+      "json_pretty": 72
+    },
+    {
+      "type": "memory.reinforced",
+      "glyph": 134,
+      "prose": 142,
+      "json_compact": 138,
+      "json_pretty": 177
+    },
+    {
+      "type": "observation.recorded",
+      "glyph": 125,
+      "prose": 121,
+      "json_compact": 121,
+      "json_pretty": 152
+    },
+    {
+      "type": "benchmark.completed",
+      "glyph": 362,
+      "prose": 306,
+      "json_compact": 305,
+      "json_pretty": 431
+    },
+    {
+      "type": "workspace.instructions.updated",
+      "glyph": 261,
+      "prose": 257,
+      "json_compact": 253,
+      "json_pretty": 309
+    },
+    {
+      "type": "session.ended",
+      "glyph": 28,
+      "prose": 33,
+      "json_compact": 37,
+      "json_pretty": 61
+    },
+    {
+      "type": "task.completed",
+      "glyph": 133,
+      "prose": 130,
+      "json_compact": 130,
+      "json_pretty": 166
+    },
+    {
+      "type": "task.started",
+      "glyph": 85,
+      "prose": 87,
+      "json_compact": 87,
+      "json_pretty": 123
+    },
+    {
+      "type": "task.progress",
+      "glyph": 115,
+      "prose": 111,
+      "json_compact": 114,
+      "json_pretty": 137
+    },
+    {
+      "type": "memory.checkout.completed",
+      "glyph": 68,
+      "prose": 70,
+      "json_compact": 72,
+      "json_pretty": 96
+    },
+    {
+      "type": "memory.reinforced",
+      "glyph": 588,
+      "prose": 568,
+      "json_compact": 581,
+      "json_pretty": 620
+    },
+    {
+      "type": "observation.recorded",
+      "glyph": 76,
+      "prose": 82,
+      "json_compact": 82,
+      "json_pretty": 109
+    },
+    {
+      "type": "benchmark.completed",
+      "glyph": 280,
+      "prose": 251,
+      "json_compact": 244,
+      "json_pretty": 343
+    },
+    {
+      "type": "workspace.instructions.updated",
+      "glyph": 249,
+      "prose": 246,
+      "json_compact": 241,
+      "json_pretty": 297
+    },
+    {
+      "type": "session.ended",
+      "glyph": 28,
+      "prose": 33,
+      "json_compact": 37,
+      "json_pretty": 61
+    },
+    {
+      "type": "observation.recorded",
+      "glyph": 205,
+      "prose": 199,
+      "json_compact": 201,
+      "json_pretty": 227
+    },
+    {
+      "type": "task.completed",
+      "glyph": 146,
+      "prose": 141,
+      "json_compact": 141,
+      "json_pretty": 179
+    },
+    {
+      "type": "task.started",
+      "glyph": 95,
+      "prose": 93,
+      "json_compact": 93,
+      "json_pretty": 129
+    },
+    {
+      "type": "memory.checkout.completed",
+      "glyph": 41,
+      "prose": 47,
+      "json_compact": 49,
+      "json_pretty": 73
+    },
+    {
+      "type": "memory.reinforced",
+      "glyph": 396,
+      "prose": 392,
+      "json_compact": 403,
+      "json_pretty": 442
+    },
+    {
+      "type": "observation.recorded",
+      "glyph": 206,
+      "prose": 199,
+      "json_compact": 202,
+      "json_pretty": 240
+    },
+    {
+      "type": "workspace.instructions.updated",
+      "glyph": 245,
+      "prose": 242,
+      "json_compact": 237,
+      "json_pretty": 293
+    },
+    {
+      "type": "session.ended",
+      "glyph": 28,
+      "prose": 33,
+      "json_compact": 37,
+      "json_pretty": 61
+    },
+    {
+      "type": "task.completed",
+      "glyph": 118,
+      "prose": 118,
+      "json_compact": 119,
+      "json_pretty": 155
+    },
+    {
+      "type": "task.started",
+      "glyph": 66,
+      "prose": 68,
+      "json_compact": 70,
+      "json_pretty": 101
+    },
+    {
+      "type": "memory.checkout.completed",
+      "glyph": 44,
+      "prose": 50,
+      "json_compact": 52,
+      "json_pretty": 76
+    },
+    {
+      "type": "memory.reinforced",
+      "glyph": 522,
+      "prose": 501,
+      "json_compact": 499,
+      "json_pretty": 532
+    },
+    {
+      "type": "observation.recorded",
+      "glyph": 322,
+      "prose": 304,
+      "json_compact": 307,
+      "json_pretty": 346
+    },
+    {
+      "type": "workspace.instructions.updated",
+      "glyph": 260,
+      "prose": 256,
+      "json_compact": 252,
+      "json_pretty": 308
+    },
+    {
+      "type": "session.ended",
+      "glyph": 28,
+      "prose": 33,
+      "json_compact": 37,
+      "json_pretty": 61
+    },
+    {
+      "type": "task.completed",
+      "glyph": 208,
+      "prose": 200,
+      "json_compact": 200,
+      "json_pretty": 237
+    },
+    {
+      "type": "task.started",
+      "glyph": 77,
+      "prose": 76,
+      "json_compact": 78,
+      "json_pretty": 115
+    },
+    {
+      "type": "memory.checkout.completed",
+      "glyph": 49,
+      "prose": 55,
+      "json_compact": 57,
+      "json_pretty": 81
+    },
+    {
+      "type": "memory.reinforced",
+      "glyph": 81,
+      "prose": 89,
+      "json_compact": 89,
+      "json_pretty": 122
+    },
+    {
+      "type": "memory.reinforced",
+      "glyph": 103,
+      "prose": 112,
+      "json_compact": 108,
+      "json_pretty": 147
+    },
+    {
+      "type": "workspace.instructions.updated",
+      "glyph": 254,
+      "prose": 250,
+      "json_compact": 246,
+      "json_pretty": 302
+    },
+    {
+      "type": "session.ended",
+      "glyph": 28,
+      "prose": 33,
+      "json_compact": 37,
+      "json_pretty": 61
+    },
+    {
+      "type": "task.completed",
+      "glyph": 197,
+      "prose": 190,
+      "json_compact": 191,
+      "json_pretty": 231
+    },
+    {
+      "type": "task.started",
+      "glyph": 78,
+      "prose": 77,
+      "json_compact": 80,
+      "json_pretty": 115
+    },
+    {
+      "type": "memory.checkout.completed",
+      "glyph": 41,
+      "prose": 47,
+      "json_compact": 49,
+      "json_pretty": 73
+    },
+    {
+      "type": "memory.reinforced",
+      "glyph": 344,
+      "prose": 340,
+      "json_compact": 335,
+      "json_pretty": 374
+    },
+    {
+      "type": "workspace.instructions.updated",
+      "glyph": 249,
+      "prose": 246,
+      "json_compact": 241,
+      "json_pretty": 297
+    },
+    {
+      "type": "session.ended",
+      "glyph": 28,
+      "prose": 33,
+      "json_compact": 37,
+      "json_pretty": 61
+    },
+    {
+      "type": "task.completed",
+      "glyph": 108,
+      "prose": 104,
+      "json_compact": 105,
+      "json_pretty": 138
+    },
+    {
+      "type": "task.started",
+      "glyph": 80,
+      "prose": 84,
+      "json_compact": 85,
+      "json_pretty": 112
+    }
+  ]
+}
