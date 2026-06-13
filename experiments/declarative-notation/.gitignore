@@ -7,3 +7,4 @@ rung3_*.json
 rung4_*.json
 __pycache__/
 .pytest_cache/
+.env

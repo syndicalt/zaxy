@@ -18,13 +18,38 @@ import json
 import math
 import os
 import re
+import time
 from typing import Callable
+
+
+def _with_retry(fn: Callable[[], str], tries: int = 6, base: float = 2.0) -> str:
+    """Retry transient API errors (429 rate limits, 5xx) with exponential backoff."""
+    for attempt in range(tries):
+        try:
+            return fn()
+        except Exception as exc:  # noqa: BLE001
+            msg = str(exc).lower()
+            transient = any(t in msg for t in ("rate limit", "429", "overloaded", "503", "502", "timeout"))
+            if not transient or attempt == tries - 1:
+                raise
+            time.sleep(base * (2 ** attempt))  # 2,4,8,16,32s
+    raise RuntimeError("unreachable")
 
 # ---------------------------------------------------------------- prompts
 
 R3_SYSTEM = (
     "You are reading a single compact memory-state record. Answer using ONLY the "
     "information in that record. Reply with just the answer, no explanation."
+)
+
+# One-time grammar legend for the glyph form, as it would appear in a real
+# deployment's system prompt. Used only when --glyph-legend is set.
+GLYPH_LEGEND = (
+    "\n\nThe record uses this notation: [domain]«type»@actor{entity}"
+    "(key:CODEvalue+...)>>recommended_action !Ø(invalidated). Value type codes "
+    "prefix each value: s=string, i=int, f=float, b=bool (bT=true, bF=false), "
+    "z=null, j=json. Decode values by stripping the type code (e.g. 'stale:bT' "
+    "means stale=true; 'n:i42' means n=42)."
 )
 R4_SYSTEM = (
     "You have an active memory record describing current session state. Treat it as "
@@ -83,17 +108,31 @@ def score_r4(item: dict, response: str) -> bool:
 
 # ---------------------------------------------------------------- model clients
 
+def load_dotenv(path: str = ".env") -> None:
+    """Load KEY=VALUE lines from a local .env into os.environ (no external dep)."""
+    if not os.path.exists(path):
+        return
+    for line in open(path):
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+
+
 def make_client(provider: str, model: str) -> Callable[[str, str], str]:
     if provider == "anthropic":
         import anthropic  # lazy
         client = anthropic.Anthropic()
 
         def call(system: str, user: str) -> str:
-            msg = client.messages.create(
-                model=model, max_tokens=128, system=system,
-                messages=[{"role": "user", "content": user}],
-            )
-            return "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
+            def once() -> str:
+                msg = client.messages.create(
+                    model=model, max_tokens=128, system=system,
+                    messages=[{"role": "user", "content": user}],
+                )
+                return "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
+            return _with_retry(once)
         return call
 
     if provider == "openai":
@@ -101,12 +140,14 @@ def make_client(provider: str, model: str) -> Callable[[str, str], str]:
         client = OpenAI(base_url=os.environ.get("OPENAI_BASE_URL") or None)
 
         def call(system: str, user: str) -> str:
-            r = client.chat.completions.create(
-                model=model, max_tokens=128,
-                messages=[{"role": "system", "content": system},
-                          {"role": "user", "content": user}],
-            )
-            return r.choices[0].message.content or ""
+            def once() -> str:
+                r = client.chat.completions.create(
+                    model=model, max_tokens=128,
+                    messages=[{"role": "system", "content": system},
+                              {"role": "user", "content": user}],
+                )
+                return r.choices[0].message.content or ""
+            return _with_retry(once)
         return call
 
     if provider == "manual":
@@ -177,9 +218,14 @@ def main() -> None:
     ap.add_argument("--provider", choices=["anthropic", "openai", "manual"])
     ap.add_argument("--model", default="claude-opus-4-8")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--glyph-legend", action="store_true",
+                    help="prepend the grammar legend to glyph-form prompts (fair-test condition)")
+    ap.add_argument("--form", choices=["prose", "json", "glyph", "none"],
+                    help="restrict to a single surface form")
     ap.add_argument("--limit", type=int, default=0, help="cap items (smoke test)")
     args = ap.parse_args()
 
+    load_dotenv()
     fx = json.load(open(args.fixtures))
     filler = open(args.filler).read() if os.path.exists(args.filler) else ""
 
@@ -215,15 +261,22 @@ def main() -> None:
     # live run
     call = make_client(args.provider, args.model)
     results = []
+    def r3_system(it: dict) -> str:
+        if args.glyph_legend and it["form"] == "glyph":
+            return R3_SYSTEM + GLYPH_LEGEND
+        return R3_SYSTEM
+
     if args.rung == "3":
-        items = fx["rung3"][: args.limit or None]
+        items = [it for it in fx["rung3"] if not args.form or it["form"] == args.form]
+        items = items[: args.limit or None]
         for it in items:
-            resp = call(R3_SYSTEM, r3_prompt(it))
+            resp = call(r3_system(it), r3_prompt(it))
             results.append({**{k: it[k] for k in ("id", "form", "qtype")},
                             "ok": score_r3(it, resp), "response": resp})
     else:
         contexts = ["fresh", "buried"] if args.context == "both" else [args.context]
-        items = fx["rung4"][: args.limit or None]
+        items = [it for it in fx["rung4"] if not args.form or it["form"] == args.form]
+        items = items[: args.limit or None]
         for it in items:
             for ctx in contexts:
                 if it["form"] == "none" and ctx == "buried":
@@ -246,7 +299,8 @@ def main() -> None:
                                 "wilson95": wilson(rate, n)}
     out = {"provider": args.provider, "model": args.model, "rung": args.rung,
            "aggregate": agg, "results": results}
-    fn = f"rung{args.rung}_{args.provider}_{args.model.replace('/', '_')}.json"
+    suffix = "_legend" if args.glyph_legend else ""
+    fn = f"rung{args.rung}_{args.provider}_{args.model.replace('/', '_')}{suffix}.json"
     json.dump(out, open(fn, "w"), ensure_ascii=False, indent=2)
     print(json.dumps(agg, indent=2))
     print(f"\nwrote {fn}")

@@ -78,3 +78,73 @@ review (per goal). Proceed to rung 3 (comprehension, both models) → rung 4
 If pursued, the baseline to beat is **compact JSON / terse prose**, not pretty JSON,
 and any adherence win must clear the cost of zero density benefit + glyph
 tokenization overhead.
+
+---
+
+# Rungs 3–4 — directive force (LIVE, Claude `claude-opus-4-8` + OpenAI `gpt-4.1`)
+
+3-arm design (prose / json / glyph) over identical lossless state. Models: Opus +
+GPT-4.1. Reproduce: `python3 harness.py --rung {3,4} --provider {anthropic,openai}
+--model <id> [--glyph-legend]`.
+
+## Rung 3 — comprehension gate (answerable-only, none-cases removed)
+The `invalid` question on records with nothing invalidated produced a uniform
+"hallucinate an answer" artifact across *all* forms; reporting on answerable
+items isolates real comprehension.
+
+| form | Claude | GPT-4.1 | gate (≥0.95) |
+|---|---|---|---|
+| prose | 1.000 | 1.000 | **PASS** |
+| json | 1.000 | 1.000 | **PASS** |
+| glyph (no legend) | 0.736 | 0.569 | FAIL |
+| glyph (+1-time legend) | 0.917 | 0.722 | **FAIL** |
+
+- The `>>` recommended-action **operator reads fine** (both models ~1.0). The
+  failure is the **type-coded scalar values** (`stale:bT`, `n:i42`) — not self-
+  describing without a legend, and even *with* a legend neither model clears 0.95.
+- **Cross-model divergence** (Claude 0.917 vs GPT 0.722 with legend) is the
+  brittleness flag we pre-registered — disqualifying for a method meant to serve
+  both clients.
+- **Glyph is EXCLUDED at the gate.** prose and json proceed.
+
+## Rung 4 — adherence A/B × context length
+Tasks require *acting on* an injected fact (use the right session / take the
+recommended action / use a fact / avoid an invalidated value). `none` = no
+injection (baseline). `buried` = state placed before ~6k tokens of real
+transcript filler (long-session proxy).
+
+| form | Opus fresh | Opus buried | GPT-4.1 fresh | GPT-4.1 buried |
+|---|---|---|---|---|
+| none (control) | 0.250 | — | 0.250 | — |
+| prose | 1.000 | **1.000** | 1.000 | **1.000** |
+| json | 1.000 | **1.000** | 1.000 | **1.000** |
+| glyph | 0.750 | 0.750 | 0.750 | 0.583 |
+
+- **Injection works:** control 0.25 → injected 1.0. Models reliably act on injected
+  declarative state.
+- **Structure/salience hypothesis: REJECTED.** prose and json both hold at **1.000
+  even buried**, on both models. The prose→json buried delta is **0.000** — there is
+  no degradation for structure to rescue. Terse prose is sufficient.
+- **Glyph** is lowest and the *only* form that degrades when buried (GPT 0.75→0.58),
+  consistent with its comprehension failure.
+
+## FINAL VERDICT
+- **Reject the glyph notation outright.** No density benefit (rung 1), fails
+  comprehension on both models even with a legend (rung 3), lowest + burial-fragile
+  adherence (rung 4). The lossless-bijection property (rung 2) is real but buys
+  nothing the model can use.
+- **Reject "structured beats prose" for injection.** At realistic injection sizes,
+  compact-JSON gives zero adherence advantage over terse prose.
+- **Adopt the simple fix instead:** the original persistence gap is a *missing
+  injection*, not a *format* problem. Inject terse-prose declarative memory state
+  every turn (the `UserPromptSubmit`/`additionalContext` lever) — frontier models
+  act on it reliably, even buried.
+
+## Limitations (honest)
+- **Ceiling effect:** prose & json both saturate at 1.0, so this task difficulty
+  cannot detect a prose-vs-json difference if a small one exists. Conclusion holds
+  *at realistic injection size*; a harder, multi-fact, adversarial task is untested.
+- **Burial depth ~6k tokens** (reduced from 15k for OpenAI TPM limits). Full
+  compaction-scale burial (50k+) is untested; prose might degrade there.
+- Two model families only (Opus, GPT-4.1); one run each (no repeated-sampling
+  variance). `gpt-4.1` stands in for the "Codex" arm (no codex-specific id exposed).
