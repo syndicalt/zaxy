@@ -162,6 +162,41 @@ def build_memory_reminder(payload: dict[str, Any]) -> str:
     return _reminder_prompt(query=query)
 
 
+def build_injection_context(
+    eventloom_path: str | Path,
+    *,
+    session_id: str,
+    stale_event_threshold: int = DEFAULT_STALE_EVENT_THRESHOLD,
+) -> str | None:
+    """Terse-prose declarative memory-state line for per-turn context injection.
+
+    Returns ``None`` when memory is fresh, so a ``UserPromptSubmit`` hook stays
+    silent and adds no noise. When memory is stale, returns a single declarative
+    line naming the session, the staleness, and the recommended action. This is
+    the deterministic *recall* lever: capture hooks already log events, but nothing
+    re-injects the contract into the model's context, so it drifts after long
+    sessions. The terse-prose form (not JSON/glyph) is what the declarative-notation
+    experiment validated -- injection lifts adherence ~0.25 -> 1.0 on frontier
+    models, and structured forms gave no advantage.
+    """
+    sid = validate_session_id(session_id)
+    status = inspect_memory_persistence(
+        eventloom_path, session_id=sid, stale_event_threshold=stale_event_threshold
+    )
+    if not status["stale"]:
+        return None
+    since = status["events_since_memory_use"]
+    last_checkout = status["last_checkout_seq"]
+    checkpoint = (
+        f"last checkout at seq {last_checkout}" if last_checkout else "no checkout yet this session"
+    )
+    return (
+        f"Zaxy memory active for session {sid}: {since} events since last memory use "
+        f"({checkpoint}); memory is stale. Call memory_checkout(session_id='{sid}') before "
+        "answering and trust only cited current facts."
+    )
+
+
 def append_memory_reminder_if_needed(
     eventloom_path: str | Path,
     *,

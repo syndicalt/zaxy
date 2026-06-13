@@ -563,6 +563,26 @@ def hook_event(
 
     eventlog = SessionManager(base_path=eventloom_path).get(session_id).eventlog
     normalized_trigger = trigger.casefold().strip().replace("_", "-")
+    if normalized_trigger == "user-prompt-submit":
+        # Deterministic recall lever: re-inject terse-prose memory state into the
+        # model's context when memory is stale, and stay silent when fresh. For a
+        # Claude Code UserPromptSubmit hook, stdout is injected into the prompt, so
+        # this branch emits ONLY the structured JSON (no human-readable lines).
+        from zaxy.memory_persistence import build_injection_context
+
+        context = build_injection_context(eventloom_path, session_id=session_id)
+        if context:
+            typer.echo(
+                json.dumps(
+                    {
+                        "hookSpecificOutput": {
+                            "hookEventName": "UserPromptSubmit",
+                            "additionalContext": context,
+                        }
+                    }
+                )
+            )
+        return
     if normalized_trigger == "command":
         if command is None or exit_code is None:
             raise typer.BadParameter("command hooks require --command and --exit-code")
