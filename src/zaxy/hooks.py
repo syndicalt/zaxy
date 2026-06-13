@@ -44,6 +44,21 @@ def render_hook_config(
         return json.dumps(
             {
                 "hooks": {
+                    "UserPromptSubmit": [
+                        {
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": _hook_command(
+                                        "user-prompt-submit",
+                                        eventloom_path=eventloom_path,
+                                        session_id=session_id,
+                                        source=hook_source,
+                                    ),
+                                }
+                            ],
+                        }
+                    ],
                     "Stop": [
                         {
                             "matcher": "*",
@@ -80,6 +95,10 @@ def render_hook_config(
             indent=2,
             sort_keys=True,
         )
+    # NOTE: per-turn recall injection (UserPromptSubmit -> additionalContext) is
+    # Claude Code-only. Codex/generic clients expose no equivalent per-prompt hook,
+    # so they get capture (session-start/resume/stop/precompact) but NOT the
+    # deterministic re-injection lever; on those clients recall stays advisory.
     return "\n".join(
         [
             "# Zaxy observer hook commands",
@@ -149,13 +168,14 @@ def hook_event_type(trigger: str) -> str:
         "precompact": "hook.precompact",
         "checkpoint": "hook.checkpoint",
         "heartbeat": "hook.heartbeat",
+        "user-prompt-submit": "hook.user_prompt_submitted",
     }
     try:
         return event_types[normalized]
     except KeyError as exc:
         raise ValueError(
             "hook trigger must be one of: session-start, resume, session-resumed, "
-            "stop, precompact, checkpoint, heartbeat"
+            "stop, precompact, checkpoint, heartbeat, user-prompt-submit"
         ) from exc
 
 
