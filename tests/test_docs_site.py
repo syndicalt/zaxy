@@ -82,8 +82,8 @@ def test_public_site_has_product_positioning_and_required_sections() -> None:
     assert "<title>Zaxy - event-sourced memory for agent work</title>" in html
     assert 'name="description"' in html
     assert 'property="og:image"' in html
-    assert "https://docs.zaxy.io/assets/zaxy-v2.1-hero.png" in html
-    for path in ("docs/assets/zaxy-v2.1-hero.png", "site/assets/zaxy-v2.1-hero.png"):
+    assert "https://docs.zaxy.io/assets/zaxy-v2.3-header.png" in html
+    for path in ("docs/assets/zaxy-v2.3-header.png", "site/assets/zaxy-v2.3-header.png"):
         assert Path(path).exists(), path
         assert Path(path).stat().st_size > 0, path
     assert "Event-sourced memory for agent work" in html
