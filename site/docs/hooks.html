@@ -139,6 +139,12 @@ zaxy hook-event heartbeat --eventloom-path .eventloom --session-id my-project-de
       </table>
       <p>Unknown triggers are rejected before writing.</p>
       <p>Lifecycle hooks also run the memory persistence policy. If Zaxy has not been used recently, or the hook marks a session start, resume, compaction, long session, long tool run, or roadmap/status question, Zaxy appends <code>memory.reminder.suggested</code>. That event is intentionally read-only guidance for the agent: call <code>memory_bootstrap</code> if awareness is unclear, then call <code>memory_checkout</code> and trust only cited current checkout facts.</p>
+      <h2 id="per-turn-memory-injection-userpromptsubmit">Per-Turn Memory Injection (<code>UserPromptSubmit</code>)</h2>
+      <p>Capture is deterministic, but recall used to be advisory: nothing re-injected the memory contract into the model&#x27;s context, so long sessions drifted. The <code>UserPromptSubmit</code> hook closes that recall gap. On every turn it re-checks memory freshness and, when memory is stale, injects a single terse declarative line that names the session, how many events have passed since the last memory use, and the recommended <code>memory_checkout</code>. When memory is fresh it stays silent and adds no context noise. Wire it via:</p>
+      <pre><code class="language-bash">zaxy hooks claude-code --eventloom-path .eventloom --domain my-project</code></pre>
+      <p>Codex ships Claude-parity hooks, so the same <code>UserPromptSubmit</code> / <code>additionalContext</code> injection works there too. <code>render_hook_config(&quot;codex&quot;)</code> emits a <code>.codex/hooks.json</code> with the same per-turn recall behavior:</p>
+      <pre><code class="language-bash">zaxy hooks codex --eventloom-path .eventloom --domain my-project</code></pre>
+      <p>The injected line is plain prose rather than JSON or glyphs, and it is assembled read-only from Eventloom-backed state, so it stays small enough to prepend to the prompt verbatim without risking stale context after a checkout.</p>
       <p>Checkpoint hooks can include retrieval-useful metadata:</p>
       <pre><code class="language-bash">zaxy hook-event checkpoint \
   --eventloom-path .eventloom \
@@ -204,6 +210,10 @@ zaxy hook-event transcript-turn \
 }</code></pre>
       <p>Any harness with a post-compaction or resume hook can use the same command; the packet is plain text bracketed by <code>=== ZAXY RECOVERY PACKET ... ===</code> markers. <code>zaxy doctor</code> complements the loop with hash-chain, projection freshness, embedding-dimension, and vector-cache headroom checks so a resumed session can trust what it recovers.</p>
       <p>Command observations redact common secret-bearing arguments and bound stdout and stderr excerpts. File-edit observations persist path, operation, summary, and line count metadata; they do not persist source content. Tool-call observations persist argument keys but not raw argument values. Transcript-turn observations sanitize content before append so they can serve as source-recall material without storing obvious secrets.</p>
+      <h3 id="tool-io-offload-provenance-zaxyoffloadtoolio">Tool-I/O Offload Provenance (<code>ZAXY_OFFLOAD_TOOL_IO</code>)</h3>
+      <p>Default capture stays lean, so it truncates command output and keeps only tool argument keys. When you need full, replayable provenance for tool I/O, set <code>ZAXY_OFFLOAD_TOOL_IO</code>. The full command output or tool arguments are then written to a content-addressed, tamper-evident blob under <code>&lt;eventloom&gt;/refs/</code> (the blob id is its own sha256), and the lean event carries a <code>full_io_ref</code> pointer. Context assembly and <code>memory_checkout</code> still see only the summary; drill down to the full text on demand:</p>
+      <pre><code class="language-bash">zaxy offload-get &lt;sha256&gt;</code></pre>
+      <p>Offload is opt-in, and secret-looking argument values are still masked before the blob is written, so the lean default and the privacy guarantees are preserved.</p>
       <h2 id="payload">Payload</h2>
       <p>Hook events use actor <code>zaxy-hook</code> and append to the selected session log. The payload is intentionally small:</p>
       <pre><code class="language-json">{
