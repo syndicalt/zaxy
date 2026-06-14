@@ -23,21 +23,36 @@ number depends on workload and must be reported with both.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 
-import tiktoken
+# Prefer a real BPE tokenizer when available (benchmark runs), but stay
+# dependency-free otherwise: the methodology only needs a *consistent* tokenizer,
+# since it compares token counts at equal recall between two arms.
+_encode: Callable[[str], list]
+_decode: Callable[[list], str]
+try:  # pragma: no cover - depends on optional install
+    import tiktoken
 
-ENC = tiktoken.get_encoding("cl100k_base")
+    _ENC = tiktoken.get_encoding("cl100k_base")
+    _encode = _ENC.encode
+    _decode = _ENC.decode
+    TOKENIZER = "tiktoken/cl100k_base"
+except Exception:  # noqa: BLE001 - any import/runtime failure -> fallback
+    _encode = lambda s: s.split()  # noqa: E731 - whitespace tokens
+    _decode = lambda t: " ".join(t)  # noqa: E731
+    TOKENIZER = "whitespace-fallback"
+
 DEFAULT_CHUNK_TOKENS = 512
 
 
 def tokens(text: str) -> int:
-    return len(ENC.encode(text))
+    return len(_encode(text))
 
 
 def chunk_text(text: str, chunk_tokens: int = DEFAULT_CHUNK_TOKENS) -> list[str]:
-    toks = ENC.encode(text)
-    return [ENC.decode(toks[i : i + chunk_tokens]) for i in range(0, len(toks), chunk_tokens)]
+    toks = _encode(text)
+    return [_decode(toks[i : i + chunk_tokens]) for i in range(0, len(toks), chunk_tokens)]
 
 
 def _kw(text: str) -> list[str]:
@@ -99,7 +114,11 @@ def compare_corpus(cases: list[dict], *, chunk_tokens: int = DEFAULT_CHUNK_TOKEN
     scored = [r for r in results if r.reduction is not None]
     reductions = [r.reduction for r in scored]
     return {
-        "baseline": {"chunk_tokens": chunk_tokens, "ranking": "keyword-overlap (embedding-free)"},
+        "baseline": {
+            "chunk_tokens": chunk_tokens,
+            "ranking": "keyword-overlap (embedding-free)",
+            "tokenizer": TOKENIZER,
+        },
         "cases_total": len(results),
         "cases_equal_recall": len(scored),
         "median_reduction": (sorted(reductions)[len(reductions) // 2] if reductions else None),
