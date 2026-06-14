@@ -728,6 +728,88 @@ def offload_get(
     typer.echo(content, nl=False)
 
 
+@app.command("export-keygen")
+def export_keygen(
+    out_private: Path = typer.Option(..., "--out-private", help="Write PKCS8 PEM private key here (chmod 600)"),  # noqa: B008
+    out_public: Path = typer.Option(..., "--out-public", help="Write hex public key here"),  # noqa: B008
+    algorithm: str | None = typer.Option(None, "--algorithm", help="ml-dsa-65 (default if available) or ed25519"),  # noqa: B008
+) -> None:
+    """Generate a self-sovereign signing keypair for portable memory export."""
+    from zaxy.portable import generate_keypair
+
+    keypair = generate_keypair(algorithm)
+    out_private.write_bytes(keypair["private_pem"])
+    out_private.chmod(0o600)
+    out_public.write_text(keypair["public_key"].hex(), encoding="utf-8")
+    typer.echo(
+        f"keypair {keypair['algorithm']}: private -> {out_private} (chmod 600); public -> {out_public}"
+    )
+
+
+@app.command("export")
+def export_memory(
+    out: Path = typer.Option(..., "--out", help="Write the signed bundle JSON here"),  # noqa: B008
+    private_key: Path = typer.Option(..., "--private-key", help="PKCS8 PEM private key file"),  # noqa: B008
+    public_key: Path = typer.Option(..., "--public-key", help="hex public key file"),  # noqa: B008
+    algorithm: str = typer.Option("ml-dsa-65", "--algorithm", help="signature algorithm of the key"),
+    eventloom_path: str = typer.Option(".eventloom", "--eventloom-path"),
+    session_id: str = typer.Option("default", "--session-id"),
+    types: str = typer.Option("decision.made,goal.created,task.completed", "--types", help="comma-separated event types to export"),
+    limit: int = typer.Option(200, "--limit", help="cap to the most recent N matching events"),
+) -> None:
+    """Build a signed, verifiable export bundle from a session's declarative events."""
+    import secrets
+    from datetime import UTC, datetime
+
+    from zaxy.event import EventLog
+    from zaxy.portable import build_export
+
+    keep = {t.strip() for t in types.split(",") if t.strip()}
+    base = Path(eventloom_path)
+    log = base if base.suffix == ".jsonl" else base / f"{session_id}.jsonl"
+    events = EventLog(log).read_all()
+    entries = [
+        {"type": e.type, "actor": e.actor, "seq": e.seq, "payload": e.payload}
+        for e in events
+        if e.type in keep
+    ][-limit:]
+    if not entries:
+        raise typer.BadParameter(f"no events of types {sorted(keep)} in session {session_id}")
+    keypair = {
+        "algorithm": algorithm,
+        "private_pem": private_key.read_bytes(),
+        "public_key": bytes.fromhex(public_key.read_text(encoding="utf-8").strip()),
+    }
+    bundle = build_export(
+        entries,
+        keypair=keypair,
+        session_id=session_id,
+        created_at=datetime.now(UTC).isoformat(),
+        nonce=secrets.token_hex(16),
+    )
+    out.write_text(json.dumps(bundle, indent=2, ensure_ascii=False), encoding="utf-8")
+    typer.echo(
+        f"exported {len(entries)} entries -> {out} (alg={algorithm}, root={bundle['merkle_root'][:16]})"
+    )
+
+
+@app.command("verify-export")
+def verify_export_cmd(
+    bundle: Path = typer.Argument(..., help="signed bundle JSON file"),  # noqa: B008
+    expect_public_key: str | None = typer.Option(None, "--expect-public-key", help="pin: hex public key the bundle must be signed by"),  # noqa: B008
+) -> None:
+    """Verify a signed export bundle (integrity + authenticity); exit 1 on failure."""
+    from zaxy.portable import verify_export
+
+    result = verify_export(
+        json.loads(bundle.read_text(encoding="utf-8")), expect_public_key=expect_public_key
+    )
+    suffix = f" - {result['reason']}" if result.get("reason") else ""
+    typer.echo(f"verify: {'OK' if result['ok'] else 'FAIL'}{suffix}")
+    if not result["ok"]:
+        raise typer.Exit(code=1)
+
+
 def _resolve_cli_projection_backend(
     projection_backend: str | None,
     settings: Settings,
