@@ -1,0 +1,65 @@
+<svg width="1600" height="640" viewBox="0 0 1600 640" xmlns="http://www.w3.org/2000/svg" font-family="Inter, system-ui, sans-serif">
+  <defs>
+    <pattern id="grid" width="86" height="86" patternUnits="userSpaceOnUse">
+      <path d="M86 0H0V86" fill="none" stroke="#dce6e2" stroke-opacity="0.05" stroke-width="1"/>
+    </pattern>
+    <radialGradient id="vig" cx="64%" cy="40%" r="80%">
+      <stop offset="0%" stop-color="#16212b"/>
+      <stop offset="72%" stop-color="#0b1014"/>
+      <stop offset="100%" stop-color="#070b0e"/>
+    </radialGradient>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3"/></filter>
+    <g id="zmark">
+      <rect x="-19" y="-19" width="38" height="38" rx="9" fill="#f8faf7"/>
+      <path d="M-9,-7 H9 L-9,7 H10" fill="none" stroke="#0b1014" stroke-width="3.6" stroke-linejoin="round" stroke-linecap="round"/>
+    </g>
+  </defs>
+
+  <rect width="1600" height="640" fill="url(#vig)"/>
+  <rect width="1600" height="640" fill="url(#grid)"/>
+
+  <!-- LEFT: title block -->
+  <text x="96" y="150" font-family="JetBrains Mono, monospace" font-size="22" letter-spacing="5" fill="#2eb7a4">RELEASE · v2.4.0</text>
+  <text x="92" y="248" font-family="Georgia, 'Times New Roman', serif" font-size="84" font-weight="700" fill="#f8faf7">Portable, signed</text>
+  <text x="92" y="332" font-family="Georgia, 'Times New Roman', serif" font-size="84" font-weight="700" fill="#f8faf7">memory.</text>
+  <text x="96" y="392" font-family="Inter, system-ui, sans-serif" font-size="25" fill="#9fb0aa">Self-sovereign export · post-quantum signatures ·</text>
+  <text x="96" y="426" font-family="Inter, system-ui, sans-serif" font-size="25" fill="#9fb0aa">verifiable subset disclosure · injection-resistant rehydration</text>
+
+  <!-- experimental / review pill (honest, even on the card) -->
+  <g transform="translate(96,470)">
+    <rect x="0" y="0" width="340" height="44" rx="22" fill="none" stroke="#c58b2c" stroke-width="2"/>
+    <circle cx="26" cy="22" r="6" fill="#c58b2c"/>
+    <text x="44" y="29" font-family="JetBrains Mono, monospace" font-size="17" fill="#e0c08a">EXPERIMENTAL · UNAUDITED · review welcome</text>
+  </g>
+
+  <!-- RIGHT: Merkle tree with a signature seal at the root -->
+  <g transform="translate(1230,300)" stroke="#2eb7a4" fill="none">
+    <!-- edges -->
+    <g stroke-width="2.5" stroke-opacity="0.7">
+      <line x1="0" y1="-92" x2="-90" y2="0"/><line x1="0" y1="-92" x2="90" y2="0"/>
+      <line x1="-90" y1="0" x2="-140" y2="92"/><line x1="-90" y1="0" x2="-46" y2="92"/>
+      <line x1="90" y1="0" x2="46" y2="92"/><line x1="90" y1="0" x2="140" y2="92"/>
+    </g>
+    <!-- leaves -->
+    <g fill="#0e1620" stroke-width="2.5">
+      <rect x="-160" y="78" width="40" height="28" rx="5"/><rect x="-66" y="78" width="40" height="28" rx="5"/>
+      <rect x="26" y="78" width="40" height="28" rx="5"/><rect x="120" y="78" width="40" height="28" rx="5"/>
+    </g>
+    <!-- internal nodes -->
+    <circle cx="-90" cy="0" r="15" fill="#0e1620" stroke-width="2.5"/>
+    <circle cx="90" cy="0" r="15" fill="#0e1620" stroke-width="2.5"/>
+    <!-- root + seal -->
+    <circle cx="0" cy="-92" r="40" fill="#0e1620" stroke-width="3" filter="url(#glow)"/>
+    <circle cx="0" cy="-92" r="40" fill="none" stroke="#2eb7a4" stroke-width="3"/>
+    <path d="M-16,-92 l10,11 l20,-22" stroke="#2eb7a4" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="0" cy="-92" r="54" stroke="#2eb7a4" stroke-opacity="0.35" stroke-width="1.5"/>
+  </g>
+  <text x="1230" y="470" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="15" fill="#66747a">ML-DSA · Merkle root · signed</text>
+
+  <!-- footer brand -->
+  <g transform="translate(98,560)">
+    <use href="#zmark" transform="scale(0.85)"/>
+    <text x="32" y="7" font-family="Georgia, 'Times New Roman', serif" font-size="27" font-weight="700" fill="#f8faf7">Zaxy</text>
+    <text x="104" y="7" font-family="JetBrains Mono, monospace" font-size="15" fill="#66747a">auditable agent memory · MIT</text>
+  </g>
+</svg>
