@@ -59,6 +59,24 @@ def test_render_hook_config_emits_user_prompt_submit() -> None:
     cmd = hooks["UserPromptSubmit"][0]["hooks"][0]["command"]
     assert "hook-event user-prompt-submit" in cmd
     assert "zaxy-default" in cmd  # canonical session derived from domain
+    # UserPromptSubmit takes no matcher.
+    assert "matcher" not in hooks["UserPromptSubmit"][0]
+
+
+def test_render_hook_config_emits_user_prompt_submit_for_codex() -> None:
+    # Codex ships Claude-parity hooks with the same additionalContext schema, so the
+    # injection lever must render for Codex too (config -> .codex/hooks.json).
+    config = json.loads(render_hook_config("codex", eventloom_path=".eventloom", domain="zaxy"))
+    hooks = config["hooks"]
+    assert "UserPromptSubmit" in hooks
+    cmd = hooks["UserPromptSubmit"][0]["hooks"][0]["command"]
+    assert "hook-event user-prompt-submit" in cmd
+    assert "--source codex" in cmd
+    assert "zaxy-default" in cmd
+    # Codex omits matcher for non-tool events.
+    assert "matcher" not in hooks["UserPromptSubmit"][0]
+    # Lifecycle capture boundaries also present.
+    assert {"SessionStart", "Stop", "PreCompact"} <= set(hooks)
 
 
 def test_cli_emits_additional_context_when_stale(tmp_path) -> None:  # type: ignore[no-untyped-def]
