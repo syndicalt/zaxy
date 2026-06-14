@@ -1,6 +1,6 @@
 [project]
 name = "zaxy-memory"
-version = "2.4.0"
+version = "2.4.1"
 description = "Coordinator memory for auditable multi-agent projects"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -105,6 +105,9 @@ dev = [
 
 [project.scripts]
 zaxy = "zaxy.__main__:main"
+# Alias so directory auto-installers that assume the console-script name matches
+# the package name can launch it: `uvx zaxy-memory serve`.
+zaxy-memory = "zaxy.__main__:main"
 
 [project.urls]
 Homepage = "https://syndicalt.github.io/zaxy/"
