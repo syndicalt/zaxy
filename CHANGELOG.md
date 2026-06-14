@@ -2,6 +2,17 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 2.4.1 - 2026-06-14
+
+- Fixed MCP-directory installability (Glama listed the server as "cannot be
+  installed"). The package shipped only a `zaxy` console script, but directory
+  auto-installers assume the script name matches the package name — so
+  `uvx zaxy-memory serve` failed with "executable `zaxy-memory` is not provided".
+  Added a `zaxy-memory` console-script alias (same entrypoint), declared the
+  launch in `server.json` (`runtimeHint: uvx`, `packageArguments: ["serve"]`), and
+  added `glama.json` (maintainer claim). `uvx zaxy-memory serve` now starts the
+  stdio MCP server directly. No code/runtime changes.
+
 ## 2.4.0 - 2026-06-14
 
 - **Portable signed memory export — EXPERIMENTAL / UNAUDITED, opt-in.** New
