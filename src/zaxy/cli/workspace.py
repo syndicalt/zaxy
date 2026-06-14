@@ -595,6 +595,7 @@ def hook_event(
             duration_ms=duration_ms,
             stdout=stdout,
             stderr=stderr,
+            eventloom_path=eventloom_path,
         )
         event = eventlog.append(
             event_input["event_type"],
@@ -648,6 +649,7 @@ def hook_event(
             call_id=call_id,
             arguments=arguments,
             result_summary=result_summary,
+            eventloom_path=eventloom_path,
         )
         event = eventlog.append(
             event_input["event_type"],
@@ -708,6 +710,22 @@ def hook_event(
 
         packet = assemble_recovery_packet(eventlog, session_id=session_id)
         typer.echo(render_recovery_packet(packet))
+
+
+@app.command("offload-get")
+def offload_get(
+    sha256: str = typer.Argument(..., help="sha256 id from a full_io_ref pointer"),  # noqa: B008
+    eventloom_path: str = typer.Option(".eventloom", help="Eventloom directory holding refs/"),
+) -> None:
+    """Drill down to the full offloaded tool I/O behind a `full_io_ref` sha256."""
+    from zaxy.offload import read_offload_ref
+
+    content = read_offload_ref(eventloom_path, sha256)
+    if content is None:
+        raise typer.BadParameter(
+            f"no offload blob for {sha256} under {eventloom_path}/refs (missing or integrity mismatch)"
+        )
+    typer.echo(content, nl=False)
 
 
 def _resolve_cli_projection_backend(

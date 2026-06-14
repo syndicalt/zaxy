@@ -11,6 +11,11 @@ from zaxy.lifecycle import (
     build_file_edit_applied_event,
     build_tool_call_completed_event,
 )
+from zaxy.offload import (
+    offload_command_output,
+    offload_tool_arguments,
+    tool_io_offload_enabled,
+)
 from zaxy.security import secure_payload
 
 SECRET_ARG_PATTERN = re.compile(
@@ -29,8 +34,14 @@ def build_command_observation(
     duration_ms: int | None = None,
     stdout: str = "",
     stderr: str = "",
+    eventloom_path: str | None = None,
 ) -> dict[str, Any]:
-    """Build a normalized command observation for automatic capture."""
+    """Build a normalized command observation for automatic capture.
+
+    The event stays lean (bounded excerpts) by default. When tool-I/O offload is
+    opted in (and ``eventloom_path`` is provided), the full output is also written
+    to a content-addressed ref and pointed to via ``full_io_ref``.
+    """
     event = build_command_completed_event(
         command=_redact_command(command),
         exit_code=exit_code,
@@ -43,6 +54,10 @@ def build_command_observation(
     event["payload"]["source"] = source
     if workspace:
         event["payload"]["workspace"] = workspace
+    if eventloom_path and tool_io_offload_enabled():
+        ref = offload_command_output(eventloom_path, stdout=stdout, stderr=stderr)
+        if ref is not None:
+            event["payload"]["full_io_ref"] = ref
     return event
 
 
@@ -83,8 +98,14 @@ def build_tool_call_observation(
     call_id: str | None = None,
     arguments: dict[str, Any] | None = None,
     result_summary: str | None = None,
+    eventloom_path: str | None = None,
 ) -> dict[str, Any]:
-    """Build a normalized tool-call observation without raw argument values."""
+    """Build a normalized tool-call observation without raw argument values.
+
+    Default keeps only ``argument_keys`` (values dropped). When tool-I/O offload is
+    opted in, the full (secret-masked) arguments are also written to a
+    content-addressed ref and pointed to via ``full_io_ref``.
+    """
     event = build_tool_call_completed_event(
         tool_name=tool_name,
         status=status,
@@ -97,6 +118,10 @@ def build_tool_call_observation(
     event["payload"]["source"] = source
     if workspace:
         event["payload"]["workspace"] = workspace
+    if eventloom_path and tool_io_offload_enabled() and arguments:
+        ref = offload_tool_arguments(eventloom_path, arguments)
+        if ref is not None:
+            event["payload"]["full_io_ref"] = ref
     return event
 
 
