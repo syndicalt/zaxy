@@ -28,6 +28,39 @@ HIGH_VALUE_OBSERVATION_TYPES = (
 )
 
 
+def _command_hook_config(
+    events: list[tuple[str, str, str | None]],
+    *,
+    eventloom_path: str,
+    session_id: str,
+    source: str,
+) -> str:
+    """Render a Claude-Code/Codex-style hooks JSON for the given (event, trigger, matcher) set.
+
+    Both Claude Code and Codex consume the same `{"hooks": {Event: [{"hooks": [...]}]}}`
+    schema, including `UserPromptSubmit` with `additionalContext` injection.
+    """
+    hooks: dict[str, Any] = {}
+    for event_name, trigger, matcher in events:
+        group: dict[str, Any] = {
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": _hook_command(
+                        trigger,
+                        eventloom_path=eventloom_path,
+                        session_id=session_id,
+                        source=source,
+                    ),
+                }
+            ]
+        }
+        if matcher is not None:
+            group["matcher"] = matcher
+        hooks[event_name] = [group]
+    return json.dumps({"hooks": hooks}, indent=2, sort_keys=True)
+
+
 def render_hook_config(
     client: HookClient | str,
     *,
@@ -41,64 +74,36 @@ def render_hook_config(
     session_id = domain_default_session(resolved_domain)
     hook_source = source or normalized
     if normalized == "claude-code":
-        return json.dumps(
-            {
-                "hooks": {
-                    "UserPromptSubmit": [
-                        {
-                            "hooks": [
-                                {
-                                    "type": "command",
-                                    "command": _hook_command(
-                                        "user-prompt-submit",
-                                        eventloom_path=eventloom_path,
-                                        session_id=session_id,
-                                        source=hook_source,
-                                    ),
-                                }
-                            ],
-                        }
-                    ],
-                    "Stop": [
-                        {
-                            "matcher": "*",
-                            "hooks": [
-                                {
-                                    "type": "command",
-                                    "command": _hook_command(
-                                        "stop",
-                                        eventloom_path=eventloom_path,
-                                        session_id=session_id,
-                                        source=hook_source,
-                                    ),
-                                }
-                            ],
-                        }
-                    ],
-                    "PreCompact": [
-                        {
-                            "hooks": [
-                                {
-                                    "type": "command",
-                                    "command": _hook_command(
-                                        "precompact",
-                                        eventloom_path=eventloom_path,
-                                        session_id=session_id,
-                                        source=hook_source,
-                                    ),
-                                }
-                            ],
-                        }
-                    ],
-                }
-            },
-            indent=2,
-            sort_keys=True,
+        return _command_hook_config(
+            [
+                ("UserPromptSubmit", "user-prompt-submit", None),
+                ("Stop", "stop", "*"),
+                ("PreCompact", "precompact", None),
+            ],
+            eventloom_path=eventloom_path,
+            session_id=session_id,
+            source=hook_source,
         )
-    # NOTE: per-turn recall injection (UserPromptSubmit -> additionalContext) is
-    # Claude Code-only. Codex/generic clients expose no equivalent per-prompt hook,
-    # so they get capture (session-start/resume/stop/precompact) but NOT the
-    # deterministic re-injection lever; on those clients recall stays advisory.
+    if normalized == "codex":
+        # Codex ships Claude-parity hooks: its UserPromptSubmit accepts the same
+        # additionalContext schema, so the deterministic per-turn recall injection
+        # works here too. Config lives in .codex/hooks.json or a [hooks] table in
+        # config.toml. SessionStart/Stop/PreCompact add lifecycle capture boundaries.
+        return _command_hook_config(
+            [
+                ("UserPromptSubmit", "user-prompt-submit", None),
+                ("SessionStart", "session-start", None),
+                ("Stop", "stop", None),
+                ("PreCompact", "precompact", None),
+            ],
+            eventloom_path=eventloom_path,
+            session_id=session_id,
+            source=hook_source,
+        )
+    # NOTE: per-turn recall injection (UserPromptSubmit -> additionalContext) needs a
+    # client that fires a pre-prompt hook and re-injects the hook's output -- Claude
+    # Code and Codex both do. Truly generic clients expose no such hook, so they get
+    # capture commands only and recall stays advisory there.
     return "\n".join(
         [
             "# Zaxy observer hook commands",
