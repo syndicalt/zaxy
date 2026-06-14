@@ -52,7 +52,16 @@ def unwrap_dek(wrapped: dict[str, str], kek: bytes) -> bytes:
 
 
 class ErasureVault:
-    """Holds wrapped DEKs; cryptographic erasure destroys the key, not the data."""
+    """Holds wrapped DEKs; cryptographic erasure destroys the key, not the data.
+
+    CRITICAL INVARIANT (correctness condition for the GDPR-erasure claim):
+    key material (DEKs and *wrapped* DEKs) and the KEK MUST NEVER be written to the
+    immutable, hash-chained Eventloom log. They must live ONLY in this mutable,
+    truly-erasable vault. If a wrapped DEK ever lands in the append-only log it is
+    permanent, and `erase()` becomes a no-op against anyone with the KEK — erasure
+    would be a false claim. Only ciphertext (which is useless without the key)
+    may be persisted in the immutable log.
+    """
 
     def __init__(self) -> None:
         self._wrapped: dict[str, dict[str, Any]] = {}
@@ -94,6 +103,7 @@ class Capability:
     def authorizes(self, cell_id: str, *, now: float) -> bool:
         if self.revoked:
             return False
-        if self.kind == "temporary" and self.expires_at is not None and now > self.expires_at:
+        # fail closed: a temporary grant without an expiry, or past expiry, denies
+        if self.kind == "temporary" and (self.expires_at is None or now > self.expires_at):
             return False
         return "*" in self.cells or cell_id in self.cells

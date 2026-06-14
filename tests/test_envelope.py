@@ -62,6 +62,12 @@ def test_capability_temporary_expiry() -> None:
     assert cap.authorizes("c1", now=150.0) is False  # expired
 
 
+def test_capability_temporary_without_expiry_fails_closed() -> None:
+    # red-team finding: a 'temporary' grant with no expiry must NOT grant forever
+    cap = Capability("capX", "temporary", cells=("c1",), expires_at=None)
+    assert cap.authorizes("c1", now=1.0) is False
+
+
 def test_capability_permanent_and_scope() -> None:
     cap = Capability("cap2", "permanent", cells=("c1", "c2"))
     assert cap.authorizes("c2", now=10_000.0) is True

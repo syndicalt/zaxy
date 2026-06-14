@@ -81,6 +81,8 @@ def verify_export(bundle: dict[str, Any], *, expect_public_key: str | None = Non
     """Verify integrity + authenticity. If `expect_public_key` (hex) is given, also
     enforce that the bundle was signed by that pinned key (trust establishment)."""
     try:
+        if bundle.get("version") != BUNDLE_VERSION:
+            return {"ok": False, "reason": f"unsupported bundle version {bundle.get('version')!r}"}
         if expect_public_key is not None and bundle.get("public_key") != expect_public_key:
             return {"ok": False, "reason": "public key does not match the pinned/expected key"}
         contents = [e["content"] for e in bundle["entries"]]
@@ -124,6 +126,8 @@ def verify_subset(subset: dict[str, Any], *, expect_public_key: str | None = Non
     """Verify a partial disclosure: the signature over root+metadata, then each
     disclosed entry's Merkle inclusion against the signed root."""
     try:
+        if subset.get("version") != BUNDLE_VERSION:
+            return {"ok": False, "reason": f"unsupported bundle version {subset.get('version')!r}"}
         if expect_public_key is not None and subset.get("public_key") != expect_public_key:
             return {"ok": False, "reason": "public key does not match the pinned/expected key"}
         if not signing.verify(

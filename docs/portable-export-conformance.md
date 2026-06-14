@@ -27,7 +27,36 @@ independent verification is provided by the public-chain anchor (OpenTimestamps)
 not a private signing authority. A managed "notary" service is a future product
 layer, never a dependency.
 
+## Adversarial self-review (2026-06-14)
+
+A structured red-team of the protocol logic (not a credentialed human audit).
+Held: domain-separated Merkle blocks the duplicate-leaf forgery class
+(CVE-2012-2459); the signature binds the root **and** all metadata; `verify_*`
+fails closed on exceptions; per-cell DEKs avoid AES-GCM nonce reuse; the fence
+escape prevents literal delimiter forgery.
+
+**Fixed by this pass:**
+- *Crypto-erasure invariant* — made explicit (see `ErasureVault` docstring): key
+  material must NEVER enter the immutable Eventloom, or erasure is a false claim.
+- *`temporary` capability without expiry* now fails **closed** (was grant-forever).
+- *`verify_*` now version-allow-lists* the bundle (rejects unknown versions).
+
+**Residual caveats (documented, not yet addressed — for human review / later phases):**
+- *Canonicalization*: signing uses sorted-key compact JSON; adopt JCS (RFC 8785)
+  and forbid floats/NaN to remove canonicalization ambiguity before production.
+- *KEK nonce volume*: random 96-bit nonces are safe per-DEK (used once) but a KEK
+  wrapping many DEKs should rotate or use counter nonces beyond ~2^32 wraps.
+- *Anchor stub*: `verify_anchor` on a `type: "stub"` anchor proves internal
+  consistency only — NOT external timestamping. Real assurance needs the
+  OpenTimestamps/public-chain hook.
+- *Subset proof length* leaks an approximate total entry count (tree depth).
+- *Rehydration (P2)* is defense-in-depth (semantic guard), explicitly NOT a
+  guarantee against indirect prompt injection.
+
 ## Review gate
-This is security-critical reference code using vetted primitives only. It must
-pass independent cryptographic review before any release. Nothing here has been
-published.
+This is security-critical reference code using vetted primitives only. The
+adversarial self-review above is a layer, **not** a substitute for independent
+human review. For a resource-constrained project the proportionate path is:
+ship clearly labeled `experimental / unaudited`, open it for community + W3C-CG
+scrutiny, and pursue a formal audit only when usage/stakes warrant. Until then,
+make no "audited/secure" claims. Nothing here has been published.

@@ -117,6 +117,14 @@ def test_pubkey_pinning(alg: str) -> None:
     assert verify_export(bundle, expect_public_key="00" * 8)["ok"] is False
 
 
+@pytest.mark.parametrize("alg", ALGS)
+def test_unknown_version_rejected(alg: str) -> None:
+    bundle, _ = _bundle(alg)
+    bad = copy.deepcopy(bundle)
+    bad["version"] = "zaxy.portable.v99"
+    assert verify_export(bad)["ok"] is False  # version allow-list (downgrade/forward-confusion)
+
+
 def test_unique_nonce_changes_bundle() -> None:
     kp = generate_keypair(signing.ALG_ED25519)
     a = build_export(ENTRIES, keypair=kp, session_id="s", created_at="t", nonce="n1")
