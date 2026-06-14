@@ -138,6 +138,32 @@ session, long tool run, or roadmap/status question, Zaxy appends
 the agent: call `memory_bootstrap` if awareness is unclear, then call
 `memory_checkout` and trust only cited current checkout facts.
 
+## Per-Turn Memory Injection (`UserPromptSubmit`)
+
+Capture is deterministic, but recall used to be advisory: nothing re-injected the
+memory contract into the model's context, so long sessions drifted. The
+`UserPromptSubmit` hook closes that recall gap. On every turn it re-checks memory
+freshness and, when memory is stale, injects a single terse declarative line that
+names the session, how many events have passed since the last memory use, and the
+recommended `memory_checkout`. When memory is fresh it stays silent and adds no
+context noise. Wire it via:
+
+```bash
+zaxy hooks claude-code --eventloom-path .eventloom --domain my-project
+```
+
+Codex ships Claude-parity hooks, so the same `UserPromptSubmit` /
+`additionalContext` injection works there too. `render_hook_config("codex")`
+emits a `.codex/hooks.json` with the same per-turn recall behavior:
+
+```bash
+zaxy hooks codex --eventloom-path .eventloom --domain my-project
+```
+
+The injected line is plain prose rather than JSON or glyphs, and it is assembled
+read-only from Eventloom-backed state, so it stays small enough to prepend to the
+prompt verbatim without risking stale context after a checkout.
+
 Checkpoint hooks can include retrieval-useful metadata:
 
 ```bash
@@ -240,6 +266,23 @@ line count metadata; they do not persist source content. Tool-call observations
 persist argument keys but not raw argument values. Transcript-turn observations
 sanitize content before append so they can serve as source-recall material
 without storing obvious secrets.
+
+### Tool-I/O Offload Provenance (`ZAXY_OFFLOAD_TOOL_IO`)
+
+Default capture stays lean, so it truncates command output and keeps only tool
+argument keys. When you need full, replayable provenance for tool I/O, set
+`ZAXY_OFFLOAD_TOOL_IO`. The full command output or tool arguments are then written
+to a content-addressed, tamper-evident blob under `<eventloom>/refs/` (the blob id
+is its own sha256), and the lean event carries a `full_io_ref` pointer. Context
+assembly and `memory_checkout` still see only the summary; drill down to the full
+text on demand:
+
+```bash
+zaxy offload-get <sha256>
+```
+
+Offload is opt-in, and secret-looking argument values are still masked before the
+blob is written, so the lean default and the privacy guarantees are preserved.
 
 ## Payload
 
