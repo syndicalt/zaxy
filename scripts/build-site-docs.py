@@ -52,6 +52,10 @@ def main() -> int:
 
 def build_pages() -> list[RenderedPage]:
     sources = [ROOT / "README.md", *sorted(DOCS_ROOT.rglob("*.md"))]
+    # docs/experimental/ is contributor-only (e.g. unreleased/experimental crypto)
+    # and must never be rendered into the public site.
+    experimental = DOCS_ROOT / "experimental"
+    sources = [s for s in sources if not is_relative_to(s, experimental)]
     return [render_page(source) for source in sources]
 
 

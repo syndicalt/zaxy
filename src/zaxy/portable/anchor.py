@@ -4,7 +4,7 @@ Operator-independent verifiability: commit a bundle's signed core to an external
 timestamp/ledger. The default is a deterministic OFFLINE STUB (no network); a real
 OpenTimestamps / public-chain anchor is a pluggable hook (intentionally not run
 here). Full W3C-spec conformance is blocked on the unfinalized standard (CG
-proposed 2026-05-18) -- see docs/portable-export-conformance.md.
+proposed 2026-05-18) -- see docs/experimental/portable-export-conformance.md.
 """
 
 from __future__ import annotations

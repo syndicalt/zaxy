@@ -13,6 +13,8 @@ NOT YET REVIEWED — Phase 1 reference implementation pending the independent
 cryptographic review the goal (seq 78021) mandates before any release.
 """
 
+import warnings
+
 from zaxy.portable.export import (
     BUNDLE_VERSION,
     build_export,
@@ -21,6 +23,14 @@ from zaxy.portable.export import (
     verify_subset,
 )
 from zaxy.portable.signing import default_algorithm, generate_keypair, mldsa_available
+
+warnings.warn(
+    "zaxy.portable is EXPERIMENTAL and UNAUDITED cryptographic code. Do not rely on it "
+    "to protect high-value secrets or for compliance guarantees. "
+    "See docs/experimental/portable-export-security.md.",
+    category=UserWarning,
+    stacklevel=2,
+)
 
 __all__ = [
     "BUNDLE_VERSION",
