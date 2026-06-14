@@ -2,6 +2,24 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 2.3.4 - 2026-06-14
+
+- **Opt-in full tool-I/O provenance (offload sink).** Default capture stays lean
+  (240-char excerpts, redacted args). With `ZAXY_OFFLOAD_TOOL_IO` enabled, the
+  full command output / tool arguments are also written to a content-addressed
+  blob under `<eventloom>/refs/`, and the lean event carries a `full_io_ref`
+  (`{ref, sha256, bytes}`). The blob id *is* its sha256 and lives inside the
+  Eventloom directory, so it is self-contained and tamper-evident (unlike the
+  foreign `codex_source_ref` pointers, which the hash chain can't attest to).
+  Context and `memory_checkout` still see only the summary; drill down on demand
+  with `zaxy offload-get <sha256>`. Arguments are secret-masked before offload.
+  This closes the provenance gap on tool I/O without touching token leanness.
+- **Chunk-RAG token-reduction methodology** (`scripts/chunk_rag_token_compare.py`):
+  a quality-controlled harness that measures token reduction at *equal
+  answer-bearing recall* against a pinned chunk-RAG baseline, so the AGENTS.md
+  "70–90% vs chunk RAG" figure can be validated (it is now labeled an unvalidated
+  target pending a gated QA-dataset run) instead of asserted.
+
 ## 2.3.3 - 2026-06-13
 
 - Extended deterministic per-turn memory injection to **Codex**. Codex now ships

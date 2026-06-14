@@ -184,7 +184,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 | Neo4j upsert | <100ms | MERGE + index lookup |
 | Hybrid query | <200ms | Parallel exact + keyword + traversal |
 | Total context retrieval | <300ms | End-to-end |
-| Token reduction vs. chunk RAG | 70–90% | Structured paths vs. raw text |
+| Token reduction vs. chunk RAG | 70–90% (target; unvalidated) | Structured paths vs. raw text. Validate with `scripts/chunk_rag_token_compare.py` — quality-controlled (token reduction at *equal answer-bearing recall*, pinned chunk-RAG baseline) — driven by a gold-labeled QA dataset through the gated benchmark. |
 
 ## Current Status
 
