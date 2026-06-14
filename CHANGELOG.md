@@ -2,6 +2,21 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 2.3.3 - 2026-06-13
+
+- Extended deterministic per-turn memory injection to **Codex**. Codex now ships
+  Claude-parity hooks, so its `UserPromptSubmit` event accepts the same
+  `additionalContext` schema. `render_hook_config("codex")` now emits a real
+  `hooks.json` carrying the `UserPromptSubmit` injection hook (plus
+  `SessionStart`/`Stop`/`PreCompact` lifecycle capture), for `.codex/hooks.json`
+  or a `[hooks]` table in `config.toml`. Install with
+  `zaxy hooks codex -o ~/.codex/hooks.json`.
+- Corrects the 2.3.2 note that per-turn injection was Claude Code-only: it now
+  works on Claude Code **and** Codex; only truly generic clients (with no
+  pre-prompt hook that re-injects output) remain advisory.
+- No runtime change — the `zaxy hook-event user-prompt-submit` CLI already
+  emitted the exact JSON both clients consume; this un-gates rendering/install.
+
 ## 2.3.2 - 2026-06-13
 
 - Closed the recall persistence gap with deterministic per-turn memory injection
