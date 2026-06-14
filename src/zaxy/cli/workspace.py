@@ -716,8 +716,13 @@ def hook_event(
 def offload_get(
     sha256: str = typer.Argument(..., help="sha256 id from a full_io_ref pointer"),  # noqa: B008
     eventloom_path: str = typer.Option(".eventloom", help="Eventloom directory holding refs/"),
+    fenced: bool = typer.Option(False, "--fenced", help="Wrap as injection-resistant untrusted data (when feeding the blob back to a model)"),  # noqa: B008
 ) -> None:
-    """Drill down to the full offloaded tool I/O behind a `full_io_ref` sha256."""
+    """Drill down to the full offloaded tool I/O behind a `full_io_ref` sha256.
+
+    Raw by default (for tooling); `--fenced` applies injection-resistant rehydration
+    so captured (attacker-influenceable) content is safe to re-inject into a model.
+    """
     from zaxy.offload import read_offload_ref
 
     content = read_offload_ref(eventloom_path, sha256)
@@ -725,7 +730,12 @@ def offload_get(
         raise typer.BadParameter(
             f"no offload blob for {sha256} under {eventloom_path}/refs (missing or integrity mismatch)"
         )
-    typer.echo(content, nl=False)
+    if fenced:
+        from zaxy.portable.rehydration import rehydrate
+
+        typer.echo(rehydrate(content, origin="offload", label="offloaded tool I/O")["text"])
+    else:
+        typer.echo(content, nl=False)
 
 
 @app.command("export-keygen")
