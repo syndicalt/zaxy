@@ -2,6 +2,29 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 2.4.0 - 2026-06-14
+
+- **Portable signed memory export — EXPERIMENTAL / UNAUDITED, opt-in.** New
+  `zaxy.portable` module (install `zaxy-memory[export]`) for self-sovereign,
+  cryptographically-signed, verifiable memory export:
+  - Signed bundles: post-quantum **ML-DSA-65** (FIPS-204) primary, Ed25519
+    fallback; a domain-separated Merkle tree binds the entries and enables
+    **verifiable partial disclosure** (prove a subset without revealing the rest);
+    the signature binds the root and all metadata; public-key pinning.
+  - **Injection-resistant rehydration** of recalled content (data-not-instructions
+    fencing); opt-in `zaxy offload-get --fenced`.
+  - **Encryption envelope + cryptographic erasure** (per-cell AES-256-GCM, KEK
+    wrap, key-destruction erasure for GDPR Art.17) and capability-scoped sharing.
+  - Pluggable public anchor (offline stub + OpenTimestamps hook).
+  - CLI: `export-keygen`, `export`, `verify-export`.
+  > ⚠️ This is **experimental, unaudited** cryptographic code. It uses only vetted
+  > primitives (pyca/cryptography) and ships behind an opt-in extra with a loud
+  > import-time warning. **Do not rely on it for high-value secrets or compliance.**
+  > It has had an adversarial self-review (a layer, not a substitute for
+  > independent human review); see `docs/experimental/portable-export-security.md`.
+- No changes to the default runtime, capture, recall, or existing MCP tools;
+  nothing in core imports `zaxy.portable`.
+
 ## 2.3.4 - 2026-06-14
 
 - **Opt-in full tool-I/O provenance (offload sink).** Default capture stays lean
