@@ -76,6 +76,11 @@ embedded = [
 latticedb = [
     "latticedb>=0.9.6",
 ]
+export = [
+    # Portable signed export. Ed25519 works with the cryptography that PyJWT[crypto]
+    # already pulls in; ML-DSA-65 (post-quantum) requires cryptography >= 46.
+    "cryptography>=46.0",
+]
 frameworks = [
     "langgraph>=0.6",
     "crewai>=0.100",
