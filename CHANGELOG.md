@@ -2,6 +2,25 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 2.4.3 - 2026-06-15
+
+- **`memory_checkout` no longer blocks the MCP event loop — interrupting an
+  in-flight checkout cancels cleanly instead of tearing down the server.**
+  Checkout's synchronous, CPU/IO-bound retrieval (full replay + verbatim index
+  build + packet assembly) ran directly on the asyncio event loop, so while a
+  checkout was in progress the server could not read stdin or honor the
+  client's cancellation. A killed call therefore escalated to a transport
+  teardown and the server process exited ("server crashed when I killed the
+  call"). The heavy sections now run in worker threads via `asyncio.to_thread`,
+  keeping the loop responsive so cancellation unwinds gracefully and the server
+  stays up.
+  - `handle_memory_checkout` and `_assemble_context` offload `replay`, the
+    `VerbatimIndex` build, and `build_memory_checkout` to threads.
+  - A new per-server `asyncio.Lock` serializes the off-loop checkout body,
+    preserving the prior single-flight invariant over shared session/index
+    state now that the work can overlap across awaits.
+  - No API or behavior change; same cited facts are surfaced.
+
 ## 2.4.2 - 2026-06-15
 
 - **Memory Checkout latency fix — warm `memory_checkout` ~19s → ~1.6s on a
