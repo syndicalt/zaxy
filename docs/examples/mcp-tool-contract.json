@@ -1,5 +1,5 @@
 {
-  "tool_count": 47,
+  "tool_count": 48,
   "tools": [
     {
       "description": "The front door to Zaxy memory: call this first, before substantial work, to checkout current, cited, prompt-ready memory state for a session. Start here; every other memory tool is plumbing or power use, discoverable through memory_capabilities.",
@@ -297,7 +297,7 @@
       "name": "memory_capabilities"
     },
     {
-      "description": "Experimental metamemory pre-check: predict whether memory_checkout would likely return something for a query, in roughly a millisecond, from in-memory session state only (no embedding call, no graph query). Returns a non-authoritative verdict (likely | possible | unlikely) with its signal breakdown and raw score. It is a cheap prediction about checkout, never a memory answer or evidence, and its calibration against real checkout outcomes is still being measured \u2014 when in doubt, call memory_checkout.",
+      "description": "Experimental metamemory pre-check: predict whether memory_checkout would likely return something for a query, in roughly a millisecond, from in-memory session state only (no embedding call, no graph query). Returns a non-authoritative verdict (likely | possible | unlikely) with its signal breakdown and raw score. It is a cheap prediction about checkout, never a memory answer or evidence, and its calibration against real checkout outcomes is still being measured — when in doubt, call memory_checkout.",
       "input_schema": {
         "additionalProperties": false,
         "properties": {
@@ -975,6 +975,83 @@
         "type": "object"
       },
       "name": "memory_verbatim"
+    },
+    {
+      "description": "Export a session's memory as a portable, cited bundle any product can consume. Pull-style: the caller selects what to export via the selector; entries carry sealed Eventloom citations. Returns a signed bundle when the server has an export signing key configured and sign=true, otherwise an unsigned canonical bundle.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "admin_token": {
+            "description": "Admin token when admin gating is configured",
+            "type": "string"
+          },
+          "exclude_sensitivities": {
+            "description": "Redaction policy: drop entries whose event sensitivity tier is listed",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "grains": {
+            "description": "Which grains to include (default both)",
+            "items": {
+              "enum": [
+                "event",
+                "semantic"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "kinds": {
+            "description": "Restrict to these event types (gates both grains)",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "limit": {
+            "description": "Cap to the most recent N matching events",
+            "type": "integer"
+          },
+          "max_seq": {
+            "description": "Inclusive upper bound on seq",
+            "type": "integer"
+          },
+          "query": {
+            "description": "Lexical pre-filter via the verbatim index",
+            "type": "string"
+          },
+          "query_limit": {
+            "default": 50,
+            "description": "Top-N for the query pre-filter",
+            "type": "integer"
+          },
+          "session_id": {
+            "description": "Session to export",
+            "type": "string"
+          },
+          "sign": {
+            "default": false,
+            "description": "Sign with the server-configured export key (errors if none is configured)",
+            "type": "boolean"
+          },
+          "since_seq": {
+            "description": "Exclusive delta cursor: seq > since_seq",
+            "type": "integer"
+          },
+          "since_time": {
+            "description": "Inclusive ISO-8601 lower time bound",
+            "type": "string"
+          },
+          "until_time": {
+            "description": "Inclusive ISO-8601 upper time bound",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "memory_export"
     },
     {
       "description": "Persist Memory Checkout answer candidates as synthesis artifacts and optional outcome feedback.",

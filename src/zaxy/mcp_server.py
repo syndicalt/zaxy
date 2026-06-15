@@ -71,6 +71,7 @@ from zaxy.core import (
     build_memory_checkout,
     entity_reinforcement_targets,
 )
+from zaxy.export_view import ExportSelector, build_memory_export, load_signing_key
 from zaxy.extract import extract
 from zaxy.lifecycle import (
     build_session_ended_event,
@@ -783,6 +784,50 @@ TOOLS = [
                 "query": {"type": "string", "description": "Natural language query"},
                 "session_id": {"type": "string", "description": "Session ID for source recall"},
                 "limit": {"type": "integer", "description": "Max results", "default": 10},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="memory_export",
+        description=(
+            "Export a session's memory as a portable, cited bundle any product can consume. "
+            "Pull-style: the caller selects what to export via the selector; entries carry "
+            "sealed Eventloom citations. Returns a signed bundle when the server has an export "
+            "signing key configured and sign=true, otherwise an unsigned canonical bundle."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string", "description": "Session to export"},
+                "grains": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": ["event", "semantic"]},
+                    "description": "Which grains to include (default both)",
+                },
+                "kinds": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Restrict to these event types (gates both grains)",
+                },
+                "since_seq": {"type": "integer", "description": "Exclusive delta cursor: seq > since_seq"},
+                "max_seq": {"type": "integer", "description": "Inclusive upper bound on seq"},
+                "since_time": {"type": "string", "description": "Inclusive ISO-8601 lower time bound"},
+                "until_time": {"type": "string", "description": "Inclusive ISO-8601 upper time bound"},
+                "query": {"type": "string", "description": "Lexical pre-filter via the verbatim index"},
+                "query_limit": {"type": "integer", "description": "Top-N for the query pre-filter", "default": 50},
+                "exclude_sensitivities": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Redaction policy: drop entries whose event sensitivity tier is listed",
+                },
+                "limit": {"type": "integer", "description": "Cap to the most recent N matching events"},
+                "sign": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Sign with the server-configured export key (errors if none is configured)",
+                },
+                "admin_token": {"type": "string", "description": "Admin token when admin gating is configured"},
             },
             "additionalProperties": False,
         },
@@ -2393,6 +2438,47 @@ class ZaxyMCPServer:
         ]
         return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
+    async def handle_memory_export(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_export: pull a session's memory as a portable cited bundle.
+
+        Bulk read of session memory, so it is admin-gated (when an admin token is
+        configured) and session-scoped like other reads. Projection + optional
+        signing run off the event loop via the shared export helper.
+        """
+        self._require_admin(arguments)
+        session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
+        selector = _export_selector_from_arguments(arguments)
+        signing_key = None
+        if bool(arguments.get("sign", False)):
+            signing_key = self._export_signing_key()
+            if signing_key is None:
+                raise ValueError("sign=true but the server has no export signing key configured")
+        bundle = await asyncio.to_thread(
+            build_memory_export,
+            session_id,
+            selector,
+            retrieval_cache=self._retrieval_cache,
+            signing_key=signing_key,
+        )
+        return [TextContent(type="text", text=json.dumps(bundle, indent=2, ensure_ascii=False))]
+
+    def _export_signing_key(self) -> dict[str, Any] | None:
+        """Load the server-configured export signing keypair, or None if unset.
+
+        The signing key is server-side only; a private key is never accepted
+        through tool arguments.
+        """
+        settings = self._settings
+        private_key = settings.mcp_export_signing_private_key_file
+        public_key = settings.mcp_export_signing_public_key_file
+        if not private_key or not public_key:
+            return None
+        return load_signing_key(
+            private_key_path=private_key,
+            public_key_path=public_key,
+            algorithm=settings.mcp_export_signing_algorithm,
+        )
+
     async def handle_memory_feedback(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Handle memory_feedback tool call."""
         feedback = _normalize_feedback(arguments["feedback"])
@@ -3739,6 +3825,39 @@ def _optional_max_tokens(value: object) -> int | None:
     return value
 
 
+def _optional_export_int(value: object, field: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{field} must be an integer")
+    return value
+
+
+def _export_selector_from_arguments(arguments: dict[str, Any]) -> ExportSelector:
+    """Map memory_export tool arguments to an ExportSelector (which validates)."""
+    kwargs: dict[str, Any] = {}
+    if arguments.get("grains") is not None:
+        kwargs["grains"] = frozenset(_optional_text_list(arguments.get("grains")))
+    if arguments.get("kinds") is not None:
+        kwargs["kinds"] = frozenset(_optional_text_list(arguments.get("kinds")))
+    if arguments.get("exclude_sensitivities") is not None:
+        kwargs["exclude_sensitivities"] = frozenset(
+            _optional_text_list(arguments.get("exclude_sensitivities"))
+        )
+    for field_name in ("since_seq", "max_seq", "limit"):
+        resolved = _optional_export_int(arguments.get(field_name), field_name)
+        if resolved is not None:
+            kwargs[field_name] = resolved
+    query_limit = _optional_export_int(arguments.get("query_limit"), "query_limit")
+    if query_limit is not None:
+        kwargs["query_limit"] = query_limit
+    for field_name in ("since_time", "until_time", "query"):
+        resolved_text = _optional_text(arguments.get(field_name))
+        if resolved_text is not None:
+            kwargs[field_name] = resolved_text
+    return ExportSelector(**kwargs)
+
+
 def _optional_strict_text(value: object, field: str) -> str | None:
     if value is None:
         return None
@@ -3895,6 +4014,8 @@ async def _dispatch_tool_call(
         return await active_server.handle_memory_plan_from_procedures(arguments)
     if name == "memory_verbatim":
         return await active_server.handle_memory_verbatim(arguments)
+    if name == "memory_export":
+        return await active_server.handle_memory_export(arguments)
     if name == "memory_feedback":
         return await active_server.handle_memory_feedback(arguments)
     if name == "memory_synthesis_artifact":

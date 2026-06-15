@@ -11,9 +11,12 @@ import pytest
 
 from zaxy.export_view import (
     EXPORT_ENTRY_SCHEMA_VERSION,
+    UNSIGNED_BUNDLE_VERSION,
     ExportSelector,
+    build_memory_export,
     build_memory_export_view,
     export_cursor,
+    load_signing_key,
 )
 from zaxy.retrieval_cache import SessionRetrievalCache
 from zaxy.session import SessionManager
@@ -231,3 +234,66 @@ def test_selector_rejects_empty_or_unknown_grains() -> None:
         ExportSelector(grains=frozenset())
     with pytest.raises(ValueError, match="grains"):
         ExportSelector(grains=frozenset({"event", "bogus"}))
+
+
+def test_build_memory_export_unsigned_envelope(tmp_path: Path) -> None:
+    cache = _cache(tmp_path)
+    _append(cache, "s", "goal.created", {"title": "g1"})
+    _append(cache, "s", "decision.made", {"decision": "ship"})
+
+    bundle = build_memory_export("s", retrieval_cache=cache)
+    view = build_memory_export_view("s", retrieval_cache=cache)
+
+    assert bundle["version"] == UNSIGNED_BUNDLE_VERSION
+    assert bundle["signed"] is False
+    assert bundle["schema_version"] == EXPORT_ENTRY_SCHEMA_VERSION
+    assert bundle["session_id"] == "s"
+    assert bundle["entries"] == view  # unsigned carries the raw projector entries
+
+
+def test_build_memory_export_signed_roundtrips(tmp_path: Path) -> None:
+    cache = _cache(tmp_path)
+    _append(cache, "s", "goal.created", {"title": "g1"})
+    view = build_memory_export_view("s", retrieval_cache=cache)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        from zaxy.portable import generate_keypair, verify_export
+
+    keypair = generate_keypair()
+    bundle = build_memory_export(
+        "s",
+        retrieval_cache=cache,
+        signing_key=keypair,
+        created_at="2026-06-15T00:00:00+00:00",
+        nonce="0" * 32,
+    )
+    assert "signature" in bundle and "merkle_root" in bundle
+    assert verify_export(bundle)["ok"] is True
+    assert len(bundle["entries"]) == len(view)
+
+
+def test_load_signing_key_reads_files(tmp_path: Path) -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        from zaxy.portable import generate_keypair, verify_export
+
+    keypair = generate_keypair()
+    priv = tmp_path / "k.pem"
+    pub = tmp_path / "k.pub"
+    priv.write_bytes(keypair["private_pem"])
+    pub.write_text(keypair["public_key"].hex(), encoding="utf-8")
+
+    loaded = load_signing_key(
+        private_key_path=priv, public_key_path=pub, algorithm=keypair["algorithm"]
+    )
+    assert loaded["algorithm"] == keypair["algorithm"]
+    assert loaded["private_pem"] == keypair["private_pem"]
+    assert loaded["public_key"] == keypair["public_key"]
+
+    cache = _cache(tmp_path)
+    _append(cache, "s", "goal.created", {"title": "g1"})
+    bundle = build_memory_export(
+        "s", retrieval_cache=cache, signing_key=loaded, created_at="2026-06-15T00:00:00+00:00", nonce="0" * 32
+    )
+    assert verify_export(bundle)["ok"] is True

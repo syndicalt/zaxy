@@ -8,6 +8,7 @@ membership without leaking undisclosed entries.
 from __future__ import annotations
 
 import copy
+from pathlib import Path
 
 import pytest
 
@@ -194,8 +195,57 @@ def test_cli_keygen_export_verify_roundtrip(tmp_path) -> None:  # type: ignore[n
     ok = runner.invoke(app, ["verify-export", str(bundle), "--expect-public-key", pinned])
     assert ok.exit_code == 0 and "OK" in ok.stdout
 
-    # tamper the bundle file -> verification must fail (non-zero exit)
+    # tamper the bundle file -> verification must fail (non-zero exit).
+    # Each entry's content is a canonical export entry; mutate the nested payload.
     b = json.loads(bundle.read_text(encoding="utf-8"))
-    b["entries"][0]["content"]["payload"]["decision"] = "TAMPERED"
+    b["entries"][0]["content"]["content"]["payload"]["decision"] = "TAMPERED"
     bundle.write_text(json.dumps(b), encoding="utf-8")
     assert runner.invoke(app, ["verify-export", str(bundle)]).exit_code == 1
+
+
+def test_cli_export_unsigned_and_since_delta(tmp_path: Path) -> None:
+    """CLI export with no keys writes an unsigned bundle matching the projector,
+    and --since exports only newer events."""
+    import json
+
+    from typer.testing import CliRunner
+
+    from zaxy.__main__ import app
+    from zaxy.export_view import ExportSelector, build_memory_export_view
+    from zaxy.retrieval_cache import SessionRetrievalCache
+    from zaxy.session import SessionManager
+
+    el = tmp_path / ".eventloom"
+    log = SessionManager(base_path=str(el)).get("demo").eventlog
+    log.append("decision.made", actor="a", payload={"decision": "d1"}, thread="demo")
+    log.append("goal.created", actor="a", payload={"title": "g2"}, thread="demo")
+
+    runner = CliRunner()
+    out = tmp_path / "b.json"
+    res = runner.invoke(
+        app, ["export", "--out", str(out), "--eventloom-path", str(el), "--session-id", "demo"]
+    )
+    assert res.exit_code == 0, res.output
+    bundle = json.loads(out.read_text(encoding="utf-8"))
+    assert bundle["signed"] is False
+    assert bundle["version"] == "zaxy.export.unsigned.v1"
+
+    cache = SessionRetrievalCache(SessionManager(base_path=str(el)))
+    expected = build_memory_export_view(
+        "demo",
+        ExportSelector(
+            grains=frozenset({"event"}),
+            kinds=frozenset({"decision.made", "goal.created", "task.completed"}),
+        ),
+        retrieval_cache=cache,
+    )
+    assert bundle["entries"] == expected  # CLI and projector agree
+
+    out2 = tmp_path / "b2.json"
+    res2 = runner.invoke(
+        app,
+        ["export", "--out", str(out2), "--eventloom-path", str(el), "--session-id", "demo", "--since", "1"],
+    )
+    assert res2.exit_code == 0, res2.output
+    delta = json.loads(out2.read_text(encoding="utf-8"))
+    assert {e["seq"] for e in delta["entries"]} == {2}

@@ -198,7 +198,7 @@ class TestToolSchema:
 
     def test_tools_list_length(self) -> None:
         """Should expose the memory and context lifecycle tools."""
-        assert len(TOOLS) == 47
+        assert len(TOOLS) == 48
 
     def test_tool_names(self) -> None:
         """Tool names should match the expected contract."""
@@ -224,6 +224,7 @@ class TestToolSchema:
             "memory_reverification_needs",
             "memory_plan_from_procedures",
             "memory_verbatim",
+            "memory_export",
             "memory_feedback",
             "memory_synthesis_artifact",
             "memory_synthesis_evidence",
@@ -4470,3 +4471,93 @@ class TestSalienceReinforcementWiring:
         assert json_loads(result[0].text) == {"status": "invalidated"}
         server.graph.invalidate_entity.assert_awaited_once()
         assert log.read_all() == []
+
+
+class TestMemoryExportTool:
+    """Tests for the memory_export pull surface."""
+
+    @staticmethod
+    def _event(seq: int, etype: str, payload: dict, *, thread: str = "agent-1", h: str = "a") -> Any:
+        from zaxy.event import Event
+
+        return Event(
+            seq=seq,
+            timestamp=f"2026-01-0{seq}T00:00:00Z",
+            type=etype,
+            actor="assistant",
+            thread=thread,
+            payload=payload,
+            hash=h * 64,
+        )
+
+    async def test_unsigned_event_grain_with_citations(self, server: ZaxyMCPServer) -> None:
+        server.session_manager.replay.return_value = MagicMock(
+            events=[self._event(1, "decision.made", {"decision": "x"})]
+        )
+        result = await server.handle_memory_export({"session_id": "agent-1", "grains": ["event"]})
+        payload = json_loads(result[0].text)
+        assert payload["signed"] is False
+        assert payload["version"] == "zaxy.export.unsigned.v1"
+        assert [e["kind"] for e in payload["entries"]] == ["decision.made"]
+        assert payload["entries"][0]["citation"].startswith("eventloom://agent-1/events/1#")
+
+    async def test_selector_passthrough_kinds(self, server: ZaxyMCPServer) -> None:
+        server.session_manager.replay.return_value = MagicMock(
+            events=[
+                self._event(1, "goal.created", {"title": "keep"}, h="a"),
+                self._event(2, "task.completed", {"title": "drop"}, h="b"),
+            ]
+        )
+        result = await server.handle_memory_export(
+            {"session_id": "agent-1", "grains": ["event"], "kinds": ["goal.created"]}
+        )
+        payload = json_loads(result[0].text)
+        assert {e["seq"] for e in payload["entries"]} == {1}
+
+    async def test_admin_gating_blocks_without_token(self, server: ZaxyMCPServer) -> None:
+        server._admin_token = "secret"
+        with pytest.raises(PermissionError):
+            await server.handle_memory_export({"session_id": "agent-1"})
+        server.session_manager.replay.return_value = MagicMock(events=[])
+        result = await server.handle_memory_export(
+            {"session_id": "agent-1", "admin_token": "secret"}
+        )
+        assert json_loads(result[0].text)["entries"] == []
+
+    async def test_session_scope_enforced(self, server: ZaxyMCPServer) -> None:
+        token = remote_session_scope.set("agent-1")
+        try:
+            with pytest.raises(PermissionError):
+                await server.handle_memory_export({"session_id": "other"})
+        finally:
+            remote_session_scope.reset(token)
+
+    async def test_sign_without_configured_key_errors(self, server: ZaxyMCPServer) -> None:
+        with pytest.raises(ValueError, match="signing key"):
+            await server.handle_memory_export({"session_id": "agent-1", "sign": True})
+
+    async def test_signed_with_server_configured_key(
+        self, server: ZaxyMCPServer, tmp_path: Path
+    ) -> None:
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            from zaxy.portable import generate_keypair, verify_export
+
+        keypair = generate_keypair()
+        priv = tmp_path / "k.pem"
+        pub = tmp_path / "k.pub"
+        priv.write_bytes(keypair["private_pem"])
+        pub.write_text(keypair["public_key"].hex(), encoding="utf-8")
+        server._settings.mcp_export_signing_private_key_file = str(priv)
+        server._settings.mcp_export_signing_public_key_file = str(pub)
+        server._settings.mcp_export_signing_algorithm = keypair["algorithm"]
+        server.session_manager.replay.return_value = MagicMock(
+            events=[self._event(1, "goal.created", {"title": "g1"})]
+        )
+
+        result = await server.handle_memory_export({"session_id": "agent-1", "sign": True})
+        bundle = json_loads(result[0].text)
+        assert "signature" in bundle and "merkle_root" in bundle
+        assert verify_export(bundle)["ok"] is True

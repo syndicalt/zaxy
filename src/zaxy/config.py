@@ -194,6 +194,18 @@ class Settings(BaseSettings):
         default="x-zaxy-session-id",
         description="HTTP header that scopes remote MCP/SSE clients to a session",
     )
+    mcp_export_signing_private_key_file: str | None = Field(
+        default=None,
+        description="PKCS8 PEM private key file used to sign memory_export bundles (opt-in)",
+    )
+    mcp_export_signing_public_key_file: str | None = Field(
+        default=None,
+        description="Hex public key file paired with the export signing private key",
+    )
+    mcp_export_signing_algorithm: str = Field(
+        default="ml-dsa-65",
+        description="Signature algorithm of the configured export signing key",
+    )
     mcp_oidc_issuer: str | None = Field(
         default=None,
         description="OIDC issuer URL for remote MCP/SSE JWT validation",
