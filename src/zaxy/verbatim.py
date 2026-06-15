@@ -69,11 +69,63 @@ class VerbatimIndex:
         """Build an index from one or more Eventloom logs."""
         chunks: list[VerbatimChunk] = []
         for eventlog in eventlogs:
-            for event in eventlog.read_all():
-                chunk = _chunk_from_event(event)
-                if chunk is not None:
-                    chunks.append(chunk)
+            chunks.extend(_chunks_from_events(eventlog.read_all()))
         return cls(tuple(chunks))
+
+    @classmethod
+    def from_events(cls, events: list[Event] | tuple[Event, ...]) -> VerbatimIndex:
+        """Build an index from already-read events (single log/source order)."""
+        return cls(_chunks_from_events(events))
+
+    def append_chunks(self, new_chunks: tuple[VerbatimChunk, ...]) -> VerbatimIndex:
+        """Return an index extended with ``new_chunks`` for an append-only log.
+
+        Reuses this index's tokenization and postings for existing chunks and
+        tokenizes only ``new_chunks``. The result is identical to a full
+        rebuild over ``self._chunks + new_chunks``: because the log is
+        append-only the new documents receive strictly higher indices, so
+        postings lists stay ascending and every corpus statistic is recomputed
+        from the combined per-document data. Recomputing the cheap aggregates
+        (IDF, average length, length norms) is O(documents) arithmetic with no
+        re-tokenization, so cost scales with the new events, not the corpus.
+        """
+        new_chunks = tuple(new_chunks)
+        if not new_chunks:
+            return self
+        new_tokenized = tuple(tuple(_tokens(chunk.content)) for chunk in new_chunks)
+        new_term_counts = tuple(Counter(tokens) for tokens in new_tokenized)
+        base = len(self._chunks)
+        index = VerbatimIndex.__new__(VerbatimIndex)
+        index._chunks = self._chunks + new_chunks
+        index._tokenized = self._tokenized + new_tokenized
+        index._term_counts = self._term_counts + new_term_counts
+        postings: dict[str, tuple[int, ...]] = dict(self._term_document_ids)
+        appended: defaultdict[str, list[int]] = defaultdict(list)
+        for offset, counts in enumerate(new_term_counts):
+            doc_index = base + offset
+            for term in counts:
+                appended[term].append(doc_index)
+        for term, new_ids in appended.items():
+            existing = postings.get(term)
+            postings[term] = existing + tuple(new_ids) if existing else tuple(new_ids)
+        index._term_document_ids = postings
+        index._document_lengths = self._document_lengths + tuple(
+            len(tokens) for tokens in new_tokenized
+        )
+        document_frequencies = Counter(self._document_frequencies)
+        for counts in new_term_counts:
+            document_frequencies.update(set(counts))
+        index._document_frequencies = document_frequencies
+        index._document_count = len(index._tokenized)
+        index._average_document_length = (
+            statistics.fmean(index._document_lengths) if index._tokenized else 0.0
+        )
+        index._term_idf = _term_idf(index._document_frequencies, index._document_count)
+        index._document_length_norms = _document_length_norms(
+            index._document_lengths,
+            index._average_document_length,
+        )
+        return index
 
     def query(self, query: str, *, limit: int = 10) -> list[VerbatimHit]:
         """Return exact source chunks ranked by lexical relevance."""
@@ -111,6 +163,16 @@ class VerbatimIndex:
             )
             for score, chunk in heapq.nlargest(lim, scored, key=lambda item: item[0])
         ]
+
+
+def _chunks_from_events(events: list[Event] | tuple[Event, ...]) -> tuple[VerbatimChunk, ...]:
+    """Map events to retrievable chunks, dropping non-indexable events."""
+    chunks: list[VerbatimChunk] = []
+    for event in events:
+        chunk = _chunk_from_event(event)
+        if chunk is not None:
+            chunks.append(chunk)
+    return tuple(chunks)
 
 
 def _chunk_from_event(event: Event) -> VerbatimChunk | None:

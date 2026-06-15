@@ -12,7 +12,7 @@ import pytest
 from freezegun import freeze_time
 from pydantic import ValidationError
 
-from zaxy.event import Event, EventLog, ReplayResult
+from zaxy.event import Event, EventLog, ReplayResult, verify_event_chain
 
 # ------------------------------------------------------------------
 # Event model tests
@@ -656,3 +656,29 @@ class TestEdgeCases:
         assert len(events) == 100
         assert events[-1].seq == 100
         assert tmp_eventlog.verify().ok is True
+
+
+def test_verify_event_chain_verifies_tail_against_prefix(tmp_path) -> None:
+    """verify_event_chain can validate a tail segment against a known prefix."""
+    log = EventLog(tmp_path / "a.jsonl")
+    events = [
+        log.append("goal.created", actor="user", payload={"n": i}, thread="t")
+        for i in range(1, 4)
+    ]
+    # Whole chain from genesis.
+    assert verify_event_chain(events).ok
+
+    # Tail [2,3] linked to event 1 verifies; total counts only the tail.
+    tail = verify_event_chain(events[1:], first_seq=2, prev_hash=events[0].hash)
+    assert tail.ok
+    assert tail.total_events == 2
+
+    # Wrong predecessor hash breaks the link at the first tail event.
+    broken_link = verify_event_chain(events[1:], first_seq=2, prev_hash="0" * 64)
+    assert not broken_link.ok
+    assert broken_link.broken_at_seq == 2
+
+    # A gap (expecting seq 2 but given seq 3) is rejected.
+    gap = verify_event_chain(events[2:], first_seq=2, prev_hash=events[0].hash)
+    assert not gap.ok
+    assert gap.broken_at_seq == 3

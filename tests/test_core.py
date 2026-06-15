@@ -162,7 +162,12 @@ async def test_memory_fabric_queries_verbatim_eventloom_sources(tmp_path: Path) 
 
 
 async def test_memory_fabric_reuses_verbatim_index_until_eventloom_changes(tmp_path: Path) -> None:
-    """Repeated source-lane calls should not rebuild unchanged Eventloom indexes."""
+    """Repeated source-lane calls should not rebuild unchanged Eventloom indexes.
+
+    A new append must be reflected, but via an incremental extension of the
+    cached index (tokenizing only the new events) rather than a full rebuild
+    over the whole corpus.
+    """
     fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
     session = fabric.session_manager.get("agent")
     session.eventlog.append(
@@ -177,9 +182,17 @@ async def test_memory_fabric_reuses_verbatim_index_until_eventloom_changes(tmp_p
         thread="agent",
     )
 
-    with patch("zaxy.core.VerbatimIndex.from_event_logs", wraps=VerbatimIndex.from_event_logs) as build_index:
+    with (
+        patch("zaxy.core.VerbatimIndex.from_events", wraps=VerbatimIndex.from_events) as build_index,
+        patch.object(
+            VerbatimIndex, "append_chunks", autospec=True, side_effect=VerbatimIndex.append_chunks
+        ) as extend_index,
+    ):
         await fabric.query_verbatim("cached source recall", session_id="agent", limit=1)
         await fabric.query_verbatim("answer assembly fast", session_id="agent", limit=1)
+        # Unchanged log: one cold build, no extension.
+        assert build_index.call_count == 1
+        assert extend_index.call_count == 0
         session.eventlog.append(
             "transcript.turn",
             actor="assistant",
@@ -187,13 +200,58 @@ async def test_memory_fabric_reuses_verbatim_index_until_eventloom_changes(tmp_p
                 "source": "codex",
                 "turn_index": 2,
                 "role": "assistant",
-                "content": "A new event should invalidate the cached verbatim index.",
+                "content": "A new event should extend the cached verbatim index.",
             },
             thread="agent",
         )
-        await fabric.query_verbatim("new event invalidate", session_id="agent", limit=1)
+        hits = await fabric.query_verbatim("extend cached index", session_id="agent", limit=1)
 
-    assert build_index.call_count == 2
+    # The append was reflected incrementally: no second full rebuild.
+    assert build_index.call_count == 1
+    assert extend_index.call_count == 1
+    assert hits and "extend the cached verbatim index" in hits[0].content
+
+
+async def test_replay_extends_incrementally_and_matches_full_replay(tmp_path: Path) -> None:
+    """A grown log replays by extending the cached tail, not re-reading the whole log."""
+    fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
+    eventlog = fabric.session_manager.get("agent").eventlog
+    for index in range(3):
+        eventlog.append("goal.created", actor="user", payload={"n": index}, thread="agent")
+
+    with patch.object(
+        fabric.session_manager, "replay", wraps=fabric.session_manager.replay
+    ) as full_replay:
+        first = await fabric.replay(session_id="agent")
+        assert [event.seq for event in first.events] == [1, 2, 3]
+        assert first.integrity is not None and first.integrity.ok
+        assert full_replay.call_count == 1
+
+        for index in range(3, 6):
+            eventlog.append("goal.created", actor="user", payload={"n": index}, thread="agent")
+
+        second = await fabric.replay(session_id="agent")
+        # Tail extension only: no second authoritative full replay.
+        assert full_replay.call_count == 1
+
+    assert [event.seq for event in second.events] == [1, 2, 3, 4, 5, 6]
+    assert second.integrity is not None and second.integrity.ok
+    assert second.integrity.total_events == 6
+
+    # Identical to an independent from-scratch replay (events, order, and hashes).
+    fresh = fabric.session_manager.get("agent").eventlog.replay()
+    assert [(e.seq, e.hash) for e in second.events] == [(e.seq, e.hash) for e in fresh.events]
+
+
+async def test_replay_filters_to_from_seq_on_cached_log(tmp_path: Path) -> None:
+    """replay(from_seq=N) returns only events at or after N from the cached log."""
+    fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
+    eventlog = fabric.session_manager.get("agent").eventlog
+    for index in range(4):
+        eventlog.append("goal.created", actor="user", payload={"n": index}, thread="agent")
+
+    windowed = await fabric.replay(from_seq=3, session_id="agent")
+    assert [event.seq for event in windowed.events] == [3, 4]
 
 
 async def test_memory_fabric_queries_packet_projection_sources(tmp_path: Path) -> None:
@@ -277,6 +335,8 @@ def fabric() -> MemoryFabric:
     ):
         log = MagicMock()
         log.append.return_value = MagicMock(seq=1, hash="a" * 64, type="x", actor="y", timestamp="2024-01-01T00:00:00Z")
+        log.read_all.return_value = []
+        log.read_from_offset.return_value = ([], 0)
         mock_log_cls.return_value = log
 
         session_mgr = MagicMock()
@@ -401,7 +461,7 @@ class TestLifecycle:
         )
         fabric.settings.eventloom_thread = "agent-1"
 
-        with patch("zaxy.core.VerbatimIndex.from_event_logs", wraps=VerbatimIndex.from_event_logs) as build_index:
+        with patch("zaxy.core.VerbatimIndex.from_events", wraps=VerbatimIndex.from_events) as build_index:
             await fabric.connect()
             assert build_index.call_count == 1
             await fabric.query_verbatim("answer-ready checkout", session_id="agent-1", limit=1)
@@ -4295,17 +4355,28 @@ class TestContextAssembly:
 class TestReplay:
     """Tests for event replay."""
 
-    async def test_replay_delegates_to_session_manager(self, fabric: MemoryFabric) -> None:
-        """replay() should delegate to SessionManager.replay()."""
-        mock_result = MagicMock()
-        fabric.session_manager.replay.return_value = mock_result
-        result = await fabric.replay(from_seq=5)
-        fabric.session_manager.replay.assert_called_once_with("default", from_seq=5)
-        assert result is mock_result
+    async def test_replay_fetches_full_log_and_filters_to_from_seq(self, fabric: MemoryFabric) -> None:
+        """replay() fetches the full verified log once, then filters to from_seq.
 
-    async def test_replay_with_session_id(self, fabric: MemoryFabric) -> None:
-        """replay() should forward session_id to SessionManager."""
-        mock_result = MagicMock()
+        The full log is fetched via SessionManager.replay(from_seq=1) so it can
+        be cached and extended incrementally; the requested window is applied in
+        memory.
+        """
+        events = [SimpleNamespace(seq=index) for index in (1, 2, 3)]
+        fabric.session_manager.replay.return_value = ReplayResult.model_construct(
+            events=events,
+            integrity=IntegrityReport(ok=True, total_events=3),
+        )
+        result = await fabric.replay(from_seq=2)
+        fabric.session_manager.replay.assert_called_once_with("default", from_seq=1)
+        assert [event.seq for event in result.events] == [2, 3]
+
+    async def test_replay_returns_full_log_and_forwards_session_id(self, fabric: MemoryFabric) -> None:
+        """replay(from_seq=1) returns the whole log for the given session."""
+        mock_result = ReplayResult.model_construct(
+            events=[SimpleNamespace(seq=1)],
+            integrity=IntegrityReport(ok=True, total_events=1),
+        )
         fabric.session_manager.replay.return_value = mock_result
         result = await fabric.replay(from_seq=1, session_id="agent-1")
         fabric.session_manager.replay.assert_called_once_with("agent-1", from_seq=1)
