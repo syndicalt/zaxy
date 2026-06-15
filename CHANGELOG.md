@@ -2,6 +2,28 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 2.4.4 - 2026-06-15
+
+- **The 2.4.2 incremental-retrieval win now reaches the MCP `memory_checkout`
+  front door.** The MCP checkout path (`ZaxyMCPServer._assemble_context`) rebuilt
+  retrieval state from the whole log on *every* call — `VerbatimIndex.from_event_logs(...)`
+  plus a full `session_manager.replay(...)` — so the per-session caches added in
+  2.4.2 (which live on `MemoryFabric`) never applied to checkout. On a large,
+  active session this is the dominant cost and the reason checkout still ran long
+  after 2.4.2/2.4.3.
+  - Extracted the incremental verbatim-index + verified-replay logic into a new
+    standalone `SessionRetrievalCache` (`zaxy.retrieval_cache`) that depends only
+    on a `SessionManager`. `MemoryFabric` now delegates to it (no behavior
+    change), and the MCP server holds its own long-lived instance so the cache
+    survives across checkouts.
+  - `_assemble_context` reads through the cache, extending only the appended log
+    tail instead of rebuilding. Checkout now also runs the **verified** replay
+    (previously `verify_integrity=False`); the hash-chain integrity guard and the
+    byte-identical-to-full-rebuild guarantee are preserved.
+  - The 2.4.3 single-flight `_checkout_lock` still serializes the off-loop
+    checkout body.
+  - No API or behavior change to results; same cited facts are surfaced.
+
 ## 2.4.3 - 2026-06-15
 
 - **`memory_checkout` no longer blocks the MCP event loop — interrupting an

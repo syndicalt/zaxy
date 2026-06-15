@@ -85,6 +85,7 @@ from zaxy.reasoning_primitives import (
 )
 from zaxy.recall import RecallCandidateSet, build_recall_candidate_set, empty_recall_candidate_set
 from zaxy.refs import MemoryRef, MemoryRefStore
+from zaxy.retrieval_cache import SessionRetrievalCache, _eventlog_file_signature
 from zaxy.retrieval_intent import classify_retrieval_intent
 from zaxy.retrieval_plan import (
     absence_check_bundle,
@@ -143,7 +144,7 @@ from zaxy.synthesis_artifact import (
 from zaxy.synthesis_packet import synthesis_packet_from_items
 from zaxy.trace import MemoryTracer
 from zaxy.transcripts import collect_transcript_events
-from zaxy.verbatim import VerbatimIndex, _chunks_from_events
+from zaxy.verbatim import VerbatimIndex
 from zaxy.working_set import build_working_set, format_working_set
 from zaxy.workspace import (
     WorkspaceProfile,
@@ -409,8 +410,7 @@ class MemoryFabric:
             packet_memory_enabled=resolved_settings.context_packet_memory_enabled,
             packet_memory_slots=resolved_settings.context_packet_memory_slots,
         )
-        self._verbatim_index_cache: dict[str, tuple[tuple[int, int], VerbatimIndex, int]] = {}
-        self._replay_cache: dict[str, tuple[tuple[int, int], ReplayResult, int]] = {}
+        self._retrieval_cache = SessionRetrievalCache(self.session_manager)
         self._event_ref_index_cache: dict[str, tuple[tuple[int, int], dict[int, tuple[str, str]]]] = {}
         self._session_cue_index_cache: dict[str, tuple[tuple[int, int], dict[int, frozenset[str]]]] = {}
         self._query_page_cache: dict[
@@ -437,7 +437,7 @@ class MemoryFabric:
         """Close all connections. Idempotent."""
         await self.graph.close()
         await self.tracer.close()
-        self._verbatim_index_cache = {}
+        self._retrieval_cache.invalidate()
         self._event_ref_index_cache = {}
         self._session_cue_index_cache = {}
         self._query_page_cache = {}
@@ -2162,31 +2162,11 @@ class MemoryFabric:
         return contexts
 
     def _verbatim_index(self, session_id: str) -> VerbatimIndex:
-        """Return a verbatim index for the current Eventloom file state.
+        """Return a per-session verbatim index (cached, incrementally extended).
 
-        The index is cached per session and extended incrementally: when the
-        append-only log has only grown, just the newly appended events are read
-        and tokenized (:meth:`VerbatimIndex.append_chunks`) instead of
-        rebuilding the BM25 index over the whole corpus on every change. The
-        stored cursor is the exact byte offset that was indexed, so concurrent
-        appends during a build never cause missed or duplicated events. A full
-        rebuild only happens on a cold cache or if the log shrank / was
-        rewritten (e.g. compaction).
+        Delegates to :class:`SessionRetrievalCache`; see its ``verbatim_index``.
         """
-        eventlog = self.session_manager.get(session_id).eventlog
-        signature = _eventlog_file_signature(eventlog)
-        cached = self._verbatim_index_cache.get(session_id)
-        if cached is not None and cached[0] == signature:
-            return cached[1]
-        if cached is not None and signature[1] > cached[2]:
-            new_events, end_offset = eventlog.read_from_offset(cached[2])
-            index = cached[1].append_chunks(_chunks_from_events(new_events))
-            self._verbatim_index_cache[session_id] = (signature, index, end_offset)
-            return index
-        events, end_offset = eventlog.read_from_offset(0)
-        index = VerbatimIndex.from_events(events)
-        self._verbatim_index_cache[session_id] = (signature, index, end_offset)
-        return index
+        return self._retrieval_cache.verbatim_index(session_id)
 
     def _session_event_ref_index(self, session_id: str) -> dict[int, tuple[str, str]]:
         """Return a cached seq -> (hash, type) index for the current log state.
@@ -2419,69 +2399,7 @@ class MemoryFabric:
         log on every call. A full re-verify happens on a cold cache, if the log
         shrank / was rewritten, or if incremental verification detects a break.
         """
-        result = self._cached_full_replay(session_id)
-        if from_seq <= 1:
-            return result
-        filtered = [event for event in result.events if event.seq >= from_seq]
-        return ReplayResult.model_construct(events=filtered, integrity=result.integrity)
-
-    def _cached_full_replay(self, session_id: str) -> ReplayResult:
-        """Return the full verified replay for a session, cached + incremental.
-
-        The cold/full path delegates to ``session_manager.replay`` (the
-        authoritative read + full integrity verify). When the cached log has
-        only grown, the appended tail is read and verified against the cached
-        prefix instead. The tail verification doubles as a consistency guard:
-        any offset skew (a concurrent append during the cold read, a rewrite)
-        surfaces as a seq/hash mismatch and falls back to a full replay, so the
-        fast path can never silently miss, duplicate, or trust a bad event.
-        """
-        eventlog = self.session_manager.get(session_id).eventlog
-        signature = _eventlog_file_signature(eventlog)
-        cached = self._replay_cache.get(session_id)
-        if cached is not None and cached[0] == signature:
-            return cached[1]
-        if (
-            cached is not None
-            and isinstance(cached[2], int)
-            and isinstance(signature[1], int)
-            and signature[1] > cached[2]
-            and cached[1].integrity is not None
-            and cached[1].integrity.ok
-        ):
-            new_events, end_offset = eventlog.read_from_offset(cached[2])
-            extended = self._extend_replay(cached[1], new_events)
-            if extended is not None:
-                self._replay_cache[session_id] = (signature, extended, end_offset)
-                return extended
-        result = cast(ReplayResult, self.session_manager.replay(session_id, from_seq=1))
-        offset = _eventlog_file_signature(eventlog)[1]
-        self._replay_cache[session_id] = (signature, result, offset)
-        return result
-
-    @staticmethod
-    def _extend_replay(cached: ReplayResult, new_events: list[Any]) -> ReplayResult | None:
-        """Extend a verified replay with appended events, or None to rebuild.
-
-        Verifies only the new tail against the cached prefix's last event.
-        Returns ``None`` (signalling a full re-verify) when the tail fails
-        verification, so a tampered or reordered append never silently passes.
-        """
-        if not new_events:
-            return cached
-        last = cached.events[-1] if cached.events else None
-        tail = verify_event_chain(
-            new_events,
-            first_seq=(last.seq + 1) if last is not None else 1,
-            prev_hash=last.hash if last is not None else None,
-        )
-        if not tail.ok:
-            return None
-        combined = [*cached.events, *new_events]
-        return ReplayResult(
-            events=combined,
-            integrity=IntegrityReport(ok=True, total_events=len(combined)),
-        )
+        return self._retrieval_cache.verified_replay(session_id, from_seq)
 
     async def propose_consolidation_candidates(
         self,
@@ -5428,15 +5346,6 @@ def _compaction_projection_paths(
     for path in ordered:
         unique.setdefault(path.resolve(), path)
     return tuple(unique.values())
-
-
-def _eventlog_file_signature(eventlog: EventLog) -> tuple[int, int]:
-    """Return a cheap invalidation signature for a local Eventloom log."""
-    try:
-        stat = eventlog.path.stat()
-    except FileNotFoundError:
-        return (0, 0)
-    return (stat.st_mtime_ns, stat.st_size)
 
 
 def _consolidation_candidate_ids(events: list[Any]) -> set[str]:

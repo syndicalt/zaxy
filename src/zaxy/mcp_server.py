@@ -93,6 +93,7 @@ from zaxy.purpose import purpose_profile
 from zaxy.query import QueryRouter, build_retention_policy
 from zaxy.refs import MemoryRef, MemoryRefStore
 from zaxy.remote_security import AuditEventExporter, RemoteAuditEvent, SessionRateLimiter
+from zaxy.retrieval_cache import SessionRetrievalCache
 from zaxy.runtime import LocalEmbeddedGraphRuntime, LocalNeo4jRuntime, LocalPgGraphRuntime
 from zaxy.salience import (
     build_confirmed_reinforcement_event,
@@ -1390,6 +1391,14 @@ class ZaxyMCPServer:
         self._checkout_lock = asyncio.Lock()
         self._eventloom_path = eventloom_path or settings.eventloom_path
         self.session_manager = SessionManager(base_path=self._eventloom_path)
+        # Per-session verbatim-index + verified-replay caches, extended
+        # incrementally as the log grows. The checkout front door
+        # (_assemble_context) reads through this instead of rebuilding from the
+        # full log every call, so the 2.4.2 incremental-retrieval win actually
+        # reaches MCP checkout. Lives on the long-lived server so the cache
+        # survives across calls; the _checkout_lock keeps reads/extends
+        # single-flight.
+        self._retrieval_cache = SessionRetrievalCache(self.session_manager)
         self.refs = MemoryRefStore(self._eventloom_path)
         self._neo4j_uri = neo4j_uri or settings.neo4j_uri
         self._neo4j_user = neo4j_user or settings.neo4j_user
@@ -3086,10 +3095,9 @@ class ZaxyMCPServer:
         salience without an extra log scan.
         """
         replay = await asyncio.to_thread(
-            self.session_manager.replay,
+            self._retrieval_cache.verified_replay,
             session_id,
-            from_seq=replay_from_seq,
-            verify_integrity=False,
+            replay_from_seq,
         )
         events = list(replay.events)
         if as_of_seq is not None:
@@ -3105,9 +3113,9 @@ class ZaxyMCPServer:
         graph_contexts = [_context_from_query_result(result) for result in results]
         verbatim_hits = (
             await asyncio.to_thread(
-                lambda: VerbatimIndex.from_event_logs(
-                    [self.session_manager.get(session_id).eventlog]
-                ).query(query, limit=limit)
+                lambda: self._retrieval_cache.verbatim_index(session_id).query(
+                    query, limit=limit
+                )
             )
             if self.context_assembly_policy.should_query_verbatim(limit=limit)
             else []
