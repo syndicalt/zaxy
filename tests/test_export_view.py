@@ -1,0 +1,233 @@
+"""Tests for the product-agnostic memory export contract (Phase 1)."""
+
+from __future__ import annotations
+
+import json
+import warnings
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
+
+from zaxy.export_view import (
+    EXPORT_ENTRY_SCHEMA_VERSION,
+    ExportSelector,
+    build_memory_export_view,
+    export_cursor,
+)
+from zaxy.retrieval_cache import SessionRetrievalCache
+from zaxy.session import SessionManager
+
+
+def _cache(tmp_path: Path) -> SessionRetrievalCache:
+    return SessionRetrievalCache(SessionManager(base_path=str(tmp_path / ".eventloom")))
+
+
+def _append(
+    cache: SessionRetrievalCache,
+    session_id: str,
+    event_type: str,
+    payload: dict,
+    *,
+    actor: str = "assistant",
+    timestamp: datetime | None = None,
+) -> None:
+    cache.session_manager.get(session_id).eventlog.append(
+        event_type, actor=actor, payload=payload, thread=session_id, timestamp=timestamp
+    )
+
+
+def test_event_grain_projects_cited_entries(tmp_path: Path) -> None:
+    cache = _cache(tmp_path)
+    _append(cache, "s", "goal.created", {"title": "Ship export", "description": "do it"})
+    _append(cache, "s", "task.completed", {"title": "Ship export"})
+
+    entries = build_memory_export_view("s", ExportSelector(grains=frozenset({"event"})), retrieval_cache=cache)
+
+    assert [e["kind"] for e in entries] == ["goal.created", "task.completed"]
+    first = entries[0]
+    assert first["schema_version"] == EXPORT_ENTRY_SCHEMA_VERSION
+    assert first["grain"] == "event"
+    assert first["source"] == "eventloom"
+    assert first["seq"] == 1
+    assert first["valid_from"]  # event timestamp
+    assert first["citation"].startswith("eventloom://s/events/1#")
+    assert len(first["citation"].split("#")[1]) == 64  # full sealed hash
+    assert first["content"] == {
+        "type": "goal.created",
+        "actor": "assistant",
+        "thread": "s",
+        "payload": {"title": "Ship export", "description": "do it"},
+    }
+
+
+def test_semantic_grain_projects_extraction(tmp_path: Path) -> None:
+    cache = _cache(tmp_path)
+    _append(cache, "s", "goal.created", {"title": "Ship export", "description": "the goal"})
+
+    entries = build_memory_export_view(
+        "s", ExportSelector(grains=frozenset({"semantic"})), retrieval_cache=cache
+    )
+
+    assert entries  # extraction yielded at least one entity
+    entity = entries[0]
+    assert entity["grain"] == "semantic"
+    assert entity["source"] == "extraction"
+    assert entity["kind"].startswith("entity:")
+    assert entity["citation"].startswith("eventloom://s/events/1#")
+    assert entity["content"]["name"] == "Ship export"
+
+
+def test_both_grains_default_with_deterministic_ordering(tmp_path: Path) -> None:
+    cache = _cache(tmp_path)
+    _append(cache, "s", "goal.created", {"title": "g1"})
+    _append(cache, "s", "decision.made", {"decision": "use export contract"})
+
+    entries = build_memory_export_view("s", retrieval_cache=cache)  # default = both grains
+
+    # Ascending seq; within each event the event entry precedes its semantic ones.
+    assert [e["seq"] for e in entries] == sorted(e["seq"] for e in entries)
+    by_seq_1 = [e for e in entries if e["seq"] == 1]
+    assert by_seq_1[0]["grain"] == "event"
+    assert all(e["grain"] == "semantic" for e in by_seq_1[1:])
+
+
+def test_kinds_filter_gates_both_grains(tmp_path: Path) -> None:
+    cache = _cache(tmp_path)
+    _append(cache, "s", "goal.created", {"title": "keep"})
+    _append(cache, "s", "task.completed", {"title": "drop"})
+
+    entries = build_memory_export_view(
+        "s", ExportSelector(kinds=frozenset({"goal.created"})), retrieval_cache=cache
+    )
+
+    assert entries
+    assert {e["seq"] for e in entries} == {1}
+    assert all(e["citation"].startswith("eventloom://s/events/1#") for e in entries)
+
+
+def test_seq_range_and_since_cursor(tmp_path: Path) -> None:
+    cache = _cache(tmp_path)
+    for i in range(1, 5):
+        _append(cache, "s", "goal.created", {"title": f"g{i}"})
+
+    # Inclusive max_seq, exclusive since_seq.
+    windowed = build_memory_export_view(
+        "s",
+        ExportSelector(grains=frozenset({"event"}), since_seq=1, max_seq=3),
+        retrieval_cache=cache,
+    )
+    assert [e["seq"] for e in windowed] == [2, 3]
+
+
+def test_time_window_filter(tmp_path: Path) -> None:
+    cache = _cache(tmp_path)
+    _append(cache, "s", "goal.created", {"title": "old"}, timestamp=datetime(2026, 1, 1, tzinfo=UTC))
+    _append(cache, "s", "goal.created", {"title": "new"}, timestamp=datetime(2026, 6, 1, tzinfo=UTC))
+
+    entries = build_memory_export_view(
+        "s",
+        ExportSelector(grains=frozenset({"event"}), since_time="2026-03-01T00:00:00Z"),
+        retrieval_cache=cache,
+    )
+    assert [e["content"]["payload"]["title"] for e in entries] == ["new"]
+
+
+def test_query_prefilter_uses_verbatim_index(tmp_path: Path) -> None:
+    cache = _cache(tmp_path)
+    _append(cache, "s", "transcript.turn", {"content": "the quick brown fox", "role": "user", "turn_index": 1})
+    _append(cache, "s", "transcript.turn", {"content": "lazy dog sleeps", "role": "user", "turn_index": 2})
+
+    entries = build_memory_export_view(
+        "s",
+        ExportSelector(grains=frozenset({"event"}), query="fox"),
+        retrieval_cache=cache,
+    )
+    assert [e["seq"] for e in entries] == [1]
+
+
+def test_since_cursor_delta_correctness(tmp_path: Path) -> None:
+    cache = _cache(tmp_path)
+    _append(cache, "s", "goal.created", {"title": "g1"})
+    _append(cache, "s", "goal.created", {"title": "g2"})
+
+    first = build_memory_export_view("s", retrieval_cache=cache)
+    cursor = export_cursor(first)
+    assert cursor == 2
+
+    _append(cache, "s", "goal.created", {"title": "g3"})
+    delta = build_memory_export_view("s", ExportSelector(since_seq=cursor), retrieval_cache=cache)
+
+    assert delta
+    assert {e["seq"] for e in delta} == {3}
+
+
+def test_redaction_excludes_sensitive_events(tmp_path: Path) -> None:
+    cache = _cache(tmp_path)
+    _append(cache, "s", "decision.made", {"decision": "public call"})
+    # A secret-looking key forces the sealed event's sensitivity to "restricted".
+    _append(cache, "s", "decision.made", {"decision": "leaky", "password": "hunter2"})
+
+    without_policy = build_memory_export_view(
+        "s", ExportSelector(grains=frozenset({"event"})), retrieval_cache=cache
+    )
+    assert {e["seq"] for e in without_policy} == {1, 2}
+
+    redacted = build_memory_export_view(
+        "s",
+        ExportSelector(grains=frozenset({"event"}), exclude_sensitivities=frozenset({"restricted"})),
+        retrieval_cache=cache,
+    )
+    assert {e["seq"] for e in redacted} == {1}
+
+
+def test_schema_version_is_pinned_on_every_entry(tmp_path: Path) -> None:
+    cache = _cache(tmp_path)
+    _append(cache, "s", "goal.created", {"title": "g1"})
+    entries = build_memory_export_view("s", retrieval_cache=cache)
+    assert entries
+    assert all(e["schema_version"] == EXPORT_ENTRY_SCHEMA_VERSION for e in entries)
+
+
+def test_projection_is_canonical_byte_stable(tmp_path: Path) -> None:
+    cache = _cache(tmp_path)
+    _append(cache, "s", "goal.created", {"title": "g1", "description": "stable"})
+    _append(cache, "s", "decision.made", {"decision": "be deterministic"})
+
+    a = build_memory_export_view("s", retrieval_cache=cache)
+    b = build_memory_export_view("s", retrieval_cache=cache)
+    assert a == b
+
+    def dump(value: object) -> str:
+        return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+    assert dump(a) == dump(b)
+
+
+def test_entries_feed_build_export_unchanged(tmp_path: Path) -> None:
+    cache = _cache(tmp_path)
+    _append(cache, "s", "goal.created", {"title": "g1"})
+    _append(cache, "s", "decision.made", {"decision": "ship it"})
+    entries = build_memory_export_view("s", retrieval_cache=cache)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        from zaxy.portable import build_export, generate_keypair, verify_export
+
+    keypair = generate_keypair()
+    bundle = build_export(
+        entries,
+        keypair=keypair,
+        session_id="s",
+        created_at=datetime.now(UTC).isoformat(),
+        nonce="0" * 32,
+    )
+    assert verify_export(bundle)["ok"] is True
+    assert len(bundle["entries"]) == len(entries)
+
+
+def test_selector_rejects_empty_or_unknown_grains() -> None:
+    with pytest.raises(ValueError, match="grains"):
+        ExportSelector(grains=frozenset())
+    with pytest.raises(ValueError, match="grains"):
+        ExportSelector(grains=frozenset({"event", "bogus"}))
