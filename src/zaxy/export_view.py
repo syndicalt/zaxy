@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from zaxy.extract import extract
@@ -39,6 +40,12 @@ if TYPE_CHECKING:
 #: Versioned so consumers can pin the entry contract. Bump on any
 #: backward-incompatible change to an entry's shape or semantics.
 EXPORT_ENTRY_SCHEMA_VERSION = "zaxy.export.v1"
+
+#: Envelope version for the unsigned bundle the export helper returns when no
+#: signing key is supplied. Distinct from ``zaxy.portable.BUNDLE_VERSION`` so a
+#: consumer can tell a signed bundle from an unsigned one by the ``version`` /
+#: ``signed`` fields.
+UNSIGNED_BUNDLE_VERSION = "zaxy.export.unsigned.v1"
 
 Grain = Literal["event", "semantic"]
 _ALL_GRAINS: frozenset[str] = frozenset({"event", "semantic"})
@@ -251,3 +258,64 @@ def export_cursor(entries: list[dict[str, Any]]) -> int | None:
     entries derived from events appended since the last export (delta sync).
     """
     return max((entry["seq"] for entry in entries), default=None)
+
+
+def load_signing_key(
+    *,
+    private_key_path: str | Path,
+    public_key_path: str | Path,
+    algorithm: str,
+) -> dict[str, Any]:
+    """Load a signing keypair from a PKCS8 PEM private key + hex public key file.
+
+    Returns the dict shape :func:`zaxy.portable.build_export` expects. Mirrors how
+    the CLI assembles a keypair so the CLI and the server share one loader.
+    """
+    return {
+        "algorithm": algorithm,
+        "private_pem": Path(private_key_path).read_bytes(),
+        "public_key": bytes.fromhex(Path(public_key_path).read_text(encoding="utf-8").strip()),
+    }
+
+
+def build_memory_export(
+    session_id: str,
+    selector: ExportSelector | None = None,
+    *,
+    retrieval_cache: SessionRetrievalCache,
+    signing_key: dict[str, Any] | None = None,
+    created_at: str | None = None,
+    nonce: str | None = None,
+) -> dict[str, Any]:
+    """Project a session's memory into a portable bundle (the shared export path).
+
+    Both pull surfaces (the ``memory_export`` MCP tool and the CLI) call this so
+    there is exactly one projection path. When ``signing_key`` is supplied the
+    entries are wrapped in a signed :func:`zaxy.portable.build_export` bundle
+    (``created_at``/``nonce`` are generated if omitted); otherwise an unsigned
+    canonical envelope carrying the same entries is returned.
+    """
+    entries = build_memory_export_view(session_id, selector, retrieval_cache=retrieval_cache)
+    if signing_key is None:
+        return {
+            "version": UNSIGNED_BUNDLE_VERSION,
+            "schema_version": EXPORT_ENTRY_SCHEMA_VERSION,
+            "session_id": session_id,
+            "signed": False,
+            "entries": entries,
+        }
+    # Lazy import: signing pulls the optional [export] extra and is EXPERIMENTAL /
+    # UNAUDITED (pending the seq-78021 review). Keep it off the import path of the
+    # pure projection so unsigned exports never require the crypto stack.
+    import secrets
+    from datetime import UTC, datetime
+
+    from zaxy.portable import build_export
+
+    return build_export(
+        entries,
+        keypair=signing_key,
+        session_id=session_id,
+        created_at=created_at or datetime.now(UTC).isoformat(),
+        nonce=nonce or secrets.token_hex(16),
+    )

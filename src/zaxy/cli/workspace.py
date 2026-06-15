@@ -758,49 +758,69 @@ def export_keygen(
 
 @app.command("export")
 def export_memory(
-    out: Path = typer.Option(..., "--out", help="Write the signed bundle JSON here"),  # noqa: B008
-    private_key: Path = typer.Option(..., "--private-key", help="PKCS8 PEM private key file"),  # noqa: B008
-    public_key: Path = typer.Option(..., "--public-key", help="hex public key file"),  # noqa: B008
+    out: Path = typer.Option(..., "--out", help="Write the bundle JSON here"),  # noqa: B008
+    private_key: Path | None = typer.Option(None, "--private-key", help="PKCS8 PEM private key file (omit for an unsigned bundle)"),  # noqa: B008
+    public_key: Path | None = typer.Option(None, "--public-key", help="hex public key file (omit for an unsigned bundle)"),  # noqa: B008
     algorithm: str = typer.Option("ml-dsa-65", "--algorithm", help="signature algorithm of the key"),
     eventloom_path: str = typer.Option(".eventloom", "--eventloom-path"),
     session_id: str = typer.Option("default", "--session-id"),
-    types: str = typer.Option("decision.made,goal.created,task.completed", "--types", help="comma-separated event types to export"),
-    limit: int = typer.Option(200, "--limit", help="cap to the most recent N matching events"),
+    types: str = typer.Option("decision.made,goal.created,task.completed", "--types", help="comma-separated event types to export (empty for all)"),
+    grains: str = typer.Option("event", "--grains", help="comma-separated grains: event, semantic"),
+    since_seq: int | None = typer.Option(None, "--since", help="exclusive delta cursor: export events with seq > this"),
+    max_seq: int | None = typer.Option(None, "--max-seq", help="inclusive upper bound on seq"),
+    since_time: str | None = typer.Option(None, "--since-time", help="inclusive ISO-8601 lower time bound"),
+    until_time: str | None = typer.Option(None, "--until-time", help="inclusive ISO-8601 upper time bound"),
+    query: str | None = typer.Option(None, "--query", help="lexical pre-filter via the verbatim index"),
+    exclude_sensitivities: str = typer.Option("", "--exclude-sensitivities", help="comma-separated sensitivity tiers to drop"),
+    limit: int | None = typer.Option(None, "--limit", help="cap to the most recent N matching events"),
 ) -> None:
-    """Build a signed, verifiable export bundle from a session's declarative events."""
-    import secrets
-    from datetime import UTC, datetime
+    """Build a verifiable export bundle from a session's memory.
 
-    from zaxy.event import EventLog
-    from zaxy.portable import build_export
+    Signs the bundle when --private-key/--public-key are supplied; otherwise
+    writes an unsigned canonical bundle. Uses the shared export contract, so the
+    entries match the memory_export MCP tool exactly.
+    """
+    from zaxy.export_view import ExportSelector, build_memory_export, load_signing_key
+    from zaxy.retrieval_cache import SessionRetrievalCache
+    from zaxy.session import SessionManager
 
-    keep = {t.strip() for t in types.split(",") if t.strip()}
-    base = Path(eventloom_path)
-    log = base if base.suffix == ".jsonl" else base / f"{session_id}.jsonl"
-    events = EventLog(log).read_all()
-    entries = [
-        {"type": e.type, "actor": e.actor, "seq": e.seq, "payload": e.payload}
-        for e in events
-        if e.type in keep
-    ][-limit:]
-    if not entries:
-        raise typer.BadParameter(f"no events of types {sorted(keep)} in session {session_id}")
-    keypair = {
-        "algorithm": algorithm,
-        "private_pem": private_key.read_bytes(),
-        "public_key": bytes.fromhex(public_key.read_text(encoding="utf-8").strip()),
-    }
-    bundle = build_export(
-        entries,
-        keypair=keypair,
-        session_id=session_id,
-        created_at=datetime.now(UTC).isoformat(),
-        nonce=secrets.token_hex(16),
+    kinds = frozenset(t.strip() for t in types.split(",") if t.strip())
+    selector = ExportSelector(
+        grains=frozenset(g.strip() for g in grains.split(",") if g.strip()),
+        kinds=kinds or None,
+        since_seq=since_seq,
+        max_seq=max_seq,
+        since_time=since_time,
+        until_time=until_time,
+        query=query,
+        exclude_sensitivities=frozenset(
+            s.strip() for s in exclude_sensitivities.split(",") if s.strip()
+        ),
+        limit=limit,
     )
+
+    signing_key = None
+    if private_key is not None or public_key is not None:
+        if private_key is None or public_key is None:
+            raise typer.BadParameter("signing requires both --private-key and --public-key")
+        signing_key = load_signing_key(
+            private_key_path=private_key, public_key_path=public_key, algorithm=algorithm
+        )
+
+    cache = SessionRetrievalCache(SessionManager(base_path=eventloom_path))
+    bundle = build_memory_export(
+        session_id, selector, retrieval_cache=cache, signing_key=signing_key
+    )
+    if not bundle["entries"]:
+        raise typer.BadParameter(f"no matching memory to export in session {session_id}")
     out.write_text(json.dumps(bundle, indent=2, ensure_ascii=False), encoding="utf-8")
-    typer.echo(
-        f"exported {len(entries)} entries -> {out} (alg={algorithm}, root={bundle['merkle_root'][:16]})"
-    )
+    if signing_key is None:
+        typer.echo(f"exported {len(bundle['entries'])} entries -> {out} (unsigned)")
+    else:
+        typer.echo(
+            f"exported {len(bundle['entries'])} entries -> {out} "
+            f"(alg={algorithm}, root={bundle['merkle_root'][:16]})"
+        )
 
 
 @app.command("verify-export")
