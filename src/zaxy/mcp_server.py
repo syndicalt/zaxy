@@ -1380,6 +1380,14 @@ class ZaxyMCPServer:
         # signature so any append rebuilds it (the log-signature pattern used
         # by the projection's derived read caches).
         self._fok_index_cache: dict[str, tuple[str, FeelingOfKnowingIndex]] = {}
+        # Serializes the heavy, off-loop checkout body. Checkout's retrieval
+        # (full replay + verbatim index build) is synchronous and CPU/IO-bound;
+        # it runs in a worker thread (see handle_memory_checkout) so the event
+        # loop stays free to read stdin and honor client cancellations. The lock
+        # preserves the previous "one checkout at a time" invariant that the
+        # shared session/index state was written under, now that the work can
+        # overlap across awaits.
+        self._checkout_lock = asyncio.Lock()
         self._eventloom_path = eventloom_path or settings.eventloom_path
         self.session_manager = SessionManager(base_path=self._eventloom_path)
         self.refs = MemoryRefStore(self._eventloom_path)
@@ -2870,21 +2878,30 @@ class ZaxyMCPServer:
         resolved_ref = self._resolve_checkout_ref(ref, session_id=session_id)
         checkout_session_id = resolved_ref.session_id if resolved_ref is not None else session_id
 
-        assembly, replay_events = await self._assemble_context(
-            query=query,
-            session_id=checkout_session_id,
-            replay_from_seq=replay_from_seq,
-            limit=limit,
-            max_recent_events=max_recent_events,
-            as_of_seq=resolved_ref.target_seq if resolved_ref is not None else None,
-        )
-        output = build_memory_checkout(
-            query=query,
-            assembly=_context_assembly_from_payload(assembly, replay_events=replay_events),
-            ref=resolved_ref,
-            purpose=arguments.get("purpose"),
-            now=datetime.now(UTC),
-        ).to_dict()
+        # Hold the checkout lock across the heavy retrieval/build so the
+        # synchronous, thread-offloaded sections stay serialized (preserving the
+        # prior single-flight invariant) while the event loop remains free to
+        # service stdin and cancellations. If the client cancels mid-checkout,
+        # the await points below raise CancelledError and unwind cleanly; the
+        # orphaned worker thread finishes harmlessly and the server stays up.
+        async with self._checkout_lock:
+            assembly, replay_events = await self._assemble_context(
+                query=query,
+                session_id=checkout_session_id,
+                replay_from_seq=replay_from_seq,
+                limit=limit,
+                max_recent_events=max_recent_events,
+                as_of_seq=resolved_ref.target_seq if resolved_ref is not None else None,
+            )
+            built = await asyncio.to_thread(
+                build_memory_checkout,
+                query=query,
+                assembly=_context_assembly_from_payload(assembly, replay_events=replay_events),
+                ref=resolved_ref,
+                purpose=arguments.get("purpose"),
+                now=datetime.now(UTC),
+            )
+        output = built.to_dict()
         output = apply_checkout_budget(output, max_tokens=max_tokens)
         activity = record_memory_activity(
             self._eventloom_path,
@@ -3068,7 +3085,8 @@ class ZaxyMCPServer:
         resolve citations into sealed refs and to replay diagnostics-only
         salience without an extra log scan.
         """
-        replay = self.session_manager.replay(
+        replay = await asyncio.to_thread(
+            self.session_manager.replay,
             session_id,
             from_seq=replay_from_seq,
             verify_integrity=False,
@@ -3086,9 +3104,11 @@ class ZaxyMCPServer:
         results = await router.query(query, limit=limit)
         graph_contexts = [_context_from_query_result(result) for result in results]
         verbatim_hits = (
-            VerbatimIndex.from_event_logs(
-                [self.session_manager.get(session_id).eventlog]
-            ).query(query, limit=limit)
+            await asyncio.to_thread(
+                lambda: VerbatimIndex.from_event_logs(
+                    [self.session_manager.get(session_id).eventlog]
+                ).query(query, limit=limit)
+            )
             if self.context_assembly_policy.should_query_verbatim(limit=limit)
             else []
         )
