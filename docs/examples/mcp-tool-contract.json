@@ -985,6 +985,42 @@
             "description": "Admin token when admin gating is configured",
             "type": "string"
           },
+          "disclose": {
+            "additionalProperties": false,
+            "description": "Return a verifiable partial disclosure: sign the full bundle over the main selector, then reveal only entries matching this sub-selector (with Merkle inclusion proofs). Requires the server export key.",
+            "properties": {
+              "grains": {
+                "items": {
+                  "enum": [
+                    "event",
+                    "semantic"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "kinds": {
+                "description": "Match the entry kind (event type, or entity:/edge: kind)",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "max_seq": {
+                "type": "integer"
+              },
+              "since_seq": {
+                "type": "integer"
+              },
+              "since_time": {
+                "type": "string"
+              },
+              "until_time": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
           "exclude_sensitivities": {
             "description": "Redaction policy: drop entries whose event sensitivity tier is listed",
             "items": {

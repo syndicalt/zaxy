@@ -71,7 +71,12 @@ from zaxy.core import (
     build_memory_checkout,
     entity_reinforcement_targets,
 )
-from zaxy.export_view import ExportSelector, build_memory_export, load_signing_key
+from zaxy.export_view import (
+    ExportSelector,
+    build_memory_export,
+    disclose_export_bundle,
+    load_signing_key,
+)
 from zaxy.extract import extract
 from zaxy.lifecycle import (
     build_session_ended_event,
@@ -826,6 +831,23 @@ TOOLS = [
                     "type": "boolean",
                     "default": False,
                     "description": "Sign with the server-configured export key (errors if none is configured)",
+                },
+                "disclose": {
+                    "type": "object",
+                    "description": (
+                        "Return a verifiable partial disclosure: sign the full bundle over the "
+                        "main selector, then reveal only entries matching this sub-selector "
+                        "(with Merkle inclusion proofs). Requires the server export key."
+                    ),
+                    "properties": {
+                        "grains": {"type": "array", "items": {"type": "string", "enum": ["event", "semantic"]}},
+                        "kinds": {"type": "array", "items": {"type": "string"}, "description": "Match the entry kind (event type, or entity:/edge: kind)"},
+                        "since_seq": {"type": "integer"},
+                        "max_seq": {"type": "integer"},
+                        "since_time": {"type": "string"},
+                        "until_time": {"type": "string"},
+                    },
+                    "additionalProperties": False,
                 },
                 "admin_token": {"type": "string", "description": "Admin token when admin gating is configured"},
             },
@@ -2448,11 +2470,17 @@ class ZaxyMCPServer:
         self._require_admin(arguments)
         session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
         selector = _export_selector_from_arguments(arguments)
+        disclose_arg = arguments.get("disclose")
+        # Disclosure proves membership against a signed Merkle root, so it always
+        # needs the server key, regardless of the sign flag.
+        needs_key = bool(arguments.get("sign", False)) or disclose_arg is not None
         signing_key = None
-        if bool(arguments.get("sign", False)):
+        if needs_key:
             signing_key = self._export_signing_key()
             if signing_key is None:
-                raise ValueError("sign=true but the server has no export signing key configured")
+                raise ValueError(
+                    "signing/disclosure requested but the server has no export signing key configured"
+                )
         bundle = await asyncio.to_thread(
             build_memory_export,
             session_id,
@@ -2460,7 +2488,14 @@ class ZaxyMCPServer:
             retrieval_cache=self._retrieval_cache,
             signing_key=signing_key,
         )
-        return [TextContent(type="text", text=json.dumps(bundle, indent=2, ensure_ascii=False))]
+        if disclose_arg is not None:
+            if not isinstance(disclose_arg, dict):
+                raise ValueError("disclose must be an object")
+            disclose_selector = _export_selector_from_arguments(disclose_arg)
+            result = await asyncio.to_thread(disclose_export_bundle, bundle, disclose_selector)
+        else:
+            result = bundle
+        return [TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False))]
 
     def _export_signing_key(self) -> dict[str, Any] | None:
         """Load the server-configured export signing keypair, or None if unset.

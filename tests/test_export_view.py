@@ -15,8 +15,11 @@ from zaxy.export_view import (
     ExportSelector,
     build_memory_export,
     build_memory_export_view,
+    disclose_export_bundle,
+    entry_matches,
     export_cursor,
     load_signing_key,
+    verify_memory_export_subset,
 )
 from zaxy.retrieval_cache import SessionRetrievalCache
 from zaxy.session import SessionManager
@@ -297,3 +300,85 @@ def test_load_signing_key_reads_files(tmp_path: Path) -> None:
         "s", retrieval_cache=cache, signing_key=loaded, created_at="2026-06-15T00:00:00+00:00", nonce="0" * 32
     )
     assert verify_export(bundle)["ok"] is True
+
+
+def test_entry_matches_supported_axes(tmp_path: Path) -> None:
+    cache = _cache(tmp_path)
+    _append(cache, "s", "goal.created", {"title": "g1"}, timestamp=datetime(2026, 1, 1, tzinfo=UTC))
+    _append(cache, "s", "decision.made", {"decision": "d2"}, timestamp=datetime(2026, 6, 1, tzinfo=UTC))
+    entries = build_memory_export_view("s", retrieval_cache=cache)  # both grains
+
+    only_event = [e for e in entries if entry_matches(e, ExportSelector(grains=frozenset({"event"})))]
+    assert only_event and all(e["grain"] == "event" for e in only_event)
+
+    goals = [e for e in entries if entry_matches(e, ExportSelector(kinds=frozenset({"goal.created"})))]
+    assert goals and all(e["kind"] == "goal.created" for e in goals)
+
+    after = [e for e in entries if entry_matches(e, ExportSelector(since_seq=1))]
+    assert after and all(e["seq"] > 1 for e in after)
+    upto = [e for e in entries if entry_matches(e, ExportSelector(max_seq=1))]
+    assert upto and all(e["seq"] <= 1 for e in upto)
+
+    recent = [
+        e for e in entries if entry_matches(e, ExportSelector(since_time="2026-03-01T00:00:00Z"))
+    ]
+    assert recent and all(e["valid_from"] >= "2026-03-01T00:00:00Z" for e in recent)
+
+
+def test_entry_matches_ignores_projection_only_axes(tmp_path: Path) -> None:
+    cache = _cache(tmp_path)
+    _append(cache, "s", "goal.created", {"title": "g1"})
+    entries = build_memory_export_view("s", retrieval_cache=cache)
+    # query and exclude_sensitivities are projection-time only -> ignored by entry_matches.
+    selector = ExportSelector(query="nomatch", exclude_sensitivities=frozenset({"restricted"}))
+    assert entries and all(entry_matches(e, selector) for e in entries)
+
+
+def _signed_bundle(cache: SessionRetrievalCache, session_id: str = "s") -> tuple[dict, dict]:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        from zaxy.portable import generate_keypair
+
+    keypair = generate_keypair()
+    bundle = build_memory_export(
+        session_id,
+        ExportSelector(grains=frozenset({"event"})),
+        retrieval_cache=cache,
+        signing_key=keypair,
+        created_at="2026-06-15T00:00:00+00:00",
+        nonce="0" * 32,
+    )
+    return bundle, keypair
+
+
+def test_disclose_export_bundle_reveals_only_matching(tmp_path: Path) -> None:
+    cache = _cache(tmp_path)
+    _append(cache, "s", "goal.created", {"title": "keep"})
+    _append(cache, "s", "decision.made", {"decision": "hide"})
+    bundle, keypair = _signed_bundle(cache)
+
+    subset = disclose_export_bundle(
+        bundle, ExportSelector(grains=frozenset({"event"}), kinds=frozenset({"goal.created"}))
+    )
+    assert verify_memory_export_subset(subset, expect_public_key=keypair["public_key"].hex())["ok"]
+    assert {d["content"]["kind"] for d in subset["disclosed"]} == {"goal.created"}
+    assert "entries" not in subset  # undisclosed entries never shipped
+    payloads = [d["content"]["content"].get("payload", {}) for d in subset["disclosed"]]
+    assert {"decision": "hide"} not in payloads
+
+
+def test_disclose_subset_tamper_is_detected(tmp_path: Path) -> None:
+    cache = _cache(tmp_path)
+    _append(cache, "s", "goal.created", {"title": "keep"})
+    bundle, _ = _signed_bundle(cache)
+    subset = disclose_export_bundle(bundle, ExportSelector(grains=frozenset({"event"})))
+    subset["disclosed"][0]["content"]["content"]["payload"]["title"] = "TAMPERED"
+    assert verify_memory_export_subset(subset)["ok"] is False
+
+
+def test_disclose_requires_signed_bundle(tmp_path: Path) -> None:
+    cache = _cache(tmp_path)
+    _append(cache, "s", "goal.created", {"title": "g1"})
+    unsigned = build_memory_export("s", retrieval_cache=cache)
+    with pytest.raises(ValueError, match="signed bundle"):
+        disclose_export_bundle(unsigned, ExportSelector())
