@@ -149,6 +149,62 @@ class ReplayResult(BaseModel):
     projection: dict[str, Any] = Field(default_factory=dict)
 
 
+def verify_event_chain(
+    events: list[Event],
+    *,
+    first_seq: int = 1,
+    prev_hash: str | None = None,
+) -> IntegrityReport:
+    """Verify a contiguous run of events: per-event seals + hash-chain links.
+
+    ``first_seq`` and ``prev_hash`` let a caller verify a tail segment against
+    an already-verified prefix (incremental replay): pass the sequence number
+    and hash of the event immediately preceding ``events[0]``. With the
+    defaults this verifies a whole log from the genesis event. ``total_events``
+    counts only the events passed here; a caller stitching a verified prefix to
+    a verified tail computes the combined total itself.
+    """
+    total = len(events)
+    if total == 0:
+        return IntegrityReport(ok=True, total_events=0)
+
+    expected_seq = first_seq
+    for ev in events:
+        if ev.seq != expected_seq:
+            return IntegrityReport(
+                ok=False,
+                total_events=total,
+                broken_at_seq=ev.seq,
+                broken_reason=f"Event sequence expected {expected_seq} but found {ev.seq}",
+            )
+        if not ev.verify():
+            return IntegrityReport(
+                ok=False,
+                total_events=total,
+                broken_at_seq=ev.seq,
+                broken_reason=f"Event {ev.seq} hash mismatch",
+            )
+        if expected_seq == 1:
+            if ev.prev_hash is not None:
+                return IntegrityReport(
+                    ok=False,
+                    total_events=total,
+                    broken_at_seq=ev.seq,
+                    broken_reason="First event has prev_hash set",
+                )
+        elif ev.prev_hash != prev_hash:
+            return IntegrityReport(
+                ok=False,
+                total_events=total,
+                broken_at_seq=ev.seq,
+                broken_reason=f"Event {ev.seq} prev_hash does not link to previous",
+            )
+        prev_hash = ev.hash
+        expected_seq += 1
+
+    return IntegrityReport(ok=True, total_events=total)
+
+
 class EventLog:
     """Append-only event log backed by a JSONL file.
 
@@ -313,47 +369,7 @@ class EventLog:
 
     def verify(self) -> IntegrityReport:
         """Verify the entire log: hash chain + individual event seals."""
-        events = self.read_all()
-        total = len(events)
-
-        if total == 0:
-            return IntegrityReport(ok=True, total_events=0)
-
-        prev_hash: str | None = None
-        for i, ev in enumerate(events, start=1):
-            if ev.seq != i:
-                return IntegrityReport(
-                    ok=False,
-                    total_events=total,
-                    broken_at_seq=ev.seq,
-                    broken_reason=f"Event sequence expected {i} but found {ev.seq}",
-                )
-            if not ev.verify():
-                return IntegrityReport(
-                    ok=False,
-                    total_events=total,
-                    broken_at_seq=ev.seq,
-                    broken_reason=f"Event {ev.seq} hash mismatch",
-                )
-            if i == 1:
-                if ev.prev_hash is not None:
-                    return IntegrityReport(
-                        ok=False,
-                        total_events=total,
-                        broken_at_seq=ev.seq,
-                        broken_reason="First event has prev_hash set",
-                    )
-            else:
-                if ev.prev_hash != prev_hash:
-                    return IntegrityReport(
-                        ok=False,
-                        total_events=total,
-                        broken_at_seq=ev.seq,
-                        broken_reason=f"Event {ev.seq} prev_hash does not link to previous",
-                    )
-            prev_hash = ev.hash
-
-        return IntegrityReport(ok=True, total_events=total)
+        return verify_event_chain(self.read_all())
 
     def replay(
         self,
@@ -401,6 +417,42 @@ class EventLog:
             finally:
                 self._unlock(fh.fileno())
         return [_event_from_json_line(line) for line in lines]
+
+    def read_from_offset(self, offset: int) -> tuple[list[Event], int]:
+        """Read events appended at or after byte ``offset``.
+
+        Returns ``(events, end_offset)`` where ``events`` are parsed from
+        ``offset`` to the current end of file and ``end_offset`` is the new
+        byte length. ``offset`` must fall on a record boundary (e.g. a value
+        previously returned here, or a file size); ``offset=0`` reads the
+        whole log, so this is a superset of :meth:`read_all` that also reports
+        the cursor. A shared lock guarantees no concurrent append is observed
+        mid-record, and the append-only hash chain guarantees the prefix
+        before ``offset`` is immutable, so incremental readers never miss or
+        duplicate events.
+        """
+        if not self.path.exists():
+            return [], 0
+        if offset < 0:
+            offset = 0
+        with open(self.path, "rb") as fh:
+            self._lock(fh.fileno(), exclusive=False)
+            try:
+                fh.seek(0, os.SEEK_END)
+                end = fh.tell()
+                if offset >= end:
+                    return [], end
+                fh.seek(offset)
+                data = fh.read(end - offset)
+            finally:
+                self._unlock(fh.fileno())
+        events: list[Event] = []
+        for raw in data.split(b"\n"):
+            line = raw.strip()
+            if not line:
+                continue
+            events.append(_event_from_json_line(line.decode("utf-8")))
+        return events, end
 
     # ------------------------------------------------------------------
     # Handoff & Summaries

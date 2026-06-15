@@ -2,6 +2,27 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 2.4.2 - 2026-06-15
+
+- **Memory Checkout latency fix — warm `memory_checkout` ~19s → ~1.6s on a
+  78k-event session.** Two retrieval costs that previously scaled with the
+  whole log on *every* checkout (the BM25 verbatim index and the verified
+  replay) are now cached per session and extended incrementally, so they scale
+  with newly appended events instead of the full corpus. Every append —
+  including checkout's own salience-reinforcement write — used to invalidate
+  both caches and force a full rebuild; on large, active sessions that pushed
+  checkout past the MCP stdio call timeout (the "checkout hangs over MCP"
+  symptom). Steady-state checkout is now well under the timeout.
+  - `VerbatimIndex.append_chunks()` extends the index reusing prior
+    tokenization; results are byte-identical to a full rebuild.
+  - `EventLog.read_from_offset()` tail-reads only newly appended bytes;
+    `verify_event_chain()` verifies the appended tail against the
+    already-verified prefix. The tail verification is also a consistency
+    guard — any offset skew or log rewrite falls back to a full verified
+    replay, so the fast path never silently misses, duplicates, or trusts a
+    bad event. The hash-chain integrity guarantee is preserved, not dropped.
+  - No API or behavior change; same cited facts are surfaced.
+
 ## 2.4.1 - 2026-06-14
 
 - Fixed MCP-directory installability (Glama listed the server as "cannot be

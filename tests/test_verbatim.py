@@ -274,3 +274,83 @@ def test_verbatim_index_scores_only_terms_present_in_candidate(tmp_path, monkeyp
 
     assert {hit.metadata["source_path"] for hit in hits} == {"docs/alpha.md", "docs/beta.md"}
     assert sorted(scored_terms) == [("alpha",), ("beta",)]
+
+
+def _append_turns(log: EventLog, contents: list[str]) -> None:
+    for index, content in enumerate(contents):
+        log.append(
+            "transcript.turn",
+            actor="assistant",
+            payload={"source": "codex", "turn_index": index, "role": "assistant", "content": content},
+            thread="agent",
+        )
+
+
+def test_append_chunks_matches_full_rebuild(tmp_path) -> None:
+    """Incrementally extending the index must equal a full rebuild exactly."""
+    log = EventLog(tmp_path / "agent.jsonl")
+    _append_turns(
+        log,
+        [
+            "Rollback owner is platform operations marker RB-42.",
+            "We chose the Postgres adapter for audit replay.",
+            "The dashboard owner is the analytics guild.",
+            "Release planning uses identity-code-0042 for the cut.",
+            "Worker local diagnosis runs before the remote sweep.",
+            "Postgres adapter keeps verbatim recall fast for checkout.",
+        ],
+    )
+    chunks = verbatim._chunks_from_events(log.read_all())
+
+    full = VerbatimIndex(chunks)
+    incremental = VerbatimIndex(chunks[:2]).append_chunks(chunks[2:4]).append_chunks(chunks[4:])
+
+    # Every corpus statistic is identical to a from-scratch build.
+    assert incremental._chunks == full._chunks
+    assert incremental._document_lengths == full._document_lengths
+    assert incremental._document_count == full._document_count
+    assert incremental._term_document_ids == full._term_document_ids
+    assert incremental._document_frequencies == full._document_frequencies
+    assert incremental._term_idf == full._term_idf
+    assert incremental._document_length_norms == full._document_length_norms
+
+    for query in (
+        "Postgres adapter",
+        "rollback marker RB-42",
+        "dashboard owner",
+        "identity-code-0042",
+        "verbatim recall checkout",
+        "worker local diagnosis",
+    ):
+        expected = [(hit.score, hit.citation) for hit in full.query(query, limit=10)]
+        actual = [(hit.score, hit.citation) for hit in incremental.query(query, limit=10)]
+        assert actual == expected, query
+
+
+def test_append_chunks_empty_returns_same_index(tmp_path) -> None:
+    """Extending with no new chunks is a no-op that returns the same index."""
+    log = EventLog(tmp_path / "a.jsonl")
+    _append_turns(log, ["hello world from verbatim recall"])
+    index = VerbatimIndex.from_event_logs([log])
+    assert index.append_chunks(()) is index
+
+
+def test_read_from_offset_reads_only_new_events(tmp_path) -> None:
+    """read_from_offset returns just the events appended after the cursor."""
+    log = EventLog(tmp_path / "a.jsonl")
+    _append_turns(log, ["first event content"])
+
+    all_events, offset = log.read_from_offset(0)
+    assert [event.seq for event in all_events] == [1]
+
+    empty, offset_unchanged = log.read_from_offset(offset)
+    assert empty == []
+    assert offset_unchanged == offset
+
+    _append_turns(log, ["second event content"])
+    new_events, grown_offset = log.read_from_offset(offset)
+    assert [event.seq for event in new_events] == [2]
+    assert grown_offset > offset
+
+    full, _ = log.read_from_offset(0)
+    assert [event.seq for event in full] == [1, 2]
