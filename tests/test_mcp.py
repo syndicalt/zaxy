@@ -4561,3 +4561,49 @@ class TestMemoryExportTool:
         bundle = json_loads(result[0].text)
         assert "signature" in bundle and "merkle_root" in bundle
         assert verify_export(bundle)["ok"] is True
+
+    async def test_disclose_returns_verifiable_subset(
+        self, server: ZaxyMCPServer, tmp_path: Path
+    ) -> None:
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            from zaxy.portable import generate_keypair, verify_subset
+
+        keypair = generate_keypair()
+        priv = tmp_path / "k.pem"
+        pub = tmp_path / "k.pub"
+        priv.write_bytes(keypair["private_pem"])
+        pub.write_text(keypair["public_key"].hex(), encoding="utf-8")
+        server._settings.mcp_export_signing_private_key_file = str(priv)
+        server._settings.mcp_export_signing_public_key_file = str(pub)
+        server._settings.mcp_export_signing_algorithm = keypair["algorithm"]
+        server.session_manager.replay.return_value = MagicMock(
+            events=[
+                self._event(1, "goal.created", {"title": "keep"}, h="a"),
+                self._event(2, "decision.made", {"decision": "hide"}, h="b"),
+            ]
+        )
+
+        result = await server.handle_memory_export(
+            {"session_id": "agent-1", "grains": ["event"], "disclose": {"kinds": ["goal.created"]}}
+        )
+        subset = json_loads(result[0].text)
+        assert "disclosed" in subset and "entries" not in subset
+        assert {d["content"]["kind"] for d in subset["disclosed"]} == {"goal.created"}
+        assert verify_subset(subset)["ok"] is True
+
+    async def test_disclose_without_configured_key_errors(self, server: ZaxyMCPServer) -> None:
+        with pytest.raises(ValueError, match="signing/disclosure"):
+            await server.handle_memory_export(
+                {"session_id": "agent-1", "disclose": {"kinds": ["goal.created"]}}
+            )
+
+    async def test_disclose_session_scope_enforced(self, server: ZaxyMCPServer) -> None:
+        token = remote_session_scope.set("agent-1")
+        try:
+            with pytest.raises(PermissionError):
+                await server.handle_memory_export({"session_id": "other", "disclose": {}})
+        finally:
+            remote_session_scope.reset(token)

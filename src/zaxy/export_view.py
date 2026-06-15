@@ -319,3 +319,69 @@ def build_memory_export(
         created_at=created_at or datetime.now(UTC).isoformat(),
         nonce=nonce or secrets.token_hex(16),
     )
+
+
+def entry_matches(entry: dict[str, Any], selector: ExportSelector) -> bool:
+    """Return whether a canonical export entry matches ``selector``.
+
+    Predicate over a *static entry* (e.g. one already inside a signed bundle),
+    used to pick a disclosure subset. It supports only the axes decidable from an
+    entry alone: ``grains``; ``kinds`` matched against the entry's ``kind`` (the
+    event type for event-grain entries, or the ``entity:``/``edge:`` kind for
+    semantic ones); and the ``since_seq``/``max_seq``/``since_time``/``until_time``
+    bounds. ``query`` and ``exclude_sensitivities`` are **projection-time only**
+    (decided from the log/event, not the entry) and are ignored here.
+    """
+    if entry.get("grain") not in selector.grains:
+        return False
+    if selector.kinds is not None and entry.get("kind") not in selector.kinds:
+        return False
+    seq = entry.get("seq")
+    if selector.since_seq is not None and not (isinstance(seq, int) and seq > selector.since_seq):
+        return False
+    if selector.max_seq is not None and not (isinstance(seq, int) and seq <= selector.max_seq):
+        return False
+    valid_from = entry.get("valid_from")
+    if selector.since_time is not None and not (
+        isinstance(valid_from, str) and valid_from >= selector.since_time
+    ):
+        return False
+    return selector.until_time is None or (
+        isinstance(valid_from, str) and valid_from <= selector.until_time
+    )
+
+
+def disclose_export_bundle(
+    signed_bundle: dict[str, Any],
+    selector: ExportSelector | None = None,
+) -> dict[str, Any]:
+    """Disclose the entries of a signed bundle that match ``selector``.
+
+    Verifiable partial disclosure expressed as a selector instead of opaque
+    indices: returns a :func:`zaxy.portable.disclose_subset` over the matching
+    entry positions, proving each disclosed entry's membership in the signed set
+    without revealing the rest. Requires a *signed* bundle (it needs the Merkle
+    root + signature); an unsigned envelope is rejected.
+    """
+    if "merkle_root" not in signed_bundle or "signature" not in signed_bundle:
+        raise ValueError("disclosure requires a signed bundle (merkle_root + signature)")
+    selector = selector or ExportSelector()
+    indices = [
+        index
+        for index, wrapped in enumerate(signed_bundle["entries"])
+        if entry_matches(wrapped["content"], selector)
+    ]
+    from zaxy.portable import disclose_subset
+
+    return disclose_subset(signed_bundle, indices)
+
+
+def verify_memory_export_subset(
+    subset: dict[str, Any],
+    *,
+    expect_public_key: str | None = None,
+) -> dict[str, Any]:
+    """Verify a disclosed subset (signature + each entry's inclusion proof)."""
+    from zaxy.portable import verify_subset
+
+    return verify_subset(subset, expect_public_key=expect_public_key)

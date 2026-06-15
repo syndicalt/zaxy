@@ -840,6 +840,57 @@ def verify_export_cmd(
         raise typer.Exit(code=1)
 
 
+@app.command("export-disclose")
+def export_disclose(
+    bundle: Path = typer.Argument(..., help="signed bundle JSON file"),  # noqa: B008
+    out: Path = typer.Option(..., "--out", help="Write the disclosed subset JSON here"),  # noqa: B008
+    grains: str = typer.Option("event,semantic", "--grains", help="comma-separated grains to disclose"),
+    kinds: str = typer.Option("", "--kinds", help="comma-separated entry kinds to disclose (event type, or entity:/edge: kind)"),
+    since_seq: int | None = typer.Option(None, "--since", help="exclusive lower bound: disclose entries with seq > this"),
+    max_seq: int | None = typer.Option(None, "--max-seq", help="inclusive upper bound on seq"),
+    since_time: str | None = typer.Option(None, "--since-time", help="inclusive ISO-8601 lower time bound"),
+    until_time: str | None = typer.Option(None, "--until-time", help="inclusive ISO-8601 upper time bound"),
+) -> None:
+    """Disclose a verifiable subset of a signed export bundle, selected by predicate.
+
+    Reveals only entries matching the selector (with Merkle inclusion proofs);
+    undisclosed entries stay hidden. Verify the output with verify-export-subset.
+    """
+    from zaxy.export_view import ExportSelector, disclose_export_bundle
+
+    selector = ExportSelector(
+        grains=frozenset(g.strip() for g in grains.split(",") if g.strip()),
+        kinds=frozenset(k.strip() for k in kinds.split(",") if k.strip()) or None,
+        since_seq=since_seq,
+        max_seq=max_seq,
+        since_time=since_time,
+        until_time=until_time,
+    )
+    signed = json.loads(bundle.read_text(encoding="utf-8"))
+    subset = disclose_export_bundle(signed, selector)
+    out.write_text(json.dumps(subset, indent=2, ensure_ascii=False), encoding="utf-8")
+    typer.echo(
+        f"disclosed {len(subset['disclosed'])} of {len(signed['entries'])} entries -> {out}"
+    )
+
+
+@app.command("verify-export-subset")
+def verify_export_subset_cmd(
+    subset: Path = typer.Argument(..., help="disclosed subset JSON file"),  # noqa: B008
+    expect_public_key: str | None = typer.Option(None, "--expect-public-key", help="pin: hex public key the subset must be signed by"),  # noqa: B008
+) -> None:
+    """Verify a disclosed subset (signature + each entry's inclusion proof); exit 1 on failure."""
+    from zaxy.export_view import verify_memory_export_subset
+
+    result = verify_memory_export_subset(
+        json.loads(subset.read_text(encoding="utf-8")), expect_public_key=expect_public_key
+    )
+    suffix = f" - {result['reason']}" if result.get("reason") else ""
+    typer.echo(f"verify-subset: {'OK' if result['ok'] else 'FAIL'}{suffix}")
+    if not result["ok"]:
+        raise typer.Exit(code=1)
+
+
 def _resolve_cli_projection_backend(
     projection_backend: str | None,
     settings: Settings,

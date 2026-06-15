@@ -249,3 +249,49 @@ def test_cli_export_unsigned_and_since_delta(tmp_path: Path) -> None:
     assert res2.exit_code == 0, res2.output
     delta = json.loads(out2.read_text(encoding="utf-8"))
     assert {e["seq"] for e in delta["entries"]} == {2}
+
+
+def test_cli_export_disclose_verify_subset_roundtrip(tmp_path: Path) -> None:
+    """export -> export-disclose (by selector) -> verify-export-subset, with tamper detection."""
+    import json
+
+    from typer.testing import CliRunner
+
+    from zaxy.__main__ import app
+    from zaxy.session import SessionManager
+
+    el = tmp_path / ".eventloom"
+    log = SessionManager(base_path=str(el)).get("demo").eventlog
+    log.append("decision.made", actor="a", payload={"decision": "hide"}, thread="demo")
+    log.append("goal.created", actor="a", payload={"title": "keep"}, thread="demo")
+
+    runner = CliRunner()
+    priv, pub = tmp_path / "k.pem", tmp_path / "k.pub"
+    bundle, subset = tmp_path / "b.json", tmp_path / "s.json"
+    alg = "ed25519"
+    assert runner.invoke(
+        app, ["export-keygen", "--out-private", str(priv), "--out-public", str(pub), "--algorithm", alg]
+    ).exit_code == 0
+    assert runner.invoke(
+        app,
+        ["export", "--out", str(bundle), "--private-key", str(priv), "--public-key", str(pub),
+         "--algorithm", alg, "--eventloom-path", str(el), "--session-id", "demo"],
+    ).exit_code == 0
+
+    res = runner.invoke(
+        app,
+        ["export-disclose", str(bundle), "--grains", "event", "--kinds", "goal.created", "--out", str(subset)],
+    )
+    assert res.exit_code == 0, res.output
+
+    pinned = pub.read_text(encoding="utf-8").strip()
+    ok = runner.invoke(app, ["verify-export-subset", str(subset), "--expect-public-key", pinned])
+    assert ok.exit_code == 0 and "OK" in ok.stdout
+
+    data = json.loads(subset.read_text(encoding="utf-8"))
+    assert {d["content"]["kind"] for d in data["disclosed"]} == {"goal.created"}
+
+    # tamper a disclosed entry -> subset verification must fail
+    data["disclosed"][0]["content"]["content"]["payload"]["title"] = "TAMPERED"
+    subset.write_text(json.dumps(data), encoding="utf-8")
+    assert runner.invoke(app, ["verify-export-subset", str(subset)]).exit_code == 1
