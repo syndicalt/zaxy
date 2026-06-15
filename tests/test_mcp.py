@@ -173,6 +173,11 @@ def server() -> ZaxyMCPServer:
         mock_log = MagicMock()
         mock_event = MagicMock(seq=1, hash="a" * 64)
         mock_log.append.return_value = mock_event
+        # The checkout retrieval cache reads through read_from_offset(); return a
+        # well-formed (events, end_offset) tuple so the incremental verbatim/replay
+        # paths unpack cleanly. Replay results are still driven per-test via
+        # session_manager.replay.return_value.
+        mock_log.read_from_offset.return_value = ([], 0)
         mock_session_mgr = MagicMock()
         mock_session_mgr.get.return_value.eventlog = mock_log
         mock_session_cls.return_value = mock_session_mgr
@@ -3291,11 +3296,9 @@ class TestContextLifecycleTools:
 
         output = json_loads(result[0].text)
         assert output["session_id"] == "zaxy-default"
-        server.session_manager.replay.assert_called_with(
-            "zaxy-default",
-            from_seq=1,
-            verify_integrity=False,
-        )
+        # Checkout now reads through the incremental retrieval cache, whose cold
+        # path runs the authoritative verified replay (from_seq=1) and slices.
+        server.session_manager.replay.assert_called_with("zaxy-default", from_seq=1)
 
     async def test_memory_checkout_head_uses_tail_event(
         self,
@@ -3324,11 +3327,39 @@ class TestContextLifecycleTools:
         assert output["ref"]["name"] == "HEAD"
         assert output["ref"]["target_seq"] == 7
         server.session_manager.get.return_value.eventlog.last_event.assert_called_once_with()
-        server.session_manager.replay.assert_called_once_with(
-            "agent-1",
-            from_seq=1,
-            verify_integrity=False,
-        )
+        server.session_manager.replay.assert_called_once_with("agent-1", from_seq=1)
+
+    async def test_memory_checkout_reuses_incremental_retrieval_cache(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """Repeat checkouts read through the per-session cache, not a full rebuild.
+
+        Regression guard for the front door wiring: the verified replay and the
+        verbatim index are cached on the long-lived server and reused while the
+        log signature is unchanged, so the 2.4.2 incremental-retrieval win
+        actually reaches MCP checkout instead of rebuilding from the whole log
+        on every call.
+        """
+        server.session_manager.replay.return_value = MagicMock(events=[])
+        eventlog = server.session_manager.get.return_value.eventlog
+        args = {"query": "current state", "session_id": "agent-1", "limit": 5}
+        with (
+            patch("zaxy.mcp_server.QueryRouter") as mock_router_cls,
+            patch("zaxy.mcp_server.record_memory_activity"),
+        ):
+            router = AsyncMock()
+            router.query.return_value = []
+            mock_router_cls.return_value = router
+
+            await server.handle_memory_checkout(dict(args))
+            await server.handle_memory_checkout(dict(args))
+
+        # Cold build on the first checkout populates both caches; the second
+        # checkout hits them (same file signature) without a second verified
+        # replay or a second verbatim read of the log.
+        assert server.session_manager.replay.call_count == 1
+        assert eventlog.read_from_offset.call_count == 1
 
     async def test_context_after_turn_appends_and_assembles(self, server: ZaxyMCPServer) -> None:
         """context_after_turn should persist the latest turn before assembly."""
