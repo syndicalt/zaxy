@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>X Article Draft: Zaxy 2.5.0 - Zaxy Docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,600&family=Inter:wght@400;550;650;750;850&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../../index.html">Overview</a>
+      <a href="../../docs/coordinate-roadmap.html">Coordinate</a>
+      <a href="../../docs/why-zaxy.html">Why Zaxy</a>
+      <a href="../../docs/benchmarks.html">Benchmarks</a>
+      <a href="../getting-started.html">Start</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="x-article-draft-zaxy-250">X Article Draft: Zaxy 2.5.0</h1>
+      <p><img src="../../assets/zaxy-v2.5-header.png" alt="Zaxy 2.5 release header" /></p>
+      <p>Zaxy 2.5.0 ships a <strong>general memory export contract</strong>: a product-agnostic way to pull a session&#x27;s memory out as a cited, portable bundle that <em>any</em> consumer can verify — and, if you choose, reveal only a slice of, or push to wherever you want. Zaxy never has to know who is asking.</p>
+      <p>The short version: agent memory is only as useful as it is <em>movable</em> and <em>trustworthy</em>. Most memory is trapped inside a vendor runtime, and even when you can get it out, you usually can&#x27;t prove what it is or hand over just the relevant part. 2.5 makes export a first-class, specified contract — built so the thing on the other end can be a dashboard, an auditor, another agent, or a &quot;second brain&quot; product, without Zaxy taking a dependency on any of them.</p>
+      <h2 id="what-shipped">What shipped</h2>
+      <p>A contract in four layers, all converging on one projection path so the bytes are identical no matter which surface you use:</p>
+      <ul>
+        <li><strong>A canonical entry schema (<code>zaxy.export.v1</code>).</strong> Every exported item is a self-describing JSON entry carrying a <strong>sealed Eventloom citation</strong> (<code>eventloom://&lt;thread&gt;/events/&lt;seq&gt;#&lt;hash&gt;</code>). Two grains: raw <code>event</code> entries, and <code>semantic</code> entries (entities and edges) from the deterministic extractor. Provenance is in the format, not bolted on.</li>
+        <li><strong>A selection contract.</strong> An <code>ExportSelector</code> picks what to export — by grain, event type, sequence or time window, a verbatim-query pre-filter, sensitivity redaction, and a <code>since</code> <strong>delta cursor</strong> so a consumer can sync only what changed.</li>
+        <li><strong>Pull surfaces.</strong> A <code>memory_export</code> MCP tool and a generalized <code>zaxy export</code> CLI. A consumer pulls; Zaxy stays the authoritative upstream source.</li>
+        <li><strong>Verifiable partial disclosure.</strong> Hand someone a <em>subset</em> of a signed bundle with Merkle inclusion proofs — they verify those entries belong to the signed set <strong>without seeing the rest</strong> (<code>export-disclose</code> / <code>verify-export-subset</code>).</li>
+        <li><strong>Outbound delivery.</strong> Optional file and webhook sinks plus <code>zaxy export-push</code>, for the cases where you want Zaxy to <em>send</em> a bundle rather than wait to be asked. One-shot by design; cron handles &quot;recurring.&quot;</li>
+      </ul>
+      <p>It builds directly on the 2.4 line — the <code>zaxy.portable</code> signed-bundle format (post-quantum ML-DSA-65 signatures, a domain-separated Merkle tree) — and wraps it in the contract that was missing around it.</p>
+      <h2 id="why-it-matters">Why it matters</h2>
+      <p>The interesting problem with agent memory isn&#x27;t storage; it&#x27;s a <strong>transfer format</strong> that is authentic (cited, optionally signed), <strong>minimally disclosed</strong> (prove a slice, not the whole history), and <strong>decoupled</strong> (the producer doesn&#x27;t need to know the consumer). That&#x27;s the shape a W3C community group and recent &quot;portable agent memory&quot; research are converging on, and Zaxy already had the right substrate: an immutable, hash-chained event log where provenance <em>is</em> the product.</p>
+      <p>This is deliberately <strong>not</strong> a step toward Zaxy becoming a &quot;second brain.&quot; Zaxy stays auditable agent memory; the export contract is exactly the seam that lets a brain-style product — or anything else — consume Zaxy as a verifiable source, without Zaxy ingesting unverifiable bulk data and diluting what makes it trustworthy.</p>
+      <h2 id="the-honest-caveats">The honest caveats</h2>
+      <ul>
+        <li><strong>Signing is EXPERIMENTAL and UNAUDITED.</strong> The signed-bundle and partial- disclosure paths depend on <code>zaxy.portable</code>, which is opt-in (<code>pip install zaxy-memory[export]</code>), warns loudly on import, and is pending an independent cryptographic review before any general-availability use. Treat signed export as a preview. The <strong>unsigned</strong> canonical export carries no such caveat and is usable today.</li>
+        <li><strong>Keys never travel in band.</strong> Over MCP, signing uses a <em>server-configured</em> key only — a private key is never accepted as a tool argument. The CLI and webhook auth read keys/tokens from files, never inline.</li>
+        <li><strong>Export is a read of your memory.</strong> The <code>memory_export</code> tool is admin-gated and session-scoped; redaction and disclosure are there so you ship only what you intend to.</li>
+      </ul>
+      <h2 id="try-it">Try it</h2>
+      <p>The contract is specified in <a href="../export-contract.html"><code>docs/export-contract.md</code></a> — entry schema, selector, the three bundle shapes, both surfaces, and the versioning policy a consumer can pin against.</p>
+      <pre><code class="language-sh"># Pull an unsigned, cited bundle for a session.
+zaxy export --out bundle.json --eventloom-path .eventloom --session-id agent-1
+
+# Reveal only the goal entries, with proofs, from a signed bundle.
+zaxy export-disclose bundle.json --grains event --kinds goal.created --out subset.json
+zaxy verify-export-subset subset.json --expect-public-key &lt;hex&gt;</code></pre>
+      <p>Memory you can&#x27;t move is lock-in. Memory you can move but can&#x27;t verify is a liability. 2.5 is the format in between — and we&#x27;d genuinely welcome review of the signed path before anyone leans on it.</p>
+    </article>
+  </main>
+</body>
+</html>

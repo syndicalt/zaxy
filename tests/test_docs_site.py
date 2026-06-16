@@ -102,7 +102,7 @@ def test_public_site_has_product_positioning_and_required_sections() -> None:
     assert "Eventloom source of truth" in html
     assert "Pathlight" in html
     assert "embedded LadybugDB" in html
-    assert "PyPI 2.4.4" in html
+    assert "PyPI 2.5.0" in html
     assert "Harvey LAB 10/10 tasks" in html
     assert "Harvey LAB mean 0.788" in html
     assert "Headline 500 R@5 1.000" in html
