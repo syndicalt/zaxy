@@ -17,6 +17,7 @@ Example::
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -341,42 +342,65 @@ class MemoryFabric:
         pggraph_dsn: str | None = None,
         embedded_graph_path: str | Path | None = None,
         latticedb_path: str | Path | None = None,
+        *,
+        graph: Any | None = None,
+        tracer: Any | None = None,
+        session_manager: SessionManager | None = None,
+        retrieval_cache: SessionRetrievalCache | None = None,
+        refs: MemoryRefStore | None = None,
+        owns_connections: bool = True,
     ) -> None:
         """Initialize fabric with configuration.
 
         All arguments default to environment variables (via Settings).
         Explicit values override env vars for framework integrations.
+
+        Component injection: pass pre-built ``graph``/``tracer``/
+        ``session_manager``/``retrieval_cache``/``refs`` to reuse a host's
+        components instead of constructing new ones — this lets the MCP server
+        hold one persistent fabric over its existing projection store rather than
+        standing up a second one. With ``owns_connections=False`` the fabric
+        treats those shared components as already connected and never connects or
+        closes them (the host owns their lifecycle).
         """
         settings = get_settings()
         retrieval_profile = resolve_retrieval_profile(settings)
         resolved_settings = apply_retrieval_profile(settings, retrieval_profile)
         self.settings = resolved_settings
         self.retrieval_profile: RetrievalProfile = retrieval_profile
+        self._owns_connections = owns_connections
 
         self.eventloom_path = Path(eventloom_path or resolved_settings.eventloom_path)
-        self.session_manager = SessionManager(base_path=str(self.eventloom_path))
+        self.session_manager = (
+            session_manager
+            if session_manager is not None
+            else SessionManager(base_path=str(self.eventloom_path))
+        )
         self.eventloom = self.session_manager.get("default").eventlog
-        resolved_embedded_graph_path = (
-            Path(embedded_graph_path)
-            if embedded_graph_path is not None
-            else self.eventloom_path / "projections" / "embedded.kuzu"
-            if eventloom_path is not None
-            else Path(resolved_settings.embedded_graph_path)
-        )
-        self.graph = build_projection_store(
-            ProjectionBackendConfig(
-                backend=projection_backend or resolved_settings.projection_backend,
-                neo4j_uri=neo4j_uri or resolved_settings.neo4j_uri,
-                neo4j_user=neo4j_user or resolved_settings.neo4j_user,
-                neo4j_password=neo4j_password or resolved_settings.neo4j_password,
-                neo4j_ca_cert=neo4j_ca_cert if neo4j_ca_cert is not None else resolved_settings.neo4j_ca_cert,
-                neo4j_trust_all=neo4j_trust_all if neo4j_trust_all is not None else resolved_settings.neo4j_trust_all,
-                pggraph_dsn=pggraph_dsn or resolved_settings.pggraph_dsn,
-                embedded_graph_path=resolved_embedded_graph_path,
-                latticedb_path=Path(latticedb_path or resolved_settings.latticedb_path),
-                embedding_dimension=resolved_settings.embedding_dimension,
+        if graph is not None:
+            self.graph = graph
+        else:
+            resolved_embedded_graph_path = (
+                Path(embedded_graph_path)
+                if embedded_graph_path is not None
+                else self.eventloom_path / "projections" / "embedded.kuzu"
+                if eventloom_path is not None
+                else Path(resolved_settings.embedded_graph_path)
             )
-        )
+            self.graph = build_projection_store(
+                ProjectionBackendConfig(
+                    backend=projection_backend or resolved_settings.projection_backend,
+                    neo4j_uri=neo4j_uri or resolved_settings.neo4j_uri,
+                    neo4j_user=neo4j_user or resolved_settings.neo4j_user,
+                    neo4j_password=neo4j_password or resolved_settings.neo4j_password,
+                    neo4j_ca_cert=neo4j_ca_cert if neo4j_ca_cert is not None else resolved_settings.neo4j_ca_cert,
+                    neo4j_trust_all=neo4j_trust_all if neo4j_trust_all is not None else resolved_settings.neo4j_trust_all,
+                    pggraph_dsn=pggraph_dsn or resolved_settings.pggraph_dsn,
+                    embedded_graph_path=resolved_embedded_graph_path,
+                    latticedb_path=Path(latticedb_path or resolved_settings.latticedb_path),
+                    embedding_dimension=resolved_settings.embedding_dimension,
+                )
+            )
         self.query_router = QueryRouter(
             self.graph,
             default_limit=resolved_settings.query_default_limit,
@@ -390,13 +414,17 @@ class MemoryFabric:
         self._salience_floor = float(resolved_settings.salience_floor)
         self._encoding_gate_enabled = bool(resolved_settings.encoding_gate_enabled)
         self.embedding_provider = build_embedding_provider(resolved_settings)
-        self.tracer = MemoryTracer(
-            base_url=pathlight_url or resolved_settings.pathlight_url,
-            project_id=pathlight_project_id or resolved_settings.pathlight_project_id,
-            disabled=tracer_disabled or not resolved_settings.pathlight_enabled,
+        self.tracer = (
+            tracer
+            if tracer is not None
+            else MemoryTracer(
+                base_url=pathlight_url or resolved_settings.pathlight_url,
+                project_id=pathlight_project_id or resolved_settings.pathlight_project_id,
+                disabled=tracer_disabled or not resolved_settings.pathlight_enabled,
+            )
         )
         projection_search_base = Path(eventloom_path or resolved_settings.eventloom_path)
-        self.refs = MemoryRefStore(projection_search_base)
+        self.refs = refs if refs is not None else MemoryRefStore(projection_search_base)
         self.projections: tuple[CompactionProjection, ...] = tuple(
             load_compaction_projection(path)
             for path in _compaction_projection_paths(
@@ -410,7 +438,11 @@ class MemoryFabric:
             packet_memory_enabled=resolved_settings.context_packet_memory_enabled,
             packet_memory_slots=resolved_settings.context_packet_memory_slots,
         )
-        self._retrieval_cache = SessionRetrievalCache(self.session_manager)
+        self._retrieval_cache = (
+            retrieval_cache
+            if retrieval_cache is not None
+            else SessionRetrievalCache(self.session_manager)
+        )
         self._event_ref_index_cache: dict[str, tuple[tuple[int, int], dict[int, tuple[str, str]]]] = {}
         self._session_cue_index_cache: dict[str, tuple[tuple[int, int], dict[int, frozenset[str]]]] = {}
         self._query_page_cache: dict[
@@ -420,10 +452,17 @@ class MemoryFabric:
         self._initialized_workspaces: dict[tuple[str, str], WorkspaceProfile] = {}
         self._initialized_instruction_signatures: dict[tuple[str, str], str] = {}
         self._warmed_projection_sessions: set[str] = set()
-        self._connected = False
+        # Injected (shared) components are connected/closed by their owner, so an
+        # injected fabric starts "connected" and its connect/close are no-ops for
+        # those components.
+        self._connected = not owns_connections
 
     async def connect(self) -> None:
-        """Connect to projection backend and tracer. Idempotent."""
+        """Connect to projection backend and tracer. Idempotent.
+
+        No-op when components are injected (``owns_connections=False``): the host
+        owns their connection lifecycle.
+        """
         if self._connected:
             return
         await self.graph.connect()
@@ -434,10 +473,15 @@ class MemoryFabric:
         self._connected = True
 
     async def close(self) -> None:
-        """Close all connections. Idempotent."""
-        await self.graph.close()
-        await self.tracer.close()
-        self._retrieval_cache.invalidate()
+        """Close all connections. Idempotent.
+
+        When components are injected (``owns_connections=False``) the shared
+        graph/tracer/retrieval-cache are left untouched — the host owns them.
+        """
+        if self._owns_connections:
+            await self.graph.close()
+            await self.tracer.close()
+            self._retrieval_cache.invalidate()
         self._event_ref_index_cache = {}
         self._session_cue_index_cache = {}
         self._query_page_cache = {}
@@ -2144,22 +2188,22 @@ class MemoryFabric:
         """Retrieve exact Eventloom source chunks without requiring graph services."""
         validate_query(query)
         sid = validate_session_id(session_id)
-        index = self._verbatim_index(sid)
-        contexts: list[Context] = []
-        for hit in index.query(query, limit=limit):
-            contexts.append(
-                Context(
-                    content=hit.content,
-                    source="verbatim",
-                    score=hit.score,
-                    metadata={
-                        "citation": hit.citation,
-                        "source_kind": hit.source_kind,
-                        **hit.metadata,
-                    },
-                )
+        # Index build/extend + BM25 query are CPU-bound; offload so async callers
+        # (the MCP checkout path) don't block the event loop.
+        hits = await asyncio.to_thread(lambda: self._verbatim_index(sid).query(query, limit=limit))
+        return [
+            Context(
+                content=hit.content,
+                source="verbatim",
+                score=hit.score,
+                metadata={
+                    "citation": hit.citation,
+                    "source_kind": hit.source_kind,
+                    **hit.metadata,
+                },
             )
-        return contexts
+            for hit in hits
+        ]
 
     def _verbatim_index(self, session_id: str) -> VerbatimIndex:
         """Return a per-session verbatim index (cached, incrementally extended).
@@ -2398,8 +2442,11 @@ class MemoryFabric:
         already-verified prefix) instead of re-reading and re-hashing the entire
         log on every call. A full re-verify happens on a cold cache, if the log
         shrank / was rewritten, or if incremental verification detects a break.
+
+        The verified replay is CPU/IO-bound and runs in a worker thread so async
+        callers (including the MCP checkout path) never block the event loop.
         """
-        return self._retrieval_cache.verified_replay(session_id, from_seq)
+        return await asyncio.to_thread(self._retrieval_cache.verified_replay, session_id, from_seq)
 
     async def propose_consolidation_candidates(
         self,

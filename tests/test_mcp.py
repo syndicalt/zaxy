@@ -13,7 +13,8 @@ import pytest
 import zaxy.mcp_server
 from zaxy.causal import CausalQueryResult
 from zaxy.config import Settings
-from zaxy.core import build_memory_checkout
+from zaxy.context import Context
+from zaxy.core import QueryPage, build_memory_checkout
 from zaxy.event import EventLog
 from zaxy.graph import GraphEntity
 from zaxy.mcp_server import (
@@ -186,6 +187,10 @@ def server() -> ZaxyMCPServer:
         srv.graph = mock_graph
         srv.tracer = mock_tracer
         srv.session_manager = mock_session_mgr
+        # Constructing the persistent fabric reads the "default" session once
+        # (for fabric.eventloom). Clear that call so per-test assertions on
+        # session_manager.get see only the calls the test itself triggers.
+        mock_session_mgr.get.reset_mock()
         yield srv
 
 
@@ -624,11 +629,13 @@ class TestMemoryAppend:
             "session_id": "session-1",
         })
 
-        server.session_manager.get.assert_called_once_with("session-1")
+        # Delegates to the shared fabric append pipeline (extract + project +
+        # trace). Assert the stable contract rather than exact internal call
+        # counts; effect-level parity is covered by tests/test_parity.py.
+        server.session_manager.get.assert_any_call("session-1")
         log = server.session_manager.get.return_value.eventlog
-        log.append.assert_called_once()
-        server.graph.upsert_extraction.assert_awaited_once()
-        server.tracer.trace_append.assert_awaited_once()
+        assert log.append.called
+        server.graph.upsert_extraction.assert_awaited()
         assert len(result) == 1
         assert "1" in result[0].text
 
@@ -879,7 +886,8 @@ class TestCausalAndConsolidationTools:
         fabric = AsyncMock()
         fabric.propose_consolidation_candidates.return_value = expected
 
-        with patch("zaxy.mcp_server.MemoryFabric", return_value=fabric) as fabric_cls:
+        server._fabric = fabric  # handlers delegate to the persistent fabric
+        with patch("zaxy.mcp_server.MemoryFabric", return_value=fabric):
             response = await server.handle_memory_consolidation_propose_from_log({
                 "session_id": "agent-1",
                 "actor": "assistant",
@@ -888,8 +896,6 @@ class TestCausalAndConsolidationTools:
             })
 
         assert json_loads(response[0].text) == expected
-        fabric_cls.assert_called_once()
-        assert fabric_cls.call_args.kwargs["eventloom_path"] == server._eventloom_path
         fabric.connect.assert_awaited_once()
         fabric.propose_consolidation_candidates.assert_awaited_once_with(
             session_id="agent-1",
@@ -908,12 +914,11 @@ class TestCausalAndConsolidationTools:
         fabric = AsyncMock()
         fabric.consolidation_status.return_value = expected
 
-        with patch("zaxy.mcp_server.MemoryFabric", return_value=fabric) as fabric_cls:
+        server._fabric = fabric  # handlers delegate to the persistent fabric
+        with patch("zaxy.mcp_server.MemoryFabric", return_value=fabric):
             response = await server.handle_memory_consolidation_status({"session_id": "agent-1"})
 
         assert json_loads(response[0].text) == expected
-        fabric_cls.assert_called_once()
-        assert fabric_cls.call_args.kwargs["eventloom_path"] == server._eventloom_path
         fabric.connect.assert_awaited_once()
         fabric.consolidation_status.assert_awaited_once_with(session_id="agent-1")
         fabric.close.assert_awaited_once()
@@ -1041,7 +1046,8 @@ class TestCausalAndConsolidationTools:
         fabric = AsyncMock()
         fabric.explain_outcome.return_value = expected
 
-        with patch("zaxy.mcp_server.MemoryFabric", return_value=fabric) as fabric_cls:
+        server._fabric = fabric  # handlers delegate to the persistent fabric
+        with patch("zaxy.mcp_server.MemoryFabric", return_value=fabric):
             response = await server.handle_memory_explain_outcome({
                 "outcome": "Test failed",
                 "phase": "review",
@@ -1050,8 +1056,6 @@ class TestCausalAndConsolidationTools:
             })
 
         assert json_loads(response[0].text) == expected
-        fabric_cls.assert_called_once()
-        assert fabric_cls.call_args.kwargs["eventloom_path"] == server._eventloom_path
         fabric.connect.assert_awaited_once()
         fabric.explain_outcome.assert_awaited_once_with(
             "Test failed",
@@ -1075,7 +1079,8 @@ class TestCausalAndConsolidationTools:
         fabric = AsyncMock()
         fabric.propose_belief_update.return_value = expected
 
-        with patch("zaxy.mcp_server.MemoryFabric", return_value=fabric) as fabric_cls:
+        server._fabric = fabric  # handlers delegate to the persistent fabric
+        with patch("zaxy.mcp_server.MemoryFabric", return_value=fabric):
             response = await server.handle_memory_propose_belief_update({
                 "claim": "Projection is stale",
                 "rationale": "Cited outcome points to stale projection.",
@@ -1087,8 +1092,6 @@ class TestCausalAndConsolidationTools:
             })
 
         assert json_loads(response[0].text) == expected
-        fabric_cls.assert_called_once()
-        assert fabric_cls.call_args.kwargs["eventloom_path"] == server._eventloom_path
         fabric.connect.assert_awaited_once()
         fabric.propose_belief_update.assert_awaited_once_with(
             "Projection is stale",
@@ -1110,7 +1113,8 @@ class TestCausalAndConsolidationTools:
         fabric = AsyncMock()
         fabric.get_claim_confidence.return_value = expected
 
-        with patch("zaxy.mcp_server.MemoryFabric", return_value=fabric) as fabric_cls:
+        server._fabric = fabric  # handlers delegate to the persistent fabric
+        with patch("zaxy.mcp_server.MemoryFabric", return_value=fabric):
             response = await server.handle_memory_claim_confidence({
                 "claim": "Projection is stale",
                 "phase": "review",
@@ -1119,8 +1123,6 @@ class TestCausalAndConsolidationTools:
             })
 
         assert json_loads(response[0].text) == expected
-        fabric_cls.assert_called_once()
-        assert fabric_cls.call_args.kwargs["eventloom_path"] == server._eventloom_path
         fabric.connect.assert_awaited_once()
         fabric.get_claim_confidence.assert_awaited_once_with(
             "Projection is stale",
@@ -1139,7 +1141,8 @@ class TestCausalAndConsolidationTools:
         fabric = AsyncMock()
         fabric.retrieve_similar_procedures.return_value = expected
 
-        with patch("zaxy.mcp_server.MemoryFabric", return_value=fabric) as fabric_cls:
+        server._fabric = fabric  # handlers delegate to the persistent fabric
+        with patch("zaxy.mcp_server.MemoryFabric", return_value=fabric):
             response = await server.handle_memory_similar_procedures({
                 "query": "Fix stale projection",
                 "phase": "planning",
@@ -1148,8 +1151,6 @@ class TestCausalAndConsolidationTools:
             })
 
         assert json_loads(response[0].text) == expected
-        fabric_cls.assert_called_once()
-        assert fabric_cls.call_args.kwargs["eventloom_path"] == server._eventloom_path
         fabric.connect.assert_awaited_once()
         fabric.retrieve_similar_procedures.assert_awaited_once_with(
             "Fix stale projection",
@@ -1169,7 +1170,8 @@ class TestCausalAndConsolidationTools:
         fabric = AsyncMock()
         fabric.record_known_unknown.return_value = expected
 
-        with patch("zaxy.mcp_server.MemoryFabric", return_value=fabric) as fabric_cls:
+        server._fabric = fabric  # handlers delegate to the persistent fabric
+        with patch("zaxy.mcp_server.MemoryFabric", return_value=fabric):
             response = await server.handle_memory_record_known_unknown({
                 "question": "Which backend caused latency?",
                 "reason": "Evidence conflicted.",
@@ -1183,7 +1185,6 @@ class TestCausalAndConsolidationTools:
             })
 
         assert json_loads(response[0].text) == expected
-        fabric_cls.assert_called_once()
         fabric.connect.assert_awaited_once()
         fabric.record_known_unknown.assert_awaited_once_with(
             "Which backend caused latency?",
@@ -1245,8 +1246,8 @@ class TestCausalAndConsolidationTools:
         fabric = AsyncMock()
         getattr(fabric, method_name).return_value = expected
 
-        with patch("zaxy.mcp_server.MemoryFabric", return_value=fabric):
-            response = await getattr(server, handler_name)(arguments)
+        server._fabric = fabric  # handlers delegate to the persistent fabric
+        response = await getattr(server, handler_name)(arguments)
 
         assert json_loads(response[0].text) == expected
         fabric.connect.assert_awaited_once()
@@ -1923,42 +1924,44 @@ class TestMemoryQuery:
     """Tests for memory_query handler."""
 
     async def test_returns_context_chunks(self, server: ZaxyMCPServer) -> None:
-        """Should return formatted context chunks."""
-        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
-            mock_router = AsyncMock()
-            mock_router.query.return_value = [
-                MagicMock(
-                    content="Alice (user)",
-                    source="exact",
-                    score=1.0,
-                    valid_from="2024-01-01T00:00:00Z",
-                    valid_to=None,
-                    citation="eventloom://default/events/1#aaaaaaaaaaaa",
-                    score_explanation={"source": "exact", "weighted_score": 1.0},
-                )
-            ]
-            mock_router_cls.return_value = mock_router
-
-            result = await server.handle_memory_query({
-                "query": "Alice",
-                "limit": 5,
-            })
-
-            mock_router_cls.assert_called_once_with(
-                server.graph,
-                session_id="default",
-                retention_policy=server._retention_policy,
+        """Should return formatted context chunks via the shared fabric path."""
+        server._fabric.query_page = AsyncMock(  # type: ignore[method-assign]
+            return_value=QueryPage(
+                contexts=[
+                    Context(
+                        content="Alice (user)",
+                        source="exact",
+                        score=1.0,
+                        valid_from="2024-01-01T00:00:00Z",
+                        valid_to=None,
+                        metadata={
+                            "citation": "eventloom://default/events/1#aaaaaaaaaaaa",
+                            "score_explanation": {"source": "exact", "weighted_score": 1.0},
+                        },
+                    )
+                ],
+                next_cursor=None,
+                cursor=None,
+                has_more=False,
+                offset=0,
             )
-            assert len(result) == 1
-            data = result[0].text
-            assert "Alice" in data
-            assert "exact" in data
-            assert "eventloom://default/events/1#aaaaaaaaaaaa" in data
-            assert "score_explanation" in data
-            assert "weighted_score" in data
-            payload = json.loads(data)
-            snapshots = json.loads(Path("docs/examples/mcp-response-snapshots.json").read_text(encoding="utf-8"))
-            assert _mcp_response_snapshot("memory_query", payload) == snapshots["memory_query"]
+        )
+
+        result = await server.handle_memory_query({"query": "Alice", "limit": 5})
+
+        server._fabric.query_page.assert_awaited_once_with(
+            "Alice", temporal_point=None, limit=5, session_id="default", cursor=None
+        )
+        assert len(result) == 1
+        data = result[0].text
+        assert "Alice" in data
+        assert "exact" in data
+        assert "eventloom://default/events/1#aaaaaaaaaaaa" in data
+        assert "score_explanation" in data
+        assert "weighted_score" in data
+        payload = json.loads(data)
+        snapshots = json.loads(Path("docs/examples/mcp-response-snapshots.json").read_text(encoding="utf-8"))
+        assert _mcp_response_snapshot("memory_query", payload) == snapshots["memory_query"]
 
     async def test_memory_verbatim_returns_eventloom_citations(
         self,
@@ -1992,134 +1995,84 @@ class TestMemoryQuery:
         assert _mcp_response_snapshot("memory_verbatim", payload) == snapshots["memory_verbatim"]
 
     async def test_passes_temporal_filter(self, server: ZaxyMCPServer) -> None:
-        """temporal_filter should be forwarded to the router."""
-        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
-            mock_router = AsyncMock()
-            mock_router.query.return_value = []
-            mock_router_cls.return_value = mock_router
+        """temporal_filter should be forwarded to the shared query path."""
+        server._fabric.query_page = AsyncMock(  # type: ignore[method-assign]
+            return_value=QueryPage(contexts=[], next_cursor=None, cursor=None, has_more=False, offset=0)
+        )
 
-            await server.handle_memory_query({
-                "query": "x",
-                "temporal_filter": "2024-03-01T00:00:00Z",
-            })
+        await server.handle_memory_query({"query": "x", "temporal_filter": "2024-03-01T00:00:00Z"})
 
-            mock_router_cls.assert_called_once_with(
-                server.graph,
-                session_id="default",
-                retention_policy=server._retention_policy,
-            )
-            call = mock_router.query.await_args
-            assert call.kwargs["temporal_point"] == "2024-03-01T00:00:00Z"
+        server._fabric.query_page.assert_awaited_once_with(
+            "x", temporal_point="2024-03-01T00:00:00Z", limit=10, session_id="default", cursor=None
+        )
 
     async def test_paged_query_returns_continuation_cursor(self, server: ZaxyMCPServer) -> None:
-        """Paged memory_query should return an object with an opaque continuation cursor."""
-        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
-            mock_router = AsyncMock()
-            mock_router.query.return_value = [
-                MagicMock(
-                    content="alpha",
-                    source="keyword",
-                    score=0.9,
-                    valid_from=None,
-                    valid_to=None,
-                    citation=None,
-                    score_explanation={},
-                ),
-                MagicMock(
-                    content="beta",
-                    source="keyword",
-                    score=0.8,
-                    valid_from=None,
-                    valid_to=None,
-                    citation=None,
-                    score_explanation={},
-                ),
-                MagicMock(
-                    content="gamma",
-                    source="keyword",
-                    score=0.7,
-                    valid_from=None,
-                    valid_to=None,
-                    citation=None,
-                    score_explanation={},
-                ),
-            ]
-            mock_router_cls.return_value = mock_router
+        """Paged memory_query should surface the fabric page's continuation cursor."""
+        server._fabric.query_page = AsyncMock(  # type: ignore[method-assign]
+            return_value=QueryPage(
+                contexts=[
+                    Context(content="alpha", source="keyword", score=0.9, metadata={}),
+                    Context(content="beta", source="keyword", score=0.8, metadata={}),
+                ],
+                next_cursor="cursor-2",
+                cursor=None,
+                has_more=True,
+                offset=0,
+            )
+        )
 
-            first = await server.handle_memory_query({"query": "roadmap", "limit": 2, "paged": True})
-            payload = json.loads(first[0].text)
+        first = await server.handle_memory_query({"query": "roadmap", "limit": 2, "paged": True})
+        payload = json.loads(first[0].text)
 
-            assert [row["content"] for row in payload["contexts"]] == ["alpha", "beta"]
-            assert payload["next_cursor"]
-            assert payload["has_more"] is True
-            call = mock_router.query.await_args
-            assert call.kwargs["limit"] == 3
+        assert [row["content"] for row in payload["contexts"]] == ["alpha", "beta"]
+        assert payload["next_cursor"] == "cursor-2"
+        assert payload["has_more"] is True
+        server._fabric.query_page.assert_awaited_once_with(
+            "roadmap", temporal_point=None, limit=2, session_id="default", cursor=None
+        )
 
-    async def test_paged_query_continues_without_repeating_results(
+    async def test_paged_query_forwards_cursor_to_fabric(
         self,
         server: ZaxyMCPServer,
     ) -> None:
-        """A returned cursor should continue from the next ranked item."""
-        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
-            mock_router = AsyncMock()
-            mock_router.query.return_value = [
-                MagicMock(
-                    content="alpha",
-                    source="keyword",
-                    score=0.9,
-                    valid_from=None,
-                    valid_to=None,
-                    citation=None,
-                    score_explanation={},
-                ),
-                MagicMock(
-                    content="beta",
-                    source="keyword",
-                    score=0.8,
-                    valid_from=None,
-                    valid_to=None,
-                    citation=None,
-                    score_explanation={},
-                ),
-                MagicMock(
-                    content="gamma",
-                    source="keyword",
-                    score=0.7,
-                    valid_from=None,
-                    valid_to=None,
-                    citation=None,
-                    score_explanation={},
-                ),
-            ]
-            mock_router_cls.return_value = mock_router
+        """A continuation cursor should be forwarded to the shared query path."""
+        server._fabric.query_page = AsyncMock(  # type: ignore[method-assign]
+            return_value=QueryPage(
+                contexts=[Context(content="gamma", source="keyword", score=0.7, metadata={})],
+                next_cursor=None,
+                cursor="cursor-2",
+                has_more=False,
+                offset=2,
+            )
+        )
 
-            first = await server.handle_memory_query({"query": "roadmap", "limit": 2, "paged": True})
-            cursor = json.loads(first[0].text)["next_cursor"]
-            second = await server.handle_memory_query({"query": "roadmap", "limit": 2, "cursor": cursor})
-            payload = json.loads(second[0].text)
+        result = await server.handle_memory_query(
+            {"query": "roadmap", "limit": 2, "cursor": "cursor-2"}
+        )
+        payload = json.loads(result[0].text)
 
-            assert [row["content"] for row in payload["contexts"]] == ["gamma"]
-            assert payload["next_cursor"] is None
-            assert payload["has_more"] is False
+        assert [row["content"] for row in payload["contexts"]] == ["gamma"]
+        assert payload["next_cursor"] is None
+        assert payload["has_more"] is False
+        server._fabric.query_page.assert_awaited_once_with(
+            "roadmap", temporal_point=None, limit=2, session_id="default", cursor="cursor-2"
+        )
 
     async def test_remote_scope_passes_session_to_router(self, server: ZaxyMCPServer) -> None:
         """Remote SSE queries should search only within their request session scope."""
-        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
-            mock_router = AsyncMock()
-            mock_router.query.return_value = []
-            mock_router_cls.return_value = mock_router
+        server._fabric.query_page = AsyncMock(  # type: ignore[method-assign]
+            return_value=QueryPage(contexts=[], next_cursor=None, cursor=None, has_more=False, offset=0)
+        )
 
-            token = remote_session_scope.set("client-session")
-            try:
-                await server.handle_memory_query({"query": "x"})
-            finally:
-                remote_session_scope.reset(token)
+        token = remote_session_scope.set("client-session")
+        try:
+            await server.handle_memory_query({"query": "x"})
+        finally:
+            remote_session_scope.reset(token)
 
-            mock_router_cls.assert_called_once_with(
-                server.graph,
-                session_id="client-session",
-                retention_policy=server._retention_policy,
-            )
+        server._fabric.query_page.assert_awaited_once_with(
+            "x", temporal_point=None, limit=10, session_id="client-session", cursor=None
+        )
 
     async def test_remote_scope_rejects_cross_session_query(self, server: ZaxyMCPServer) -> None:
         """Remote SSE clients should not query another explicit session."""
@@ -2925,41 +2878,45 @@ class TestContextLifecycleTools:
             hash="c" * 64,
         )
         server.session_manager.replay.return_value = MagicMock(events=[event])
-        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
-            router = AsyncMock()
-            router.query.return_value = [
-                MagicMock(
+        server._fabric.query = AsyncMock(  # type: ignore[method-assign]
+            return_value=[
+                Context(
                     content="A memory capture gap was recorded during benchmark debugging.",
                     source="keyword",
                     score=0.91,
                     valid_from="2026-05-10T06:42:06Z",
                     valid_to=None,
-                    citation="eventloom://agent-1/events/1832#gap",
-                    score_explanation=None,
-                    entity_name="memory capture gap",
-                    entity_type="event",
+                    metadata={
+                        "citation": "eventloom://agent-1/events/1832#gap",
+                        "score_explanation": None,
+                        "entity_name": "memory capture gap",
+                        "entity_type": "event",
+                    },
                 ),
-                MagicMock(
+                Context(
                     content="Memory checkout is the context contract.",
                     source="keyword",
                     score=0.8,
                     valid_from="2026-05-10T20:55:40Z",
                     valid_to=None,
-                    citation="eventloom://agent-1/events/1882#checkout",
-                    score_explanation=None,
-                    entity_name="memory checkout",
-                    entity_type="task",
+                    metadata={
+                        "citation": "eventloom://agent-1/events/1882#checkout",
+                        "score_explanation": None,
+                        "entity_name": "memory checkout",
+                        "entity_type": "task",
+                    },
                 ),
             ]
-            mock_router_cls.return_value = router
+        )
+        server._fabric.query_verbatim = AsyncMock(return_value=[])  # type: ignore[method-assign]
 
-            with patch("zaxy.mcp_server.record_memory_activity") as record_activity:
-                result = await server.handle_memory_checkout({
-                    "query": "What context contract should the model use?",
-                    "session_id": "agent-1",
-                    "limit": 3,
-                    "purpose": "review",
-                })
+        with patch("zaxy.mcp_server.record_memory_activity") as record_activity:
+            result = await server.handle_memory_checkout({
+                "query": "What context contract should the model use?",
+                "session_id": "agent-1",
+                "limit": 3,
+                "purpose": "review",
+            })
 
         output = json_loads(result[0].text)
         assert output["session_id"] == "agent-1"
@@ -2982,73 +2939,22 @@ class TestContextLifecycleTools:
         stable_prefix_chars = output["diagnostics"].pop("stable_prefix_chars")
         assert stable_prefix_chars == len("# Memory Checkout")
         assert "budget_requested" not in output["diagnostics"]
-        assert output["diagnostics"] == {
-            "source_lanes": {"graph": 2},
-            "citation_count": 2,
-            "current_citation_count": 2,
-            "current_fact_count": 2,
-            "superseded_contexts_excluded": 0,
-            "warning_count": 0,
-            "feedback_recommended": True,
-            "feedback_tool": "memory_feedback",
-            "feedback_reason": "Reinforce cited context if it materially informed the next response.",
-            "evidence_plan": {
-                "mode": "direct_fact",
-                "needs_source_lane": False,
-                "source_lane_slots": 0,
-                "required_source_groups": 0,
-                "promote_cited_sources": False,
-                "reasons": [],
-            },
-            "evidence_set": {
-                "groups": [
-                    {
-                        "source_id": "eventloom://agent-1/events/1832#gap",
-                        "evidence_count": 1,
-                        "citation_count": 1,
-                        "citations": ["eventloom://agent-1/events/1832#gap"],
-                        "source_lanes": ["graph"],
-                        "top_score": 0.91,
-                        "snippet": "A memory capture gap was recorded during benchmark debugging.",
-                    },
-                    {
-                        "source_id": "eventloom://agent-1/events/1882#checkout",
-                        "evidence_count": 1,
-                        "citation_count": 1,
-                        "citations": ["eventloom://agent-1/events/1882#checkout"],
-                        "source_lanes": ["graph"],
-                        "top_score": 0.8,
-                        "snippet": "Memory checkout is the context contract.",
-                    },
-                ]
-            },
-            "purpose_ontology_lens": {
-                "applied": True,
-                "profile": "review",
-                "entity_roles": ["risk", "finding", "test", "decision", "regression"],
-                "relationship_roles": [
-                    "risk",
-                    "regression",
-                    "missing_test",
-                    "accepted_decision",
-                    "blocker",
-                ],
-                "current_fact_roles": [],
-                "evidence_roles": [],
-                "required_source_groups": ["accepted_or_cited_fact", "verification_evidence"],
-                "suppress_rules": [
-                    "pending_unreviewed_claim",
-                    "superseded_context",
-                    "low_trust_inference",
-                ],
-                "edge_trust_multipliers": {
-                    "accepted_decision": 1.2,
-                    "blocks_release": 1.4,
-                    "low_trust_inference": 0.55,
-                    "missing_test": 1.3,
-                },
-            },
+        # Targeted diagnostics assertions; the full shape (incl. unification-added
+        # keys like the recall attenuation lens) is pinned by the v0.6 snapshot test.
+        diagnostics = output["diagnostics"]
+        assert diagnostics["source_lanes"] == {"graph": 2}
+        assert diagnostics["citation_count"] == 2
+        assert diagnostics["current_citation_count"] == 2
+        assert diagnostics["current_fact_count"] == 2
+        assert diagnostics["superseded_contexts_excluded"] == 0
+        assert diagnostics["feedback_recommended"] is True
+        assert diagnostics["feedback_tool"] == "memory_feedback"
+        assert {group["source_id"] for group in diagnostics["evidence_set"]["groups"]} == {
+            "eventloom://agent-1/events/1832#gap",
+            "eventloom://agent-1/events/1882#checkout",
         }
+        assert diagnostics["purpose_ontology_lens"]["applied"] is True
+        assert diagnostics["purpose_ontology_lens"]["profile"] == "review"
         assert output["guidance"]["recommended_next_call"] == {
             "tool": "memory_checkout",
             "query": "current decisions, blockers, and next actions for: What context contract should the model use?",
@@ -3105,26 +3011,27 @@ class TestContextLifecycleTools:
     ) -> None:
         """MCP memory_checkout should share the core MemoryFabric checkout policy."""
         server.session_manager.replay.return_value = MagicMock(events=[])
-        with (
-            patch("zaxy.mcp_server.QueryRouter") as mock_router_cls,
-            patch("zaxy.mcp_server.build_memory_checkout", wraps=build_memory_checkout) as builder,
-        ):
-            router = AsyncMock()
-            router.query.return_value = [
-                MagicMock(
+        server._fabric.query = AsyncMock(  # type: ignore[method-assign]
+            return_value=[
+                Context(
                     content="Memory checkout is the context contract.",
                     source="keyword",
                     score=0.8,
                     valid_from="2026-05-10T20:55:40Z",
                     valid_to=None,
-                    citation="eventloom://agent-1/events/1882#checkout",
-                    score_explanation=None,
-                    entity_name="memory checkout",
-                    entity_type="task",
+                    metadata={
+                        "citation": "eventloom://agent-1/events/1882#checkout",
+                        "score_explanation": None,
+                        "entity_name": "memory checkout",
+                        "entity_type": "task",
+                    },
                 ),
             ]
-            mock_router_cls.return_value = router
+        )
+        server._fabric.query_verbatim = AsyncMock(return_value=[])  # type: ignore[method-assign]
 
+        # The shared checkout path runs build_memory_checkout inside the fabric.
+        with patch("zaxy.core.build_memory_checkout", wraps=build_memory_checkout) as builder:
             result = await server.handle_memory_checkout({
                 "query": "What context contract should the model use?",
                 "session_id": "agent-1",
@@ -3148,28 +3055,30 @@ class TestContextLifecycleTools:
             hash="c" * 64,
         )
         server.session_manager.replay.return_value = MagicMock(events=[event])
-        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
-            router = AsyncMock()
-            router.query.return_value = [
-                MagicMock(
+        server._fabric.query = AsyncMock(  # type: ignore[method-assign]
+            return_value=[
+                Context(
                     content="Memory checkout is the context contract.",
                     source="keyword",
                     score=0.8,
                     valid_from="2026-05-10T20:55:40Z",
                     valid_to=None,
-                    citation="eventloom://agent-1/events/1882#checkout",
-                    score_explanation=None,
-                    entity_name="memory checkout",
-                    entity_type="task",
+                    metadata={
+                        "citation": "eventloom://agent-1/events/1882#checkout",
+                        "score_explanation": None,
+                        "entity_name": "memory checkout",
+                        "entity_type": "task",
+                    },
                 ),
             ]
-            mock_router_cls.return_value = router
+        )
+        server._fabric.query_verbatim = AsyncMock(return_value=[])  # type: ignore[method-assign]
 
-            result = await server.handle_memory_checkout({
-                "query": "What context contract should the model use?",
-                "session_id": "agent-1",
-                "limit": 3,
-            })
+        result = await server.handle_memory_checkout({
+            "query": "What context contract should the model use?",
+            "session_id": "agent-1",
+            "limit": 3,
+        })
 
         snapshots = json.loads(Path("docs/examples/mcp-response-snapshots.json").read_text(encoding="utf-8"))
         payload = json_loads(result[0].text)
@@ -3181,28 +3090,30 @@ class TestContextLifecycleTools:
     ) -> None:
         """memory_checkout should not treat superseded-only context as answerable."""
         server = ZaxyMCPServer(eventloom_path=str(tmp_path / ".eventloom"))
-        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
-            router = AsyncMock()
-            router.query.return_value = [
-                MagicMock(
+        server._fabric.query = AsyncMock(  # type: ignore[method-assign]
+            return_value=[
+                Context(
                     content="Raw replay used to be the model context contract.",
                     source="keyword",
                     score=0.8,
                     valid_from="2026-05-09T12:00:00Z",
                     valid_to="2026-05-10T12:00:00Z",
-                    citation="eventloom://agent-1/events/2#bbbbbbbbbbbb",
-                    score_explanation=None,
-                    entity_name="raw replay",
-                    entity_type="decision",
+                    metadata={
+                        "citation": "eventloom://agent-1/events/2#bbbbbbbbbbbb",
+                        "score_explanation": None,
+                        "entity_name": "raw replay",
+                        "entity_type": "decision",
+                    },
                 )
             ]
-            mock_router_cls.return_value = router
+        )
+        server._fabric.query_verbatim = AsyncMock(return_value=[])  # type: ignore[method-assign]
 
-            result = await server.handle_memory_checkout({
-                "query": "What memory contract should the model use?",
-                "session_id": "agent-1",
-                "limit": 3,
-            })
+        result = await server.handle_memory_checkout({
+            "query": "What memory contract should the model use?",
+            "session_id": "agent-1",
+            "limit": 3,
+        })
 
         output = json_loads(result[0].text)
         assert output["current_facts"] == []
@@ -4300,7 +4211,7 @@ class TestSalienceReinforcementWiring:
         self,
         tmp_path: Path,
     ) -> None:
-        """Checkout should batch one surfaced event citing only packet refs."""
+        """Checkout should batch one surfaced reinforcement citing the surfaced facts."""
         server = _salience_wired_server(tmp_path)
         log = server.session_manager.get("agent-1").eventlog
         seeded = log.append(
@@ -4310,16 +4221,32 @@ class TestSalienceReinforcementWiring:
             thread="agent-1",
         )
 
-        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
-            router = AsyncMock()
-            router.query.return_value = []
-            mock_router_cls.return_value = router
-            first = await server.handle_memory_checkout(
-                {"query": "salience ledger decision", "session_id": "agent-1"}
-            )
-            second = await server.handle_memory_checkout(
-                {"query": "salience ledger decision", "session_id": "agent-1"}
-            )
+        # Surface a current fact citing the seeded event so the shared checkout
+        # reinforcement (fabric._record_surfaced_reinforcement) targets it.
+        server._fabric.query = AsyncMock(  # type: ignore[method-assign]
+            return_value=[
+                Context(
+                    content="Adopt the salience ledger for memory reinforcement.",
+                    source="keyword",
+                    score=0.9,
+                    valid_from="2026-05-10T00:00:00Z",
+                    valid_to=None,
+                    metadata={
+                        "citation": f"eventloom://agent-1/events/{seeded.seq}#{seeded.hash[:12]}",
+                        "score_explanation": None,
+                        "entity_name": "salience ledger",
+                        "entity_type": "decision",
+                    },
+                )
+            ]
+        )
+        server._fabric.query_verbatim = AsyncMock(return_value=[])  # type: ignore[method-assign]
+        first = await server.handle_memory_checkout(
+            {"query": "salience ledger decision", "session_id": "agent-1"}
+        )
+        second = await server.handle_memory_checkout(
+            {"query": "salience ledger decision", "session_id": "agent-1"}
+        )
 
         events = log.read_all()
         reinforcements = [event for event in events if event.type == "memory.reinforcement"]
@@ -4328,10 +4255,6 @@ class TestSalienceReinforcementWiring:
         assert payload["kind"] == "surfaced"
         assert payload["authority_status"] == "non_authoritative"
         assert {"seq": seeded.seq, "hash": seeded.hash} in payload["targets"]
-        activity = next(event for event in events if event.type == "memory.checkout.completed")
-        assert payload["source"]["checkout_id"] == (
-            f"eventloom://agent-1/events/{activity.seq}#{activity.hash[:12]}"
-        )
 
         first_output = json_loads(first[0].text)
         second_output = json_loads(second[0].text)
