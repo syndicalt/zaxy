@@ -9,6 +9,15 @@ Markdown files + vector DBs are the dominant approach for agent persistent conte
 - **Non-replayable**: Context is chunked and flattened; you can't reconstruct how the agent arrived at a decision.
 - **Un-auditable**: No provenance chain for compliance or debugging.
 
+> **Current architecture (read this first).** The controlling architecture docs
+> are [docs/architecture.md](docs/architecture.md) and [README.md](README.md).
+> The default projection backend is the **embedded LadybugDB** store (in-process,
+> no external service); Neo4j, pgGraph, and LatticeDB are optional backends
+> selected via `PROJECTION_BACKEND`, behind one pluggable projection contract.
+> Some ADRs below predate the embedded-default move and are kept as historical
+> decision records — where an older note says "Neo4j", read "the projection
+> backend (embedded by default)".
+
 ## Architecture Decision Record
 
 ### ADR-1: Event-Sourced Foundation
@@ -47,6 +56,10 @@ Markdown files + vector DBs are the dominant approach for agent persistent conte
 
 **Trade-off**: We maintain more Cypher. Mitigated by keeping queries simple and tested.
 
+**Update**: the projection layer is now a pluggable contract. Embedded LadybugDB
+is the default backend; Neo4j-direct-Cypher is one optional backend among several
+(pgGraph, LatticeDB).
+
 ### ADR-4: Hybrid Retrieval (Exact + Keyword + Traversal)
 
 **Decision**: Query router fuses three strategies with configurable weights.
@@ -65,7 +78,7 @@ Markdown files + vector DBs are the dominant approach for agent persistent conte
 
 **Rationale**:
 - Eventloom = durable history.
-- Neo4j = structured reasoning layer.
+- Projection backend (embedded LadybugDB by default) = structured reasoning layer.
 - Pathlight = execution tracing + breakpoints + diff.
 - Clean separation of concerns.
 
@@ -87,8 +100,8 @@ Markdown files + vector DBs are the dominant approach for agent persistent conte
 | Layer | Technology | Version |
 |-------|-----------|---------|
 | Language | Python | 3.11+ |
-| Graph DB | Neo4j Community | 5.26+ |
-| Graph Driver | neo4j (official) | 5.20+ |
+| Graph projection (default) | embedded LadybugDB | pinned |
+| Optional graph backends | Neo4j / pgGraph / LatticeDB | — |
 | Validation | Pydantic | 2.7+ |
 | MCP Server | mcp (official Python SDK) | 1.0+ |
 | Observability | pathlight (Python SDK) | 0.1+ |
@@ -110,7 +123,8 @@ zaxy/
 │   ├── core.py                 # MemoryFabric orchestrator
 │   ├── event.py                # Eventloom JSONL I/O + hash chain
 │   ├── extract.py              # Hybrid extraction engine + registry
-│   ├── graph.py                # Neo4j bi-temporal wrapper
+│   ├── embedded_graph_store.py # Embedded LadybugDB backend (default)
+│   ├── graph.py                # Neo4j projection backend (optional)
 │   ├── query.py                # Hybrid retrieval router
 │   ├── mcp_server.py           # MCP stdio/sse server
 │   └── trace.py                # Pathlight observability hooks
@@ -131,7 +145,7 @@ zaxy/
 ## Development Workflow
 
 1. **Write the test first** (Karpathy rule). Every public function must have a test before the implementation is considered complete.
-2. **Unit tests mock external deps** (Neo4j, Pathlight, filesystem).
+2. **Unit tests mock external deps** (projection backends, Pathlight, filesystem).
 3. **Integration tests use Docker** (marked `@pytest.mark.integration`).
 4. **Coverage gate: ≥90%** (enforced by CI).
 5. **Lint/format with ruff**, type-check with mypy.
@@ -141,7 +155,7 @@ zaxy/
 | Test Type | Scope | External Deps | Marker |
 |-----------|-------|---------------|--------|
 | Unit | Single function/class | Mocked | `unit` (default) |
-| Integration | Cross-module + real DB | Neo4j Docker | `integration` |
+| Integration | Cross-module + real DB | optional backend (e.g. Neo4j) Docker | `integration` |
 | E2E | Full agent run | Full Docker stack | `e2e` (future) |
 
 Run unit tests: `pytest`
@@ -155,9 +169,9 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - **Output**: Zaxy appends projection metadata back to Eventloom (optional).
 - **Contract**: `Event` Pydantic model matches Eventloom JSONL schema.
 
-### Neo4j (Core Memory)
-- **Bolt URI**: `bolt://localhost:7687`
-- **Auth**: `neo4j/testpassword` (local dev)
+### Projection backend (Core Memory)
+- **Default**: embedded LadybugDB (in-process; no external service).
+- **Optional**: Neo4j (`bolt://localhost:7687`, auth `neo4j/testpassword` local dev), pgGraph, LatticeDB — selected via `PROJECTION_BACKEND`.
 - **Schema**: `Entity(name, entity_type, valid_from, valid_to, ...)` + `RELATES(relation_type, valid_from, valid_to)`
 - **Indexes**: Vector index (embedding), Fulltext index (BM25)
 
@@ -181,7 +195,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 |--------|--------|-------|
 | Event append | <50ms | Local JSONL write + lock |
 | Rule-based extraction | <10ms | Pure Python dict mapping |
-| Neo4j upsert | <100ms | MERGE + index lookup |
+| Projection upsert | <100ms | MERGE + index lookup |
 | Hybrid query | <200ms | Parallel exact + keyword + traversal |
 | Total context retrieval | <300ms | End-to-end |
 | Token reduction vs. chunk RAG | 70–90% (target; unvalidated) | Structured paths vs. raw text. Validate with `scripts/chunk_rag_token_compare.py` — quality-controlled (token reduction at *equal answer-bearing recall*, pinned chunk-RAG baseline) — driven by a gold-labeled QA dataset through the gated benchmark. |

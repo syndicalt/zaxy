@@ -665,6 +665,46 @@ class TestQueryPagination:
         assert second.next_cursor is None
         assert second.has_more is False
 
+    def test_query_page_to_dict_serializes_stable_payload(self) -> None:
+        """QueryPage.to_dict returns the stable JSON-serializable pagination dict.
+
+        Regression guard: the method was previously mis-indented as dead code
+        inside _approx_tokens, so QueryPage had no to_dict at all.
+        """
+        page = QueryPage(
+            contexts=[
+                Context(
+                    content="alpha",
+                    source="keyword",
+                    score=0.9,
+                    valid_from="2026-01-01T00:00:00Z",
+                    valid_to=None,
+                    metadata={"citation": "eventloom://s/events/1#abc"},
+                )
+            ],
+            next_cursor="cur2",
+            cursor="cur1",
+            has_more=True,
+            offset=2,
+        )
+
+        assert page.to_dict() == {
+            "contexts": [
+                {
+                    "content": "alpha",
+                    "source": "keyword",
+                    "score": 0.9,
+                    "valid_from": "2026-01-01T00:00:00Z",
+                    "valid_to": None,
+                    "metadata": {"citation": "eventloom://s/events/1#abc"},
+                }
+            ],
+            "next_cursor": "cur2",
+            "cursor": "cur1",
+            "has_more": True,
+            "offset": 2,
+        }
+
     async def test_query_page_serves_repeat_page_from_cache(
         self,
         fabric: MemoryFabric,
