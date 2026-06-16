@@ -28,7 +28,7 @@ from zaxy.salience import (
 
 def _build_fabric(tmp_path: Path) -> MemoryFabric:
     """Real Eventloom + verbatim lane, mocked graph projection lane."""
-    with patch("zaxy.core.build_projection_store") as mock_store:
+    with patch("zaxy.core.fabric.build_projection_store") as mock_store:
         mock_store.return_value = AsyncMock()
         fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
     fabric.query_router = MagicMock(query=AsyncMock(return_value=[]))
@@ -535,7 +535,7 @@ class TestGraphWalkWiring:
         monkeypatch.setenv("RETRIEVAL_PROFILE", "cognitive")
         get_settings.cache_clear()
         try:
-            with patch("zaxy.core.build_projection_store") as mock_store:
+            with patch("zaxy.core.fabric.build_projection_store") as mock_store:
                 mock_store.return_value = AsyncMock()
                 fabric = MemoryFabric(
                     eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True
@@ -548,7 +548,7 @@ class TestGraphWalkWiring:
 
     async def test_default_profile_arms_router_graph_walk(self, tmp_path: Path) -> None:
         """2.1.0 default flip: an unconfigured fabric runs the cognitive profile."""
-        with patch("zaxy.core.build_projection_store") as mock_store:
+        with patch("zaxy.core.fabric.build_projection_store") as mock_store:
             mock_store.return_value = AsyncMock()
             fabric = MemoryFabric(
                 eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True
@@ -565,7 +565,7 @@ class TestGraphWalkWiring:
         monkeypatch.setenv("RETRIEVAL_PROFILE", "local_fast")
         get_settings.cache_clear()
         try:
-            with patch("zaxy.core.build_projection_store") as mock_store:
+            with patch("zaxy.core.fabric.build_projection_store") as mock_store:
                 mock_store.return_value = AsyncMock()
                 fabric = MemoryFabric(
                     eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True

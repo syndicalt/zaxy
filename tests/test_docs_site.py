@@ -1271,9 +1271,10 @@ def test_optional_neo4j_index_script_is_idempotent_and_sidecar_scoped() -> None:
 
 def test_runtime_docstrings_do_not_claim_neo4j_is_default_projection() -> None:
     """Runtime-facing module docs should match the embedded-first projection model."""
+    core_files = [str(p) for p in sorted(Path("src/zaxy/core").glob("*.py"))]
     runtime_text = "\n".join(
         Path(path).read_text(encoding="utf-8")
-        for path in ("src/zaxy/core.py", "src/zaxy/embedded_graph_store.py", "src/zaxy/pggraph_store.py")
+        for path in (*core_files, "src/zaxy/embedded_graph_store.py", "src/zaxy/pggraph_store.py")
     )
 
     assert "selected projection graph" in runtime_text
