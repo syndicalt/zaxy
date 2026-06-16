@@ -127,6 +127,43 @@ class VerbatimIndex:
         )
         return index
 
+    def _chunks_and_tokens(self) -> tuple[list[tuple[Any, ...]], list[list[str]]]:
+        """Return the minimal persistable state: chunk tuples + tokenization.
+
+        Persisting the tokenization is what lets a reload skip the expensive
+        regex tokenization (the dominant build cost); every other derived
+        structure (postings, IDF, length norms) is recomputed cheaply from it in
+        :meth:`_from_chunks_and_tokens`, yielding a byte-identical index.
+        """
+        chunks = [
+            (c.chunk_id, c.content, c.citation, c.source_kind, c.metadata) for c in self._chunks
+        ]
+        tokenized = [list(tokens) for tokens in self._tokenized]
+        return chunks, tokenized
+
+    @classmethod
+    def _from_chunks_and_tokens(
+        cls, chunks: list[Any], tokenized: list[Any]
+    ) -> VerbatimIndex:
+        """Reconstruct an index from persisted chunks + tokenization (no re-tokenize)."""
+        index = cls.__new__(cls)
+        index._chunks = tuple(VerbatimChunk(*chunk) for chunk in chunks)
+        index._tokenized = tuple(tuple(tokens) for tokens in tokenized)
+        index._term_counts = tuple(Counter(tokens) for tokens in index._tokenized)
+        index._term_document_ids = _term_document_ids(index._term_counts)
+        index._document_lengths = tuple(len(tokens) for tokens in index._tokenized)
+        index._document_frequencies = _document_frequencies(index._tokenized)
+        index._document_count = len(index._tokenized)
+        index._average_document_length = (
+            statistics.fmean(index._document_lengths) if index._tokenized else 0.0
+        )
+        index._term_idf = _term_idf(index._document_frequencies, index._document_count)
+        index._document_length_norms = _document_length_norms(
+            index._document_lengths,
+            index._average_document_length,
+        )
+        return index
+
     def query(self, query: str, *, limit: int = 10) -> list[VerbatimHit]:
         """Return exact source chunks ranked by lexical relevance."""
         validate_query(query)
