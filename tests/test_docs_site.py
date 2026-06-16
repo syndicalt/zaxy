@@ -1352,9 +1352,9 @@ def test_export_contract_spec_pins_code_identifiers() -> None:
     assert UNSIGNED_BUNDLE_VERSION in spec
     assert BUNDLE_VERSION in spec
 
-    # The pull surfaces (tool name + CLI command names).
+    # The pull surfaces (tool name + CLI command names) and the push command.
     assert "memory_export" in spec
-    for command in ("zaxy export", "export-disclose", "verify-export-subset"):
+    for command in ("zaxy export", "export-disclose", "verify-export-subset", "export-push"):
         assert command in spec
 
     # Referenced from the docs index.

@@ -239,6 +239,23 @@ zaxy export-disclose bundle.json --grains event --kinds goal.created --out subse
 # Verify a disclosed subset.
 zaxy verify-export-subset subset.json --expect-public-key &lt;hex&gt;</code></pre>
       <p>The CLI <code>export</code> accepts the full selector: <code>--grains</code>, <code>--types</code> (event-type <code>kinds</code>), <code>--since</code> (<code>since_seq</code>), <code>--max-seq</code>, <code>--since-time</code>, <code>--until-time</code>, <code>--query</code>, <code>--exclude-sensitivities</code>, <code>--limit</code>.</p>
+      <h2 id="outbound-delivery-push">Outbound delivery (push)</h2>
+      <p>Pull (a consumer calling the contract) is primary. An optional <strong>push</strong> layer delivers a bundle Zaxy-side to a generic sink, going through the <em>same</em> <code>build_memory_export</code> path — so a pushed bundle is identical to the same export pulled. Push is operator-side (CLI / library) and is <strong>not</strong> an MCP tool; the MCP surface stays pull-only.</p>
+      <p>Two sinks ship by default:</p>
+      <ul>
+        <li><strong>file</strong> — write the bundle JSON to a path.</li>
+        <li><strong>webhook</strong> — HTTP(S) POST the bundle JSON (dependency-free <code>urllib</code>), sending <code>Authorization: Bearer &lt;token&gt;</code> when a token file is given. Only <code>http</code>/<code>https</code> destinations are accepted.</li>
+      </ul>
+      <pre><code class="language-sh"># Push an unsigned bundle to a file.
+zaxy export-push --sink file --dest out/bundle.json \
+    --eventloom-path .eventloom --session-id agent-1 --since 100
+
+# Push a signed bundle to a webhook with bearer auth.
+zaxy export-push --sink webhook --dest https://example.com/hook \
+    --eventloom-path .eventloom --session-id agent-1 \
+    --private-key k.pem --public-key k.pub --algorithm ed25519 \
+    --auth-token-file token.txt</code></pre>
+      <p><code>export-push</code> is <strong>one-shot</strong>. Recurring delivery is left to an external scheduler (cron / the OS) invoking it; Zaxy does not run a delivery daemon. Keys and webhook tokens are always file-based, never passed inline.</p>
       <h2 id="versioning-and-compatibility">Versioning and compatibility</h2>
       <p>Three independent version strings let a consumer pin exactly what it depends on:</p>
       <ul>

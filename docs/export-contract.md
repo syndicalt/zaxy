@@ -211,6 +211,37 @@ The CLI `export` accepts the full selector: `--grains`, `--types` (event-type
 `kinds`), `--since` (`since_seq`), `--max-seq`, `--since-time`, `--until-time`,
 `--query`, `--exclude-sensitivities`, `--limit`.
 
+## Outbound delivery (push)
+
+Pull (a consumer calling the contract) is primary. An optional **push** layer
+delivers a bundle Zaxy-side to a generic sink, going through the *same*
+`build_memory_export` path — so a pushed bundle is identical to the same export
+pulled. Push is operator-side (CLI / library) and is **not** an MCP tool; the MCP
+surface stays pull-only.
+
+Two sinks ship by default:
+
+- **file** — write the bundle JSON to a path.
+- **webhook** — HTTP(S) POST the bundle JSON (dependency-free `urllib`), sending
+  `Authorization: Bearer <token>` when a token file is given. Only `http`/`https`
+  destinations are accepted.
+
+```sh
+# Push an unsigned bundle to a file.
+zaxy export-push --sink file --dest out/bundle.json \
+    --eventloom-path .eventloom --session-id agent-1 --since 100
+
+# Push a signed bundle to a webhook with bearer auth.
+zaxy export-push --sink webhook --dest https://example.com/hook \
+    --eventloom-path .eventloom --session-id agent-1 \
+    --private-key k.pem --public-key k.pub --algorithm ed25519 \
+    --auth-token-file token.txt
+```
+
+`export-push` is **one-shot**. Recurring delivery is left to an external scheduler
+(cron / the OS) invoking it; Zaxy does not run a delivery daemon. Keys and webhook
+tokens are always file-based, never passed inline.
+
 ## Versioning and compatibility
 
 Three independent version strings let a consumer pin exactly what it depends on:
