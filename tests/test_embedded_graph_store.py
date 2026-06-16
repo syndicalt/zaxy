@@ -13,6 +13,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+import zaxy.embedded_graph_internals as embedded_graph_internals
 import zaxy.embedded_graph_store as embedded_graph_store
 from zaxy.embedded_graph_store import (
     LEGACY_EMBEDDING_VERSION,
@@ -562,7 +563,7 @@ def test_embedded_keyword_tokenizer_uses_compiled_regex(monkeypatch: pytest.Monk
     def fail(*args, **kwargs):  # noqa: ANN001
         raise AssertionError("embedded keyword tokenizer should use compiled regex helpers")
 
-    monkeypatch.setattr("zaxy.embedded_graph_store.re.findall", fail)
+    monkeypatch.setattr("zaxy.embedded_graph_internals.re.findall", fail)
 
     assert _terms("Embedded Kuzu recall: graph-goal-0003!") == [
         "embedded",
@@ -577,7 +578,7 @@ def test_embedded_keyword_tokenizer_uses_compiled_regex(monkeypatch: pytest.Monk
 def test_keyword_query_terms_uses_module_stopword_table(monkeypatch: pytest.MonkeyPatch) -> None:
     """Embedded keyword queries should not rebuild stopwords on every call."""
     monkeypatch.setattr(
-        embedded_graph_store,
+        embedded_graph_internals,
         "_KEYWORD_STOP_WORDS",
         frozenset({"many", "days"}),
         raising=False,
@@ -710,7 +711,7 @@ def test_keyword_index_build_consumes_entity_terms_once(monkeypatch: pytest.Monk
     def fake_terms(_text: str) -> _SinglePassTerms:
         return streams.pop(0)
 
-    monkeypatch.setattr(embedded_graph_store, "_terms", fake_terms)
+    monkeypatch.setattr(embedded_graph_internals, "_terms", fake_terms)
     entities = [
         GraphEntity(
             name="first",
