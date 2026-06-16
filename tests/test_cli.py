@@ -3673,15 +3673,16 @@ def test_memory_checkout_uses_repo_local_embedded_profile(
     assert kwargs["embedded_graph_path"] == embedded_path
 
 
-@patch("os.getpid", return_value=4321)
 @patch("zaxy.cli.runtime.MemoryFabric")
-def test_memory_checkout_retries_locked_embedded_projection_with_isolated_path(
+def test_memory_checkout_degrades_gracefully_when_embedded_projection_locked(
     mock_fabric_cls: MagicMock,
-    _mock_getpid: MagicMock,
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    """Checkout should not fail closed-loop memory use when the shared Kuzu projection is locked."""
+    """When the shared projection is locked, checkout runs graph-degraded (null
+    backend, verbatim + verified replay only) instead of standing up a throwaway
+    empty graph — so closed-loop memory use never fails closed.
+    """
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     eventloom_path = workspace / ".eventloom"
@@ -3723,14 +3724,16 @@ def test_memory_checkout_retries_locked_embedded_projection_with_isolated_path(
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["diagnostics"]["projection_fallback"] == {
-        "status": "used",
+        "status": "graph_degraded",
         "reason": "embedded_projection_locked",
         "original_path": str(embedded_path),
-        "fallback_path": str(eventloom_path / "projections" / "checkout-agent-1-4321.kuzu"),
+        "detail": "graph lane disabled; verbatim + verified replay only",
     }
-    assert mock_fabric_cls.call_args_list[1].kwargs["embedded_graph_path"] == (
-        eventloom_path / "projections" / "checkout-agent-1-4321.kuzu"
-    )
+    # The degraded retry reuses the original path but swaps in the null backend —
+    # no throwaway per-PID projection is created.
+    retry_kwargs = mock_fabric_cls.call_args_list[1].kwargs
+    assert retry_kwargs["projection_backend"] == "null"
+    assert retry_kwargs["embedded_graph_path"] == embedded_path
     locked.close.assert_awaited_once()
     fallback.connect.assert_awaited_once()
     fallback.checkout_memory.assert_awaited_once()

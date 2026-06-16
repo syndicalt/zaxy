@@ -35,6 +35,10 @@ class ProjectionBackendConfig:
 def build_projection_store(config: ProjectionBackendConfig) -> ProjectionStore:
     """Build a projection store from a backend config."""
     backend = config.backend.casefold().strip()
+    if backend == "null":
+        from zaxy.null_projection_store import NullProjectionStore
+
+        return NullProjectionStore()
     if backend == "neo4j":
         from zaxy.graph import GraphStore
 
