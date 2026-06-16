@@ -43,10 +43,10 @@ class BrokenEmbeddingProvider:
 def test_memory_fabric_constructs_projection_store_through_factory(tmp_path: Path) -> None:
     """MemoryFabric should use the backend-neutral projection factory."""
     with (
-        patch("zaxy.core.build_projection_store") as mock_build,
-        patch("zaxy.core.QueryRouter"),
-        patch("zaxy.core.build_reranker", return_value=None),
-        patch("zaxy.core.MemoryTracer"),
+        patch("zaxy.core.fabric.build_projection_store") as mock_build,
+        patch("zaxy.core.fabric.QueryRouter"),
+        patch("zaxy.core.fabric.build_reranker", return_value=None),
+        patch("zaxy.core.fabric.MemoryTracer"),
     ):
         mock_build.return_value = AsyncMock()
 
@@ -59,10 +59,10 @@ def test_memory_fabric_constructs_projection_store_through_factory(tmp_path: Pat
 def test_memory_fabric_accepts_explicit_pggraph_projection_backend(tmp_path: Path) -> None:
     """Framework integrations should be able to select pgGraph without env mutation."""
     with (
-        patch("zaxy.core.build_projection_store") as mock_build,
-        patch("zaxy.core.QueryRouter"),
-        patch("zaxy.core.build_reranker", return_value=None),
-        patch("zaxy.core.MemoryTracer"),
+        patch("zaxy.core.fabric.build_projection_store") as mock_build,
+        patch("zaxy.core.fabric.QueryRouter"),
+        patch("zaxy.core.fabric.build_reranker", return_value=None),
+        patch("zaxy.core.fabric.MemoryTracer"),
     ):
         mock_build.return_value = AsyncMock()
 
@@ -82,10 +82,10 @@ def test_memory_fabric_accepts_explicit_embedded_projection_backend(tmp_path: Pa
     """Framework integrations should be able to select the embedded graph backend."""
     embedded_path = tmp_path / ".eventloom" / "projections" / "embedded.kuzu"
     with (
-        patch("zaxy.core.build_projection_store") as mock_build,
-        patch("zaxy.core.QueryRouter"),
-        patch("zaxy.core.build_reranker", return_value=None),
-        patch("zaxy.core.MemoryTracer"),
+        patch("zaxy.core.fabric.build_projection_store") as mock_build,
+        patch("zaxy.core.fabric.QueryRouter"),
+        patch("zaxy.core.fabric.build_reranker", return_value=None),
+        patch("zaxy.core.fabric.MemoryTracer"),
     ):
         mock_build.return_value = AsyncMock()
 
@@ -105,10 +105,10 @@ def test_memory_fabric_accepts_explicit_latticedb_projection_backend(tmp_path: P
     """Framework integrations should be able to select the LatticeDB candidate backend."""
     latticedb_path = tmp_path / ".eventloom" / "projections" / "memory.latticedb"
     with (
-        patch("zaxy.core.build_projection_store") as mock_build,
-        patch("zaxy.core.QueryRouter"),
-        patch("zaxy.core.build_reranker", return_value=None),
-        patch("zaxy.core.MemoryTracer"),
+        patch("zaxy.core.fabric.build_projection_store") as mock_build,
+        patch("zaxy.core.fabric.QueryRouter"),
+        patch("zaxy.core.fabric.build_reranker", return_value=None),
+        patch("zaxy.core.fabric.MemoryTracer"),
     ):
         mock_build.return_value = AsyncMock()
 
@@ -183,7 +183,7 @@ async def test_memory_fabric_reuses_verbatim_index_until_eventloom_changes(tmp_p
     )
 
     with (
-        patch("zaxy.core.VerbatimIndex.from_events", wraps=VerbatimIndex.from_events) as build_index,
+        patch("zaxy.verbatim.VerbatimIndex.from_events", wraps=VerbatimIndex.from_events) as build_index,
         patch.object(
             VerbatimIndex, "append_chunks", autospec=True, side_effect=VerbatimIndex.append_chunks
         ) as extend_index,
@@ -326,12 +326,12 @@ def _feedback_event(
 def fabric() -> MemoryFabric:
     """Return a MemoryFabric with mocked dependencies."""
     with (
-        patch("zaxy.core.EventLog") as mock_log_cls,
-        patch("zaxy.core.build_projection_store") as mock_build_projection_store,
-        patch("zaxy.core.QueryRouter") as mock_router_cls,
-        patch("zaxy.core.build_reranker") as mock_build_reranker,
-        patch("zaxy.core.MemoryTracer") as mock_tracer_cls,
-        patch("zaxy.core.SessionManager") as mock_session_cls,
+        patch("zaxy.core.fabric.EventLog") as mock_log_cls,
+        patch("zaxy.core.fabric.build_projection_store") as mock_build_projection_store,
+        patch("zaxy.core.fabric.QueryRouter") as mock_router_cls,
+        patch("zaxy.core.fabric.build_reranker") as mock_build_reranker,
+        patch("zaxy.core.fabric.MemoryTracer") as mock_tracer_cls,
+        patch("zaxy.core.fabric.SessionManager") as mock_session_cls,
     ):
         log = MagicMock()
         log.append.return_value = MagicMock(seq=1, hash="a" * 64, type="x", actor="y", timestamp="2024-01-01T00:00:00Z")
@@ -380,11 +380,11 @@ class TestLifecycle:
 
         get_settings.cache_clear()
         with (
-            patch("zaxy.core.build_projection_store"),
-            patch("zaxy.core.QueryRouter") as mock_router_cls,
-            patch("zaxy.core.build_reranker") as mock_build_reranker,
-            patch("zaxy.core.MemoryTracer"),
-            patch("zaxy.core.SessionManager") as mock_session_cls,
+            patch("zaxy.core.fabric.build_projection_store"),
+            patch("zaxy.core.fabric.QueryRouter") as mock_router_cls,
+            patch("zaxy.core.fabric.build_reranker") as mock_build_reranker,
+            patch("zaxy.core.fabric.MemoryTracer"),
+            patch("zaxy.core.fabric.SessionManager") as mock_session_cls,
         ):
             mock_build_reranker.return_value = object()
             mock_session_cls.return_value.get.return_value.eventlog = MagicMock()
@@ -404,12 +404,12 @@ class TestLifecycle:
 
         get_settings.cache_clear()
         with (
-            patch("zaxy.core.build_projection_store") as mock_build_projection_store,
-            patch("zaxy.core.QueryRouter") as mock_router_cls,
-            patch("zaxy.core.build_embedding_provider") as mock_build_embedding_provider,
-            patch("zaxy.core.build_reranker") as mock_build_reranker,
-            patch("zaxy.core.MemoryTracer"),
-            patch("zaxy.core.SessionManager") as mock_session_cls,
+            patch("zaxy.core.fabric.build_projection_store") as mock_build_projection_store,
+            patch("zaxy.core.fabric.QueryRouter") as mock_router_cls,
+            patch("zaxy.core.fabric.build_embedding_provider") as mock_build_embedding_provider,
+            patch("zaxy.core.fabric.build_reranker") as mock_build_reranker,
+            patch("zaxy.core.fabric.MemoryTracer"),
+            patch("zaxy.core.fabric.SessionManager") as mock_session_cls,
         ):
             mock_build_embedding_provider.return_value = object()
             mock_build_reranker.return_value = object()
@@ -461,7 +461,7 @@ class TestLifecycle:
         )
         fabric.settings.eventloom_thread = "agent-1"
 
-        with patch("zaxy.core.VerbatimIndex.from_events", wraps=VerbatimIndex.from_events) as build_index:
+        with patch("zaxy.verbatim.VerbatimIndex.from_events", wraps=VerbatimIndex.from_events) as build_index:
             await fabric.connect()
             assert build_index.call_count == 1
             await fabric.query_verbatim("answer-ready checkout", session_id="agent-1", limit=1)
@@ -521,7 +521,7 @@ class TestAppend:
         fabric.embedding_provider = BrokenEmbeddingProvider()
         metrics = MagicMock()
 
-        with patch("zaxy.core.get_metrics", return_value=metrics):
+        with patch("zaxy.core.fabric.get_metrics", return_value=metrics):
             await fabric.append("goal.created", actor="user", payload={"title": "T"})
 
         log = fabric.session_manager.get.return_value.eventlog
@@ -536,7 +536,7 @@ class TestAppend:
         fabric.graph.upsert_extraction.side_effect = RuntimeError("graph down")
         metrics = MagicMock()
 
-        with patch("zaxy.core.get_metrics", return_value=metrics):
+        with patch("zaxy.core.fabric.get_metrics", return_value=metrics):
             await fabric.append("goal.created", actor="user", payload={"title": "T"})
 
         log = fabric.session_manager.get.return_value.eventlog
@@ -548,7 +548,7 @@ class TestAppend:
         fabric.graph.connect.side_effect = RuntimeError("graph down")
         metrics = MagicMock()
 
-        with patch("zaxy.core.get_metrics", return_value=metrics):
+        with patch("zaxy.core.fabric.get_metrics", return_value=metrics):
             await fabric.append("goal.created", actor="user", payload={"title": "T"})
 
         log = fabric.session_manager.get.return_value.eventlog
@@ -1943,7 +1943,7 @@ class TestQuery:
         fabric.query_router.query.return_value = []
         metrics = MagicMock()
 
-        with patch("zaxy.core.get_metrics", return_value=metrics):
+        with patch("zaxy.core.fabric.get_metrics", return_value=metrics):
             await fabric.query("x")
 
         assert fabric.query_router.query.await_args.kwargs["embedding"] is None
@@ -1964,7 +1964,7 @@ class TestQuery:
             events=[event],
         )
 
-        with patch("zaxy.core.get_metrics", return_value=metrics):
+        with patch("zaxy.core.fabric.get_metrics", return_value=metrics):
             results = await fabric.query("offline retrieval")
 
         assert results[0].source == "eventloom"
@@ -1988,7 +1988,7 @@ class TestQuery:
             events=[event],
         )
 
-        with patch("zaxy.core.get_metrics", return_value=metrics):
+        with patch("zaxy.core.fabric.get_metrics", return_value=metrics):
             results = await fabric.query("degraded retrieval")
 
         assert results[0].source == "eventloom"
@@ -2257,7 +2257,7 @@ class TestQuery:
         with (
             patch.object(fabric, "query_verbatim", return_value=source_contexts),
             patch(
-                "zaxy.core.source_synthesis_bundle_result",
+                "zaxy.core.fabric.source_synthesis_bundle_result",
                 return_value=SimpleNamespace(
                     content="\n".join(
                         [
@@ -4236,12 +4236,12 @@ class TestContextAssembly:
         )
 
         with (
-            patch("zaxy.core.build_projection_store") as mock_build_projection_store,
-            patch("zaxy.core.QueryRouter") as mock_router_cls,
-            patch("zaxy.core.build_reranker") as mock_build_reranker,
-            patch("zaxy.core.build_embedding_provider") as mock_build_embedding_provider,
-            patch("zaxy.core.MemoryTracer") as mock_tracer_cls,
-            patch("zaxy.core.SessionManager") as mock_session_cls,
+            patch("zaxy.core.fabric.build_projection_store") as mock_build_projection_store,
+            patch("zaxy.core.fabric.QueryRouter") as mock_router_cls,
+            patch("zaxy.core.fabric.build_reranker") as mock_build_reranker,
+            patch("zaxy.core.fabric.build_embedding_provider") as mock_build_embedding_provider,
+            patch("zaxy.core.fabric.MemoryTracer") as mock_tracer_cls,
+            patch("zaxy.core.fabric.SessionManager") as mock_session_cls,
         ):
             session_mgr = MagicMock()
             session_mgr.get.return_value.eventlog = MagicMock()
@@ -4292,11 +4292,11 @@ class TestContextAssembly:
         )
 
         with (
-            patch("zaxy.core.build_projection_store") as mock_build_projection_store,
-            patch("zaxy.core.QueryRouter") as mock_router_cls,
-            patch("zaxy.core.build_reranker") as mock_build_reranker,
-            patch("zaxy.core.MemoryTracer") as mock_tracer_cls,
-            patch("zaxy.core.SessionManager") as mock_session_cls,
+            patch("zaxy.core.fabric.build_projection_store") as mock_build_projection_store,
+            patch("zaxy.core.fabric.QueryRouter") as mock_router_cls,
+            patch("zaxy.core.fabric.build_reranker") as mock_build_reranker,
+            patch("zaxy.core.fabric.MemoryTracer") as mock_tracer_cls,
+            patch("zaxy.core.fabric.SessionManager") as mock_session_cls,
         ):
             session_mgr = MagicMock()
             session_mgr.get.return_value.eventlog = MagicMock()

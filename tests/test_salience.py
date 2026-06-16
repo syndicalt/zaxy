@@ -701,7 +701,7 @@ def test_target_ref_requires_sealed_full_hash_provenance() -> None:
 
 def _wired_fabric(tmp_path: Path) -> MemoryFabric:
     """Real Eventloom + verbatim lane, mocked graph projection lane."""
-    with patch("zaxy.core.build_projection_store") as mock_store:
+    with patch("zaxy.core.fabric.build_projection_store") as mock_store:
         mock_store.return_value = AsyncMock()
         fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
     fabric.query_router = MagicMock(query=AsyncMock(return_value=[]))

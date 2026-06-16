@@ -3017,7 +3017,7 @@ class TestContextLifecycleTools:
         server._fabric.query_verbatim = AsyncMock(return_value=[])  # type: ignore[method-assign]
 
         # The shared checkout path runs build_memory_checkout inside the fabric.
-        with patch("zaxy.core.build_memory_checkout", wraps=build_memory_checkout) as builder:
+        with patch("zaxy.core.fabric.build_memory_checkout", wraps=build_memory_checkout) as builder:
             result = await server.handle_memory_checkout({
                 "query": "What context contract should the model use?",
                 "session_id": "agent-1",
