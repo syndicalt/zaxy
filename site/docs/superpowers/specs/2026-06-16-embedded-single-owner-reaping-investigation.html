@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Embedded MCP Single-Owner Enforcement + Orphan Reaping — Investigation &amp; Design - Zaxy Docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,600&family=Inter:wght@400;550;650;750;850&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../../../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../../../index.html">Overview</a>
+      <a href="../../../docs/coordinate-roadmap.html">Coordinate</a>
+      <a href="../../../docs/why-zaxy.html">Why Zaxy</a>
+      <a href="../../../docs/benchmarks.html">Benchmarks</a>
+      <a href="../../getting-started.html">Start</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="embedded-mcp-single-owner-enforcement-orphan-reaping-investigation-design">Embedded MCP Single-Owner Enforcement + Orphan Reaping — Investigation &amp; Design</h1>
+      <p>Status: <strong>investigation complete; design proposed (agree before Phase 2 code)</strong> Date: 2026-06-16 Owner: Zaxy core</p>
+      <h2 id="1-incident">1. Incident</h2>
+      <p>For an entire working session, every <code>memory_checkout</code> appeared to &quot;hang&quot; (~18-22s+ then the MCP server disconnected). After misattributing it to checkout performance (real but unrelated work shipped as #81/#82/#83) and a stale install (server was on 2.2.0), the true cause was found: <strong>the embedded LadybugDB projection was corrupted</strong> — opening it throws <code>RuntimeError: Assertion failed ... wal_record.cpp ... UNREACHABLE_CODE</code> — and <strong>four <code>zaxy serve</code> processes</strong> (three orphans from prior sessions + the live one), all with <code>EVENTLOOM_PATH=.../zaxy/.eventloom</code>, were associated with that one store. Manual recovery: kill the this-workspace servers + move the corrupt store aside + reconnect. See memory <code>incident-mcp-orphan-projection-corruption</code>.</p>
+      <p>This note root-causes <em>why the safeguards let that happen</em> and proposes the durable fix. The embedded backend takes an <strong>exclusive write lock</strong>; concurrent writers corrupt the WAL. The design intends <strong>one owner + N proxies</strong> per workspace (<code>EmbeddedMcpRuntimeCoordinator</code>: &quot;Coordinates a single embedded MCP owner per Eventloom directory&quot;; non-owners run <code>mcp_server.proxy_main</code> over the owner&#x27;s unix socket).</p>
+      <h2 id="2-method">2. Method</h2>
+      <p>Static trace of <code>cli/serving.py:serve</code> (the owner/proxy decision) and <code>mcp_runtime.py</code> (the coordinator), plus a reproduction of the coordinator&#x27;s claim behavior.</p>
+      <h2 id="3-findings-each-confirmed-by-code-andor-reproduction">3. Findings (each confirmed by code and/or reproduction)</h2>
+      <h3 id="f1-the-coordinator-only-guards-the-serve-stdio-path-every-other-store-open-bypasses-it">F1 — The coordinator only guards the <code>serve</code> stdio path; every other store-open bypasses it</h3>
+      <p>Owner claim happens only here: <code>cli/serving.py:1242</code> — <code>if transport == &quot;stdio&quot; and projection_backend == &quot;embedded&quot;: coordinator.try_claim_owner()</code>. The CLI commands that open the embedded store directly — <code>memory checkout</code> (its projection path / <code>#83</code> lock-fallback), <code>reproject</code>, <code>doctor</code>, <code>dashboard</code> — build a <code>MemoryFabric</code>/store and <code>connect()</code> with <strong>no owner claim</strong>. So any non-serve store access is uncoordinated: it can open the store as a second writer alongside a serve-owner (or another CLI), or hit the lock and fall back.</p>
+      <h3 id="f2-the-owner-lock-and-the-store-are-keyed-independently-divergence-defeats-single-owner">F2 — The owner lock and the store are keyed independently; divergence defeats single-owner</h3>
+      <ul>
+        <li>Owner lock key: <code>EmbeddedMcpRuntimeCoordinator.from_eventloom_path(resolved_eventloom_path)</code> where <code>resolved_eventloom_path = --eventloom-path arg or $EVENTLOOM_PATH or cwd/.eventloom</code> (<code>serving.py:1220</code>).</li>
+        <li>Store path: <code>settings.embedded_graph_path</code> (<code>serving.py:1228</code>, from cwd config / <code>$EMBEDDED_GRAPH_PATH</code>).</li>
+      </ul>
+      <p>These are resolved separately. When they diverge — mismatched env, cwd-relative settings, or an explicit <code>--embedded-graph-path</code> that doesn&#x27;t match the eventloom — single-owner is enforced on the <strong>wrong key</strong>. <strong>Reproduced:</strong> two coordinators on different eventloom paths <em>both</em> successfully claim owner; if both then open one shared store, that&#x27;s two writers → corruption. (Same-key correctly refuses the second claimant.)</p>
+      <h3 id="f3-no-orphan-reaping-recovery-only-handles-dead-owners-not-live-but-broken-ones">F3 — No orphan reaping; recovery only handles <em>dead</em> owners, not <em>live-but-broken</em> ones</h3>
+      <p><code>try_claim_owner</code> uses <code>fcntl.flock(LOCK_EX|LOCK_NB)</code> held for process lifetime — correct for live coordination. But:</p>
+      <ul>
+        <li>A <strong>live orphan</strong> (its client session ended, process never exited) holds the flock forever; nothing detects or reaps it. New clients then <em>proxy to the orphan</em> — so a hung/broken orphan-owner makes <strong>every</strong> client&#x27;s checkout fail (the observed symptom).</li>
+        <li><code>repair_stale_runtime</code> (<code>mcp_runtime.py:139</code>) only cleans when the lock is</li>
+      </ul>
+      <p><strong>free</strong> (owner dead). If the lock is held but the owner socket is unhealthy it returns a <code>warning</code> telling the human to &quot;Fully exit stale processes&quot; — i.e. exactly the manual step we performed. No automatic recovery from a live-broken owner, and no reaping of accumulated orphans.</p>
+      <h3 id="f4-unclean-owner-death-leaves-a-dirty-wal-the-next-open-crashes-instead-of-self-healing">F4 — Unclean owner death leaves a dirty WAL; the next open crashes instead of self-healing</h3>
+      <p>If an owner is <code>SIGKILL</code>ed or crashes mid-write (or a CLI store-write is timeout-killed — F1), LadybugDB&#x27;s WAL is left uncheckpointed/dirty. The next open replays it and can hit <code>UNREACHABLE_CODE</code>. <code>EmbeddedGraphStore.connect</code> only handles the pre-fork-Kuzu <em>format-incompatibility</em> case (moves it aside); it re-raises everything else, so WAL corruption propagates and <strong>crashes the checkout</strong> rather than quarantining the (derived) store and rebuilding.</p>
+      <h2 id="4-why-the-incident-happened-synthesis">4. Why the incident happened (synthesis)</h2>
+      <p>The four orphans shared one <code>EVENTLOOM_PATH</code>, so F2 alone wouldn&#x27;t multi-own them. The corruption is best explained by <strong>F1 + F4 + F3 compounding</strong>: uncoordinated direct store-opens (CLI checkouts, including timeout-killed ones mid-write) and/or an uncleanly-killed owner left a dirty WAL (F4); orphaned servers accumulated and were never reaped (F3); and once the store was corrupt, every owner/proxy that opened it crashed (F4) — the perpetual hang+disconnect. The exact historical sequence can&#x27;t be fully reconstructed (processes gone), but all four gaps are confirmed and each independently enables this corruption class.</p>
+      <h2 id="5-design-the-durable-fix-phased-agree-before-code">5. Design — the durable fix (phased; agree before code)</h2>
+      <p>Invariants (hard): multiple clients in one repo (e.g. two Claude instances) must work as exactly <strong>one owner + N proxies</strong>; the store is opened by <strong>at most one process</strong>; the Eventloom log stays authority and the projection is rebuildable; reaping never touches live or cross-workspace servers.</p>
+      <ul>
+        <li><strong>Phase 2 — single-owner enforcement that actually covers the store (F1, F2).</strong> Key the owner lock on the <strong>canonical store path</strong> (resolve eventloom ⟺ store once; assert they agree, or derive the lock from the store path) so coordination can&#x27;t guard the wrong thing. Route <strong>every</strong> embedded-store open through the claim: <code>serve</code> proxies (today&#x27;s behavior); CLI store-opens (<code>checkout</code>, <code>reproject</code>, <code>doctor</code>, <code>dashboard</code>) must either proxy to the owner or refuse / run graph-degraded — <strong>never</strong> open the store as a second writer. (The <code>#83</code> null-backend degrade is the graph-degraded primitive for the CLI case.)</li>
+        <li><strong>Phase 3 — orphan reaping + live-broken recovery (F3).</strong> Detect owners that are dead <em>or</em> live-but-unhealthy (lock held but socket not accepting), scoped to the workspace; reap/recover safely (startup self-heal and/or <code>zaxy doctor --repair</code>), never killing healthy or other-workspace servers. Extend <code>repair_stale_runtime</code> to handle the live-broken case instead of only advising a human.</li>
+        <li><strong>Related (recommend folding in) — WAL-corruption resilience (F4).</strong> On open, detect WAL/store corruption and quarantine-and-rebuild the derived projection from the log (as <code>connect</code> already does for format incompatibility), so a dirty store degrades gracefully instead of crashing checkout. This is the gap that turned the latent race into a session-long outage.</li>
+      </ul>
+      <h2 id="6-done-when">6. Done-when</h2>
+      <p>Root cause documented (this note); a concurrent two-instance start against one eventloom yields exactly one owner + proxies with <strong>zero</strong> store corruption (a concurrency/stress test); divergent eventloom/store keys can no longer produce two owners of one store; orphaned dead-session servers are reaped or cannot accumulate; a corrupt store self-heals rather than crashing checkout; ruff + mypy + full suite green after each phase.</p>
+      <h2 id="7-open-questions">7. Open questions</h2>
+      <ol>
+        <li>Lock key: derive strictly from the resolved store path, or keep the eventloom key but <strong>assert</strong> <code>dirname(store) == eventloom/projections</code>? (Leaning: key on the store path — it&#x27;s what actually needs protecting.)</li>
+        <li>CLI-while-no-owner: should a lone CLI <code>checkout</code> become a transient owner (claim → open → release) so it&#x27;s still coordinated, or always graph-degrade? (Leaning: transient owner-claim so a solo CLI still gets full graph + can&#x27;t race a second CLI.)</li>
+        <li>Reaping trigger: startup self-heal only, an explicit <code>doctor --repair</code>, or both? Liveness signal for &quot;orphan&quot; (no client) vs &quot;legitimate idle owner&quot;.</li>
+      </ol>
+      <h2 id="references">References</h2>
+      <ul>
+        <li><code>src/zaxy/mcp_runtime.py</code> — <code>EmbeddedMcpRuntimeCoordinator</code>, <code>try_claim_owner</code>, <code>repair_stale_runtime</code>, <code>EmbeddedMcpOwnerClaim</code></li>
+        <li><code>src/zaxy/cli/serving.py:1219-1267</code> — <code>serve</code> owner/proxy decision + key resolution</li>
+        <li><code>src/zaxy/mcp_server.py:proxy_main</code> — the proxy client path</li>
+        <li><code>src/zaxy/embedded_graph_store.py:connect</code> — store open + (only) format-incompat recovery</li>
+        <li><code>src/zaxy/null_projection_store.py</code> — the graph-degraded primitive (#83)</li>
+        <li>memory <code>incident-mcp-orphan-projection-corruption</code>, <code>perf-cold-checkout</code></li>
+      </ul>
+    </article>
+  </main>
+</body>
+</html>
