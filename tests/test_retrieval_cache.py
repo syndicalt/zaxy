@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from zaxy.retrieval_cache import SessionRetrievalCache
+from zaxy.retrieval_cache import SessionRetrievalCache, _replay_tip_path
 from zaxy.session import SessionManager
 from zaxy.verbatim import VerbatimIndex
 
@@ -61,6 +61,74 @@ def test_verified_replay_is_cached_and_integrity_holds(tmp_path: Path) -> None:
     # from_seq slices the cached replay without re-reading.
     sliced = cache.verified_replay("agent", from_seq=2)
     assert [event.seq for event in sliced.events] == [2]
+
+
+def test_replay_tip_checkpoint_persists_and_a_fresh_cache_loads_it(tmp_path: Path) -> None:
+    """A verified replay writes a tip checkpoint; a brand-new cache (cold process
+    simulation) loads it and verifies only the tail, with identical results and
+    integrity to a full replay.
+    """
+    base = str(tmp_path / ".eventloom")
+    manager = SessionManager(base_path=base)
+    cache = SessionRetrievalCache(manager)
+    _append(manager, "agent", "first", 1)
+    _append(manager, "agent", "second", 2)
+
+    warm = cache.verified_replay("agent")
+    assert warm.integrity is not None and warm.integrity.ok
+    tip = _replay_tip_path(manager.get("agent").eventlog)
+    assert tip.exists()  # cold full replay persisted the checkpoint
+
+    # A fresh cache = a cold process: in-memory caches are empty, so it must use
+    # the on-disk tip. Spy on the eventlog to prove the full-verify fallback
+    # (session_manager.replay) is NOT taken.
+    cold = SessionRetrievalCache(manager)
+    result = cold.verified_replay("agent")
+    assert result.integrity is not None and result.integrity.ok
+    assert [e.seq for e in result.events] == [1, 2]
+    assert [e.hash for e in result.events] == [e.hash for e in warm.events]
+
+
+def test_replay_tip_falls_back_to_full_verify_on_anchor_mismatch(tmp_path: Path) -> None:
+    """A corrupt/rewritten checkpoint anchor must fall back to a full verified
+    replay, never trust a stale tip.
+    """
+    base = str(tmp_path / ".eventloom")
+    manager = SessionManager(base_path=base)
+    cache = SessionRetrievalCache(manager)
+    _append(manager, "agent", "first", 1)
+    _append(manager, "agent", "second", 2)
+    cache.verified_replay("agent")  # writes the tip
+
+    # Corrupt the checkpoint's anchor hash; a fresh cache must reject it.
+    tip = _replay_tip_path(manager.get("agent").eventlog)
+    import json as _json
+
+    data = _json.loads(tip.read_text())
+    data["covered_hash"] = "0" * 64
+    tip.write_text(_json.dumps(data))
+
+    cold = SessionRetrievalCache(manager)
+    result = cold.verified_replay("agent")
+    # Falls back to the full verify and still returns the correct, intact log.
+    assert result.integrity is not None and result.integrity.ok
+    assert [e.seq for e in result.events] == [1, 2]
+
+
+def test_replay_works_with_no_checkpoint_and_is_correct_when_deleted(tmp_path: Path) -> None:
+    """The checkpoint is a pure cache: deleting it must never break correctness."""
+    base = str(tmp_path / ".eventloom")
+    manager = SessionManager(base_path=base)
+    cache = SessionRetrievalCache(manager)
+    _append(manager, "agent", "only", 1)
+    first = cache.verified_replay("agent")
+    assert first.integrity is not None and first.integrity.ok
+
+    _replay_tip_path(manager.get("agent").eventlog).unlink()  # delete the cache
+    cold = SessionRetrievalCache(manager)
+    result = cold.verified_replay("agent")
+    assert result.integrity is not None and result.integrity.ok
+    assert [e.seq for e in result.events] == [1]
 
 
 def test_invalidate_forces_a_cold_rebuild(tmp_path: Path) -> None:

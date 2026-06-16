@@ -20,6 +20,9 @@ The two guarantees the callers depend on live here:
 
 from __future__ import annotations
 
+import contextlib
+import json
+import os
 from typing import TYPE_CHECKING, Any, cast
 
 from zaxy.event import EventLog, IntegrityReport, ReplayResult, verify_event_chain
@@ -27,6 +30,14 @@ from zaxy.verbatim import VerbatimIndex, _chunks_from_events
 
 if TYPE_CHECKING:
     from zaxy.session import SessionManager
+
+# On-disk verified-replay checkpoint format. A cold process re-reads the log
+# (the events themselves are always needed) but, instead of re-hashing the whole
+# chain, anchors on a previously-verified tip {covered_seq, covered_hash} and
+# verifies only the appended tail. The checkpoint is a pure cache: any miss,
+# corruption, version skew, or anchor mismatch falls back to a full verified
+# replay, so the hash-chain integrity guarantee is never weakened.
+_REPLAY_TIP_VERSION = 1
 
 
 def _eventlog_file_signature(eventlog: EventLog) -> tuple[int, int]:
@@ -36,6 +47,11 @@ def _eventlog_file_signature(eventlog: EventLog) -> tuple[int, int]:
     except FileNotFoundError:
         return (0, 0)
     return (stat.st_mtime_ns, stat.st_size)
+
+
+def _replay_tip_path(eventlog: EventLog):  # type: ignore[no-untyped-def]
+    """Return the verified-replay checkpoint path beside the projections."""
+    return eventlog.path.parent / "projections" / f"{eventlog.path.stem}.replay-tip.json"
 
 
 class SessionRetrievalCache:
@@ -59,6 +75,8 @@ class SessionRetrievalCache:
             return
         self._verbatim_index_cache.pop(session_id, None)
         self._replay_cache.pop(session_id, None)
+        with contextlib.suppress(Exception):
+            _replay_tip_path(self.session_manager.get(session_id).eventlog).unlink(missing_ok=True)
 
     def verbatim_index(self, session_id: str) -> VerbatimIndex:
         """Return a verbatim index for the current Eventloom file state.
@@ -129,9 +147,16 @@ class SessionRetrievalCache:
             if extended is not None:
                 self._replay_cache[session_id] = (signature, extended, end_offset)
                 return extended
+        from_tip = self._try_cold_replay_from_tip(eventlog)
+        if from_tip is not None:
+            offset = _eventlog_file_signature(eventlog)[1]
+            self._replay_cache[session_id] = (signature, from_tip, offset)
+            return from_tip
         result = cast(ReplayResult, self.session_manager.replay(session_id, from_seq=1))
         offset = _eventlog_file_signature(eventlog)[1]
         self._replay_cache[session_id] = (signature, result, offset)
+        if result.integrity is not None and result.integrity.ok:
+            self._save_replay_tip(eventlog, result.events)
         return result
 
     @staticmethod
@@ -157,3 +182,83 @@ class SessionRetrievalCache:
             events=combined,
             integrity=IntegrityReport(ok=True, total_events=len(combined)),
         )
+
+    def _try_cold_replay_from_tip(self, eventlog: EventLog) -> ReplayResult | None:
+        """Cold replay anchored on a persisted verified tip, or None to full-verify.
+
+        Reads the log (the events are needed regardless), then verifies only the
+        tail appended after the checkpointed ``{covered_seq, covered_hash}``
+        anchor instead of re-hashing the whole chain. Returns ``None`` — falling
+        back to a full verified replay — on any miss: no/corrupt/old-version
+        checkpoint, an anchor that does not match (log rewritten/compacted), a
+        tail that fails verification, or a non-file eventlog (the unit-test
+        path). The integrity guarantee is preserved: the prefix is trusted only
+        because the checkpoint was written after a successful verify and the live
+        anchor event still re-hashes to ``covered_hash``; the tail is fully
+        verified forward from it.
+        """
+        try:
+            tip = self._load_replay_tip(eventlog)
+            if tip is None:
+                return None
+            covered_seq, covered_hash = tip
+            events = eventlog.read_all()
+            if covered_seq < 1 or covered_seq > len(events):
+                return None
+            anchor = events[covered_seq - 1]
+            if anchor.seq != covered_seq or anchor.hash != covered_hash or not anchor.verify():
+                return None
+            tail = events[covered_seq:]
+            report = verify_event_chain(tail, first_seq=covered_seq + 1, prev_hash=covered_hash)
+            if not report.ok:
+                return None
+            self._save_replay_tip(eventlog, events)
+            return ReplayResult(
+                events=events,
+                integrity=IntegrityReport(ok=True, total_events=len(events)),
+            )
+        except Exception:
+            return None
+
+    @staticmethod
+    def _load_replay_tip(eventlog: EventLog) -> tuple[int, str] | None:
+        """Load a validated ``(covered_seq, covered_hash)`` checkpoint, or None."""
+        try:
+            raw = _replay_tip_path(eventlog).read_text(encoding="utf-8")
+        except (FileNotFoundError, OSError):
+            return None
+        try:
+            data = json.loads(raw)
+        except (ValueError, TypeError):
+            return None
+        if not isinstance(data, dict) or data.get("version") != _REPLAY_TIP_VERSION:
+            return None
+        covered_seq = data.get("covered_seq")
+        covered_hash = data.get("covered_hash")
+        if not isinstance(covered_seq, int) or isinstance(covered_seq, bool) or covered_seq < 1:
+            return None
+        if not isinstance(covered_hash, str) or len(covered_hash) != 64:
+            return None
+        return (covered_seq, covered_hash)
+
+    @staticmethod
+    def _save_replay_tip(eventlog: EventLog, events: list[Any]) -> None:
+        """Persist the verified tip atomically; best-effort, never raises."""
+        try:
+            if not events:
+                return
+            last = events[-1]
+            seq = getattr(last, "seq", None)
+            event_hash = getattr(last, "hash", None)
+            if not isinstance(seq, int) or not isinstance(event_hash, str) or len(event_hash) != 64:
+                return
+            path = _replay_tip_path(eventlog)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            payload = json.dumps(
+                {"version": _REPLAY_TIP_VERSION, "covered_seq": seq, "covered_hash": event_hash}
+            )
+            tmp = path.with_suffix(f".json.tmp.{os.getpid()}")
+            tmp.write_text(payload, encoding="utf-8")
+            os.replace(tmp, path)
+        except Exception:
+            return
