@@ -86,8 +86,8 @@ from zaxy.mcp_tool_specs import (
     MEMORY_CONFIDENCE_OPERATIONS,
     MEMORY_CONSOLIDATION_OPERATIONS,
     REASONING_PHASES,
-    TOOLS,
 )
+from zaxy.mcp_tool_specs import TOOLS as TOOLS  # re-export for `from zaxy.mcp_server import TOOLS`
 from zaxy.memory_persistence import record_memory_activity
 from zaxy.metacognition import (
     FeelingOfKnowingIndex,
