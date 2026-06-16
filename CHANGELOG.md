@@ -2,6 +2,29 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 2.5.1 - 2026-06-16
+
+Maintenance release: architectural alignment and internal decomposition. No
+new features; the MCP surface gained consistency fixes and an internal cleanup.
+
+- **MCP and Python-API paths unified.** The MCP server now holds one persistent
+  `MemoryFabric` wired to its own components; `memory_append`/`memory_query`/
+  `memory_checkout` and the lifecycle tools (`context_assemble`,
+  `context_after_turn`, `subagent_cleanup`) delegate to the fabric instead of a
+  divergent second path. End-to-end parity tests prove MCP == Python API on a
+  real embedded backend. Consumer-visible effect: MCP `checkout` now returns the
+  richer fabric assembly, and `subagent_cleanup` returns the canonical
+  `HandoffBundle` shape.
+- **Bugfix:** `QueryPage.to_dict` dead-code path corrected (now serializes from
+  the dataclass), with a regression test.
+- **Internal:** the four largest modules were decomposed into focused submodules
+  with the public import surface preserved — `extract.py` → `zaxy.extract`
+  package, `core.py` → `zaxy.core` package, the MCP tool specs →
+  `zaxy.mcp_tool_specs`, and the embedded graph store's index/helper internals →
+  `zaxy.embedded_graph_internals`. Pure structural refactor: no behavior, API,
+  or response-snapshot changes.
+- Docs: `AGENTS.md` architecture framing corrected to embedded-first.
+
 ## 2.5.0 - 2026-06-15
 
 - **General memory export contract — a product-agnostic way to pull, prove, and
