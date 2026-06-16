@@ -2,6 +2,38 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 2.5.0 - 2026-06-15
+
+- **General memory export contract — a product-agnostic way to pull, prove, and
+  push a session's memory as a cited, portable bundle that any consumer can
+  verify.** Built on the existing `zaxy.portable` signed-bundle format, it adds
+  the missing contract around it: a stable entry schema, a selection contract,
+  and matching surfaces. Every entry carries a sealed Eventloom citation, so the
+  export is provenance-bearing by construction. Specified in
+  `docs/export-contract.md`.
+  - **Projection** (`zaxy.export_view`): a canonical, versioned entry schema
+    (`zaxy.export.v1`) spanning two grains — raw `event` entries and `semantic`
+    entries from the deterministic extractor — and an `ExportSelector`
+    (grains, kinds, seq/time ranges, a `since` delta cursor, verbatim query,
+    sensitivity redaction). `build_memory_export_view` reads through the
+    incremental retrieval cache; entries are byte-stable.
+  - **Pull surfaces**: a `memory_export` MCP tool (admin-gated, session-scoped,
+    off the event loop) and a generalized `zaxy export` CLI, both converging on
+    one shared `build_memory_export` helper. Returns an unsigned canonical
+    bundle, or a signed bundle when a key is configured.
+  - **Verifiable partial disclosure**: reveal only the entries matching a
+    selector, with Merkle inclusion proofs, without exposing the rest
+    (`memory_export`'s `disclose` argument; CLI `export-disclose` /
+    `verify-export-subset`).
+  - **Outbound delivery (push)**: optional file/webhook sinks and a
+    `zaxy export-push` CLI that ship the same bundle to a destination. Push is
+    operator-side (CLI/library), not an MCP tool; recurring delivery is left to
+    external schedulers.
+  - **Signing remains EXPERIMENTAL / UNAUDITED and opt-in** (`zaxy.portable`,
+    pending independent cryptographic review before GA). Signed bundles are
+    server-key-only over MCP — a private key is never accepted as a tool
+    argument. The unsigned export path carries no such caveat.
+
 ## 2.4.4 - 2026-06-15
 
 - **The 2.4.2 incremental-retrieval win now reaches the MCP `memory_checkout`
