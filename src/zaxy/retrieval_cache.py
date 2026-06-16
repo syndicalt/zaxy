@@ -22,7 +22,9 @@ from __future__ import annotations
 
 import contextlib
 import json
+import marshal
 import os
+import zlib
 from typing import TYPE_CHECKING, Any, cast
 
 from zaxy.event import EventLog, IntegrityReport, ReplayResult, verify_event_chain
@@ -39,6 +41,18 @@ if TYPE_CHECKING:
 # replay, so the hash-chain integrity guarantee is never weakened.
 _REPLAY_TIP_VERSION = 1
 
+# On-disk verbatim BM25 index checkpoint. Building the index re-tokenizes the
+# whole corpus (the dominant cold cost). The checkpoint persists the chunks +
+# tokenization (zlib-compressed marshal) anchored on a {covered_seq,
+# covered_hash, covered_offset} tip: a cold process loads it, verifies only the
+# appended tail (same chain anchor as the replay tip), and extends the index via
+# ``append_chunks`` instead of re-tokenizing. Pure cache: any miss/corruption/
+# version skew/anchor mismatch falls back to a full rebuild. To keep cold reads
+# fast without rewriting the (large) file on every start, it is re-persisted only
+# on a full rebuild or when the loaded tail exceeds this many events.
+_VERBATIM_CACHE_VERSION = 1
+_VERBATIM_REPERSIST_TAIL_THRESHOLD = 2000
+
 
 def _eventlog_file_signature(eventlog: EventLog) -> tuple[int, int]:
     """Return a cheap invalidation signature for a local Eventloom log."""
@@ -52,6 +66,11 @@ def _eventlog_file_signature(eventlog: EventLog) -> tuple[int, int]:
 def _replay_tip_path(eventlog: EventLog):  # type: ignore[no-untyped-def]
     """Return the verified-replay checkpoint path beside the projections."""
     return eventlog.path.parent / "projections" / f"{eventlog.path.stem}.replay-tip.json"
+
+
+def _verbatim_cache_path(eventlog: EventLog):  # type: ignore[no-untyped-def]
+    """Return the verbatim-index checkpoint path beside the projections."""
+    return eventlog.path.parent / "projections" / f"{eventlog.path.stem}.verbatim-cache.zmar"
 
 
 class SessionRetrievalCache:
@@ -76,7 +95,9 @@ class SessionRetrievalCache:
         self._verbatim_index_cache.pop(session_id, None)
         self._replay_cache.pop(session_id, None)
         with contextlib.suppress(Exception):
-            _replay_tip_path(self.session_manager.get(session_id).eventlog).unlink(missing_ok=True)
+            eventlog = self.session_manager.get(session_id).eventlog
+            _replay_tip_path(eventlog).unlink(missing_ok=True)
+            _verbatim_cache_path(eventlog).unlink(missing_ok=True)
 
     def verbatim_index(self, session_id: str) -> VerbatimIndex:
         """Return a verbatim index for the current Eventloom file state.
@@ -100,9 +121,16 @@ class SessionRetrievalCache:
             index = cached[1].append_chunks(_chunks_from_events(new_events))
             self._verbatim_index_cache[session_id] = (signature, index, end_offset)
             return index
+        from_checkpoint = self._try_load_verbatim_checkpoint(eventlog)
+        if from_checkpoint is not None:
+            index, end_offset = from_checkpoint
+            self._verbatim_index_cache[session_id] = (signature, index, end_offset)
+            return index
         events, end_offset = eventlog.read_from_offset(0)
         index = VerbatimIndex.from_events(events)
         self._verbatim_index_cache[session_id] = (signature, index, end_offset)
+        if events:
+            self._save_verbatim_checkpoint(eventlog, index, events[-1], end_offset)
         return index
 
     def verified_replay(self, session_id: str, from_seq: int = 1) -> ReplayResult:
@@ -259,6 +287,74 @@ class SessionRetrievalCache:
             )
             tmp = path.with_suffix(f".json.tmp.{os.getpid()}")
             tmp.write_text(payload, encoding="utf-8")
+            os.replace(tmp, path)
+        except Exception:
+            return
+
+    def _try_load_verbatim_checkpoint(
+        self, eventlog: EventLog
+    ) -> tuple[VerbatimIndex, int] | None:
+        """Load the verbatim index from its checkpoint + tail, or None to rebuild.
+
+        Reconstructs the index from the persisted chunks/tokenization (skipping
+        re-tokenization), verifies only the tail appended after the checkpoint's
+        ``{covered_seq, covered_hash}`` anchor, and extends via ``append_chunks``.
+        Returns ``None`` — falling back to a full rebuild — on any miss: no/
+        corrupt/old checkpoint, an anchor that does not match (log rewritten/
+        compacted/shrunk), a tail that fails verification, or a non-file eventlog
+        (the unit-test path). The result is byte-identical to a full rebuild.
+        """
+        try:
+            raw = _verbatim_cache_path(eventlog).read_bytes()
+            data = cast("dict[str, Any]", marshal.loads(zlib.decompress(raw)))
+            if not isinstance(data, dict) or data.get("version") != _VERBATIM_CACHE_VERSION:
+                return None
+            covered_seq = data["covered_seq"]
+            covered_hash = data["covered_hash"]
+            covered_offset = data["covered_offset"]
+            if not isinstance(covered_seq, int) or not isinstance(covered_hash, str):
+                return None
+            tail, end_offset = eventlog.read_from_offset(covered_offset)
+            report = verify_event_chain(tail, first_seq=covered_seq + 1, prev_hash=covered_hash)
+            if not report.ok:
+                return None
+            index = VerbatimIndex._from_chunks_and_tokens(data["chunks"], data["tokenized"])
+            if tail:
+                index = index.append_chunks(_chunks_from_events(tail))
+                if len(tail) >= _VERBATIM_REPERSIST_TAIL_THRESHOLD:
+                    self._save_verbatim_checkpoint(eventlog, index, tail[-1], end_offset)
+            return (index, end_offset)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _save_verbatim_checkpoint(
+        eventlog: EventLog, index: VerbatimIndex, last_event: Any, covered_offset: int
+    ) -> None:
+        """Persist the verbatim index + tip atomically; best-effort, never raises."""
+        try:
+            seq = getattr(last_event, "seq", None)
+            event_hash = getattr(last_event, "hash", None)
+            if not isinstance(seq, int) or not isinstance(event_hash, str) or len(event_hash) != 64:
+                return
+            chunks, tokenized = index._chunks_and_tokens()
+            blob = zlib.compress(
+                marshal.dumps(
+                    {
+                        "version": _VERBATIM_CACHE_VERSION,
+                        "covered_seq": seq,
+                        "covered_hash": event_hash,
+                        "covered_offset": covered_offset,
+                        "chunks": chunks,
+                        "tokenized": tokenized,
+                    }
+                ),
+                1,
+            )
+            path = _verbatim_cache_path(eventlog)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(f".zmar.tmp.{os.getpid()}")
+            tmp.write_bytes(blob)
             os.replace(tmp, path)
         except Exception:
             return
