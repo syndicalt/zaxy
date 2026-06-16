@@ -1,8 +1,9 @@
 """Parity tests: the MCP surface and the Python API (MemoryFabric) share one path.
 
-These run a real embedded backend and assert that append/query/checkout produce
-equivalent effects/results whether driven through the MCP handlers or the fabric
-directly — the guarantee behind unifying the two surfaces onto one path.
+These run a real embedded backend and assert that append/query/checkout and the
+context lifecycle tools (context_assemble / context_after_turn / subagent_cleanup)
+produce equivalent effects/results whether driven through the MCP handlers or the
+fabric directly — the guarantee behind unifying the two surfaces onto one path.
 """
 
 from __future__ import annotations
@@ -115,4 +116,48 @@ async def test_append_parity_projects_equivalently(tmp_path: Path) -> None:
         assert mcp_types == fab_types
     finally:
         await fabric.close()
+        await server.teardown()
+
+
+async def test_context_assemble_parity_mcp_matches_fabric(tmp_path: Path) -> None:
+    """handle_context_assemble returns exactly the serialized fabric assembly."""
+    from zaxy.mcp_server import _context_assembly_payload
+
+    server = await _embedded_server(tmp_path)
+    try:
+        await server.handle_memory_append(
+            {"event_type": "goal.created", "actor": "u", "payload": {"title": "Ship the export contract"}, "session_id": "s"}
+        )
+        # Both read-only over the same state -> identical payloads.
+        fabric_payload = _context_assembly_payload(
+            await server._fabric.assemble_context("export contract", session_id="s", replay_from_seq=1, limit=5, max_recent_events=20)
+        )
+        handler = _json(await server.handle_context_assemble({"query": "export contract", "session_id": "s", "limit": 5}))
+        assert handler["session_id"] == fabric_payload["session_id"]
+        assert [c["content"] for c in handler["contexts"]] == [c["content"] for c in fabric_payload["contexts"]]
+        assert handler["context_counts"] == fabric_payload["context_counts"]
+    finally:
+        await server.teardown()
+
+
+async def test_after_turn_and_cleanup_run_through_fabric(tmp_path: Path) -> None:
+    """context_after_turn and subagent_cleanup go end-to-end through the fabric."""
+    server = await _embedded_server(tmp_path)
+    try:
+        after = _json(await server.handle_context_after_turn(
+            {"role": "user", "content": "Ship the export contract", "session_id": "s"}
+        ))
+        # after_turn appended the turn and assembled (fabric.after_turn shape).
+        assert after["session_id"] == "s"
+        assert "prompt" in after and "contexts" in after and "context_counts" in after
+
+        cleanup = _json(await server.handle_subagent_cleanup(
+            {"parent_session_id": "parent", "subagent_session_id": "sub", "summary": "did the work"}
+        ))
+        # Canonical HandoffBundle shape from fabric.cleanup_subagent.
+        assert cleanup["session_id"] == "sub"
+        assert set(cleanup) >= {"session_id", "summary", "prompt", "contexts", "replay_event_count", "integrity_ok"}
+        sub_events = [e.type for e in server.session_manager.get("sub").eventlog.read_all()]
+        assert "subagent.cleaned" in sub_events
+    finally:
         await server.teardown()

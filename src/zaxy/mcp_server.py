@@ -62,7 +62,6 @@ from zaxy.context import (
     Context,
     ContextAssemblyPolicy,
     apply_assembly_prompt_budget,
-    context_counts,
 )
 from zaxy.core import (
     ContextAssembly,
@@ -79,7 +78,6 @@ from zaxy.export_view import (
 from zaxy.extract import extract
 from zaxy.lifecycle import (
     build_session_ended_event,
-    build_subagent_completed_event,
     build_tool_call_completed_event,
 )
 from zaxy.log import get_logger, setup_logging
@@ -102,7 +100,6 @@ from zaxy.runtime import LocalEmbeddedGraphRuntime, LocalNeo4jRuntime, LocalPgGr
 from zaxy.salience import (
     build_confirmed_reinforcement_event,
     build_invalidated_reinforcement_event,
-    build_surfaced_reinforcement_event,
     event_ref_index,
     reinforcement_targets_from_citations,
 )
@@ -127,7 +124,7 @@ from zaxy.synthesis_artifact import (
 from zaxy.tool_profiles import resolve_profile
 from zaxy.trace import MemoryTracer
 from zaxy.verbatim import VerbatimIndex
-from zaxy.working_set import build_working_set, format_working_set
+from zaxy.working_set import format_working_set
 from zaxy.workspace import (
     WorkspaceProfile,
     build_session_genesis_event,
@@ -2950,13 +2947,15 @@ class ZaxyMCPServer:
         max_recent_events = validate_limit(arguments.get("max_recent_events"), default=20)
         max_tokens = _optional_max_tokens(arguments.get("max_tokens"))
 
-        output = await self._assemble_context_payload(
-            query=query,
+        # Delegate to the shared fabric assembly so the MCP and Python paths are one.
+        assembly = await self._fabric.assemble_context(
+            query,
             session_id=session_id,
             replay_from_seq=replay_from_seq,
             limit=limit,
             max_recent_events=max_recent_events,
         )
+        output = _context_assembly_payload(assembly)
         if max_tokens is not None:
             packed_prompt, budget = apply_assembly_prompt_budget(
                 str(output.get("prompt") or ""),
@@ -3004,44 +3003,6 @@ class ZaxyMCPServer:
         )
         return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
-    def _record_surfaced_reinforcement(
-        self,
-        payload: dict[str, Any],
-        *,
-        replay_events: list[Any],
-        session_id: str,
-        activity_event: Any,
-    ) -> None:
-        """Append one batched 'surfaced' salience reinforcement for a checkout.
-
-        Best-effort observability state mirroring the fabric checkout path:
-        targets are the sealed refs of facts/evidence carried by the packet,
-        and the checkout is identified by its memory.checkout.completed
-        activity event. A failure here never fails the checkout response.
-        """
-        try:
-            index = event_ref_index(replay_events)
-            citations = [
-                item.get("citation")
-                for item in [
-                    *_dict_list_payload(payload.get("current_facts")),
-                    *_dict_list_payload(payload.get("evidence")),
-                ]
-            ]
-            targets = reinforcement_targets_from_citations(citations, event_index=index)
-            if not targets:
-                return
-            checkout_id = _activity_event_citation(activity_event) or f"{session_id}:checkout"
-            spec = build_surfaced_reinforcement_event(
-                actor="zaxy-memory",
-                session_id=session_id,
-                checkout_id=checkout_id,
-                targets=targets,
-            )
-            self._append_reinforcement_spec(spec, session_id=session_id)
-        except Exception:
-            get_metrics().record_degraded_operation("append", "salience_reinforcement_unavailable")
-
     def _append_reinforcement_spec(self, spec: dict[str, Any], *, session_id: str) -> None:
         """Append a reinforcement spec as a plain hash-chained log event.
 
@@ -3066,24 +3027,18 @@ class ZaxyMCPServer:
         limit = validate_limit(arguments.get("limit"), default=10)
         max_recent_events = validate_limit(arguments.get("max_recent_events"), default=20)
 
-        eventlog = self.session_manager.get(session_id).eventlog
-        event = eventlog.append(
-            "transcript.turn",
-            actor=role,
-            payload={"role": role, "content": content, "source": source},
-            thread=session_id,
-        )
-        extraction = extract(event)
-        await self.graph.upsert_extraction(extraction, session_id=session_id)
-        await self.tracer.trace_append("transcript.turn", role, event.seq)
-
-        output = await self._assemble_context_payload(
-            query=query,
+        # Delegate to the shared fabric after-turn pipeline (append + project +
+        # assemble) so the MCP and Python paths are one.
+        assembly = await self._fabric.after_turn(
+            role=role,
+            content=content,
             session_id=session_id,
-            replay_from_seq=1,
-            limit=limit,
+            query=query,
+            source=source,
             max_recent_events=max_recent_events,
+            limit=limit,
         )
+        output = _context_assembly_payload(assembly)
         return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
     async def handle_subagent_cleanup(self, arguments: dict[str, Any]) -> list[TextContent]:
@@ -3097,138 +3052,16 @@ class ZaxyMCPServer:
         if remote_session_scope.get() is not None:
             self._session_id_from_arguments({"session_id": subagent_session_id})
 
-        eventlog = self.session_manager.get(subagent_session_id).eventlog
-        event = eventlog.append(
-            "subagent.cleaned",
-            actor="zaxy",
-            payload={
-                "parent_session_id": parent_session_id,
-                "subagent_session_id": subagent_session_id,
-                "summary": summary_text,
-            },
-            thread=subagent_session_id,
-        )
-        extraction = extract(event)
-        await self.graph.upsert_extraction(extraction, session_id=subagent_session_id)
-        await self.tracer.trace_append("subagent.cleaned", "zaxy", event.seq)
-        lifecycle = build_subagent_completed_event(
+        # Delegate to the shared fabric cleanup (append cleanup + lifecycle events
+        # and build the handoff bundle) so the MCP and Python paths are one.
+        bundle = await self._fabric.cleanup_subagent(
             parent_session_id=parent_session_id,
             subagent_session_id=subagent_session_id,
-            status="succeeded",
             summary=summary_text,
-        )
-        await self._append_lifecycle_event(lifecycle, session_id=subagent_session_id)
-
-        assembly = await self._assemble_context_payload(
             query=query,
-            session_id=subagent_session_id,
-            replay_from_seq=1,
-            limit=limit,
-            max_recent_events=20,
-        )
-        replay = self.session_manager.replay(subagent_session_id, from_seq=1)
-        output = {
-            **assembly,
-            "summary": self.session_manager.handoff_summary(subagent_session_id),
-            "integrity_ok": bool(getattr(getattr(replay, "integrity", None), "ok", False)),
-        }
-        return [TextContent(type="text", text=json.dumps(output, indent=2))]
-
-    async def _assemble_context_payload(
-        self,
-        *,
-        query: str,
-        session_id: str,
-        replay_from_seq: int,
-        limit: int,
-        max_recent_events: int,
-        as_of_seq: int | None = None,
-    ) -> dict[str, Any]:
-        payload, _events = await self._assemble_context(
-            query=query,
-            session_id=session_id,
-            replay_from_seq=replay_from_seq,
-            limit=limit,
-            max_recent_events=max_recent_events,
-            as_of_seq=as_of_seq,
-        )
-        return payload
-
-    async def _assemble_context(
-        self,
-        *,
-        query: str,
-        session_id: str,
-        replay_from_seq: int,
-        limit: int,
-        max_recent_events: int,
-        as_of_seq: int | None = None,
-    ) -> tuple[dict[str, Any], list[Any]]:
-        """Assemble the context payload plus the replayed events it was built from.
-
-        The events stay out of the serialized payload; checkout uses them to
-        resolve citations into sealed refs and to replay diagnostics-only
-        salience without an extra log scan.
-        """
-        replay = await asyncio.to_thread(
-            self._retrieval_cache.verified_replay,
-            session_id,
-            replay_from_seq,
-        )
-        events = list(replay.events)
-        if as_of_seq is not None:
-            events = [event for event in events if event.seq <= as_of_seq]
-        compacted = len(events) > max_recent_events
-        recent_events = events[-max_recent_events:] if compacted else events
-        router = QueryRouter(
-            self.graph,
-            session_id=session_id,
-            retention_policy=self._retention_policy,
-        )
-        results = await router.query(query, limit=limit)
-        graph_contexts = [_context_from_query_result(result) for result in results]
-        verbatim_hits = (
-            await asyncio.to_thread(
-                lambda: self._retrieval_cache.verbatim_index(session_id).query(
-                    query, limit=limit
-                )
-            )
-            if self.context_assembly_policy.should_query_verbatim(limit=limit)
-            else []
-        )
-        verbatim_contexts = [
-            Context(
-                content=hit.content,
-                source="verbatim",
-                score=hit.score,
-                metadata={
-                    "citation": hit.citation,
-                    "source_kind": hit.source_kind,
-                    **hit.metadata,
-                },
-            )
-            for hit in verbatim_hits
-        ]
-        contexts = self.context_assembly_policy.assemble(
-            graph_contexts,
-            verbatim_contexts,
             limit=limit,
         )
-        if as_of_seq is not None:
-            contexts = _contexts_as_of_seq(contexts, as_of_seq)
-        working_set = build_working_set(recent_events, contexts)
-        await self.tracer.trace_query(query, len(results), 0.0, None)
-        payload: dict[str, Any] = {
-            "session_id": session_id,
-            "prompt": _format_prompt(recent_events, contexts, working_set=working_set),
-            "contexts": [_context_payload(context) for context in contexts],
-            "replay_event_count": len(recent_events),
-            "compacted": compacted,
-            "assembly_policy": self.context_assembly_policy.describe(),
-            "context_counts": context_counts(contexts, replay_count=len(recent_events)),
-            "working_set": working_set.to_dict(),
-        }
-        return payload, events
+        return [TextContent(type="text", text=json.dumps(bundle.to_dict(), indent=2))]
 
     def _require_admin(self, arguments: dict[str, Any]) -> None:
         """Require an admin token for destructive or bulk-read tools when configured."""
@@ -3659,6 +3492,20 @@ def _context_payload(result: Any) -> dict[str, Any]:
         "score_explanation": metadata.get("score_explanation")
         or getattr(result, "score_explanation", None),
         "metadata": metadata,
+    }
+
+
+def _context_assembly_payload(assembly: ContextAssembly) -> dict[str, Any]:
+    """Serialize a fabric ContextAssembly into the context-tool output payload."""
+    return {
+        "session_id": assembly.session_id,
+        "prompt": assembly.prompt,
+        "contexts": [_context_payload(context) for context in assembly.contexts],
+        "replay_event_count": assembly.replay_event_count,
+        "compacted": assembly.compacted,
+        "assembly_policy": assembly.assembly_policy,
+        "context_counts": assembly.context_counts,
+        "working_set": assembly.working_set,
     }
 
 
