@@ -2712,15 +2712,12 @@ class TestContextLifecycleTools:
     ) -> None:
         """Omitting max_tokens must not add budget diagnostics to the payload."""
         server.session_manager.replay.return_value = MagicMock(events=[])
-        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
-            router = AsyncMock()
-            router.query.return_value = []
-            mock_router_cls.return_value = router
+        server._fabric.query = AsyncMock(return_value=[])  # type: ignore[method-assign]
 
-            result = await server.handle_context_assemble({
-                "query": "retrieval decision",
-                "session_id": "agent-1",
-            })
+        result = await server.handle_context_assemble({
+            "query": "retrieval decision",
+            "session_id": "agent-1",
+        })
 
         output = json_loads(result[0].text)
         assert "budget" not in output
@@ -2737,35 +2734,31 @@ class TestContextLifecycleTools:
             payload={"content": "Use MMR diversity for retrieval ranking decisions."},
         )
         server.session_manager.replay.return_value = MagicMock(events=[event])
-        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
-            router = AsyncMock()
-            router.query.return_value = [
-                MagicMock(
+        server._fabric.query = AsyncMock(  # type: ignore[method-assign]
+            return_value=[
+                Context(
                     content="MMR diversity (decision)",
                     source="keyword",
                     score=0.9,
-                    valid_from=None,
-                    valid_to=None,
-                    citation="eventloom://agent-1/events/2#abc",
-                    score_explanation=None,
+                    metadata={"citation": "eventloom://agent-1/events/2#abc"},
                 )
             ]
-            mock_router_cls.return_value = router
+        )
 
-            unbudgeted = await server.handle_context_assemble({
-                "query": "retrieval decision",
-                "session_id": "agent-1",
-            })
-            generous = await server.handle_context_assemble({
-                "query": "retrieval decision",
-                "session_id": "agent-1",
-                "max_tokens": 100_000,
-            })
-            tight = await server.handle_context_assemble({
-                "query": "retrieval decision",
-                "session_id": "agent-1",
-                "max_tokens": 10,
-            })
+        unbudgeted = await server.handle_context_assemble({
+            "query": "retrieval decision",
+            "session_id": "agent-1",
+        })
+        generous = await server.handle_context_assemble({
+            "query": "retrieval decision",
+            "session_id": "agent-1",
+            "max_tokens": 100_000,
+        })
+        tight = await server.handle_context_assemble({
+            "query": "retrieval decision",
+            "session_id": "agent-1",
+            "max_tokens": 10,
+        })
 
         unbudgeted_output = json_loads(unbudgeted[0].text)
         generous_output = json_loads(generous[0].text)
@@ -2804,33 +2797,34 @@ class TestContextLifecycleTools:
             hash="c" * 64,
         )
         server.session_manager.replay.return_value = MagicMock(events=[event])
-        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
-            router = AsyncMock()
-            router.query.return_value = [
-                MagicMock(
+        server._fabric.query = AsyncMock(  # type: ignore[method-assign]
+            return_value=[
+                Context(
                     content="Memory checkout is the context contract.",
                     source="keyword",
                     score=0.8,
                     valid_from="2026-05-10T20:55:40Z",
                     valid_to=None,
-                    citation="eventloom://agent-1/events/1882#checkout",
-                    score_explanation=None,
-                    entity_name="memory checkout",
-                    entity_type="task",
+                    metadata={
+                        "citation": "eventloom://agent-1/events/1882#checkout",
+                        "entity_name": "memory checkout",
+                        "entity_type": "task",
+                    },
                 ),
             ]
-            mock_router_cls.return_value = router
+        )
+        server._fabric.query_verbatim = AsyncMock(return_value=[])  # type: ignore[method-assign]
 
-            with patch("zaxy.mcp_server.record_memory_activity"):
-                unbudgeted = await server.handle_memory_checkout({
-                    "query": "What context contract should the model use?",
-                    "session_id": "agent-1",
-                })
-                budgeted = await server.handle_memory_checkout({
-                    "query": "What context contract should the model use?",
-                    "session_id": "agent-1",
-                    "max_tokens": 60,
-                })
+        with patch("zaxy.mcp_server.record_memory_activity"):
+            unbudgeted = await server.handle_memory_checkout({
+                "query": "What context contract should the model use?",
+                "session_id": "agent-1",
+            })
+            budgeted = await server.handle_memory_checkout({
+                "query": "What context contract should the model use?",
+                "session_id": "agent-1",
+                "max_tokens": 60,
+            })
 
         unbudgeted_output = json_loads(unbudgeted[0].text)
         budgeted_output = json_loads(budgeted[0].text)
@@ -3176,12 +3170,9 @@ class TestContextLifecycleTools:
         """Omitted session_id should use the configured domain-separated default."""
         server._default_session_id = "zaxy-default"
         server.session_manager.replay.return_value = MagicMock(events=[])
-        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
-            router = AsyncMock()
-            router.query.return_value = []
-            mock_router_cls.return_value = router
+        server._fabric.query = AsyncMock(return_value=[])  # type: ignore[method-assign]
 
-            result = await server.handle_context_assemble({"query": "retrieval decision"})
+        result = await server.handle_context_assemble({"query": "retrieval decision"})
 
         output = json_loads(result[0].text)
         assert output["session_id"] == "zaxy-default"
@@ -3201,11 +3192,10 @@ class TestContextLifecycleTools:
         )
         server.session_manager.get.return_value.eventlog.last_event.return_value = latest
         server.session_manager.replay.return_value = MagicMock(events=[])
-        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
-            router = AsyncMock()
-            router.query.return_value = []
-            mock_router_cls.return_value = router
+        server._fabric.query = AsyncMock(return_value=[])  # type: ignore[method-assign]
+        server._fabric.query_verbatim = AsyncMock(return_value=[])  # type: ignore[method-assign]
 
+        with patch("zaxy.mcp_server.record_memory_activity"):
             result = await server.handle_memory_checkout({
                 "query": "current state",
                 "session_id": "agent-1",
@@ -3233,14 +3223,10 @@ class TestContextLifecycleTools:
         server.session_manager.replay.return_value = MagicMock(events=[])
         eventlog = server.session_manager.get.return_value.eventlog
         args = {"query": "current state", "session_id": "agent-1", "limit": 5}
-        with (
-            patch("zaxy.mcp_server.QueryRouter") as mock_router_cls,
-            patch("zaxy.mcp_server.record_memory_activity"),
-        ):
-            router = AsyncMock()
-            router.query.return_value = []
-            mock_router_cls.return_value = router
-
+        # Graph lane mocked empty; verbatim lane stays real so read_from_offset
+        # (the cache hit being asserted) is exercised.
+        server._fabric.query = AsyncMock(return_value=[])  # type: ignore[method-assign]
+        with patch("zaxy.mcp_server.record_memory_activity"):
             await server.handle_memory_checkout(dict(args))
             await server.handle_memory_checkout(dict(args))
 
@@ -3253,16 +3239,14 @@ class TestContextLifecycleTools:
     async def test_context_after_turn_appends_and_assembles(self, server: ZaxyMCPServer) -> None:
         """context_after_turn should persist the latest turn before assembly."""
         server.session_manager.replay.return_value = MagicMock(events=[])
-        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
-            router = AsyncMock()
-            router.query.return_value = []
-            mock_router_cls.return_value = router
+        server._fabric.query = AsyncMock(return_value=[])  # type: ignore[method-assign]
+        server._fabric.query_verbatim = AsyncMock(return_value=[])  # type: ignore[method-assign]
 
-            result = await server.handle_context_after_turn({
-                "role": "assistant",
-                "content": "Use lifecycle hooks.",
-                "session_id": "agent-1",
-            })
+        result = await server.handle_context_after_turn({
+            "role": "assistant",
+            "content": "Use lifecycle hooks.",
+            "session_id": "agent-1",
+        })
 
         log = server.session_manager.get.return_value.eventlog
         log.append.assert_called_once()
@@ -3275,16 +3259,14 @@ class TestContextLifecycleTools:
         server.session_manager.handoff_summary.return_value = {"event_count": 3}
         replay = MagicMock(events=[], integrity=MagicMock(ok=True))
         server.session_manager.replay.return_value = replay
-        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
-            router = AsyncMock()
-            router.query.return_value = []
-            mock_router_cls.return_value = router
+        server._fabric.query = AsyncMock(return_value=[])  # type: ignore[method-assign]
+        server._fabric.query_verbatim = AsyncMock(return_value=[])  # type: ignore[method-assign]
 
-            result = await server.handle_subagent_cleanup({
-                "parent_session_id": "main",
-                "subagent_session_id": "worker-1",
-                "summary": "Worker finished.",
-            })
+        result = await server.handle_subagent_cleanup({
+            "parent_session_id": "main",
+            "subagent_session_id": "worker-1",
+            "summary": "Worker finished.",
+        })
 
         log = server.session_manager.get.return_value.eventlog
         appended_types = [call.args[0] for call in log.append.call_args_list]
