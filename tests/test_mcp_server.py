@@ -108,14 +108,20 @@ def make_server() -> Iterator[Callable[..., ZaxyMCPServer]]:
 
 
 def _real_server(tmp_path: Path, **kwargs: Any) -> ZaxyMCPServer:
-    """Return a server with a real tmp eventloom and mocked graph/tracer."""
-    server = ZaxyMCPServer(
-        eventloom_path=str(tmp_path / ".eventloom"),
-        workspace_root=tmp_path,
-        **kwargs,
-    )
-    server.graph = AsyncMock()
-    server.tracer = AsyncMock()
+    """Return a server with a real tmp eventloom and mocked graph/tracer.
+
+    The graph/tracer are mocked *at construction* so the server's persistent
+    fabric is wired to the mocks (not a real, never-connected embedded store).
+    """
+    with (
+        patch("zaxy.mcp_server.build_projection_store", return_value=AsyncMock()),
+        patch("zaxy.mcp_server.MemoryTracer", return_value=AsyncMock()),
+    ):
+        server = ZaxyMCPServer(
+            eventloom_path=str(tmp_path / ".eventloom"),
+            workspace_root=tmp_path,
+            **kwargs,
+        )
     return server
 
 
@@ -226,12 +232,12 @@ class TestToolListingProfiles:
         expected = {"session_id": "agent-1", "pending_count": 0}
         fabric = AsyncMock()
         fabric.consolidation_status.return_value = expected
-        with patch("zaxy.mcp_server.MemoryFabric", return_value=fabric):
-            result = await zaxy.mcp_server._dispatch_tool_call(
-                server,
-                "memory_consolidation_status",
-                {"session_id": "agent-1"},
-            )
+        server._fabric = fabric  # handlers delegate to the persistent fabric
+        result = await zaxy.mcp_server._dispatch_tool_call(
+            server,
+            "memory_consolidation_status",
+            {"session_id": "agent-1"},
+        )
 
         assert json_loads(result[0].text) == expected
         fabric.consolidation_status.assert_awaited_once_with(session_id="agent-1")

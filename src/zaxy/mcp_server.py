@@ -68,7 +68,6 @@ from zaxy.core import (
     ContextAssembly,
     MemoryCheckout,
     MemoryFabric,
-    build_memory_checkout,
     entity_reinforcement_targets,
 )
 from zaxy.export_view import (
@@ -93,7 +92,6 @@ from zaxy.metacognition import (
     feeling_of_knowing,
 )
 from zaxy.metrics import get_metrics
-from zaxy.pagination import encode_query_cursor, validate_query_cursor
 from zaxy.projection_backends import ProjectionBackendConfig, build_projection_store
 from zaxy.purpose import purpose_profile
 from zaxy.query import QueryRouter, build_retention_policy
@@ -109,7 +107,6 @@ from zaxy.salience import (
     reinforcement_targets_from_citations,
 )
 from zaxy.security import (
-    MAX_QUERY_LIMIT,
     MAX_REPLAY_EVENTS,
     validate_event_text,
     validate_from_seq,
@@ -1517,6 +1514,19 @@ class ZaxyMCPServer:
             verbatim_enabled=settings.context_verbatim_enabled,
             verbatim_slots=settings.context_verbatim_slots,
         )
+        # One persistent fabric wired to the server's own components (no second
+        # projection store). append/query/checkout delegate to it so the Python
+        # API and the MCP surface share one path per operation. owns_connections
+        # is False: setup()/teardown() own the graph/tracer lifecycle.
+        self._fabric = MemoryFabric(
+            eventloom_path=self._eventloom_path,
+            graph=self.graph,
+            tracer=self.tracer,
+            session_manager=self.session_manager,
+            retrieval_cache=self._retrieval_cache,
+            refs=self.refs,
+            owns_connections=False,
+        )
 
     def _build_local_projection_runtime(
         self,
@@ -1747,13 +1757,12 @@ class ZaxyMCPServer:
             default=self._default_session_id,
         )
 
-        eventlog = self.session_manager.get(session_id).eventlog
-        event = eventlog.append(event_type, actor=actor, payload=payload, thread=session_id)
-
-        # Project to graph
-        extraction = extract(event)
-        await self.graph.upsert_extraction(extraction, session_id=session_id)
-        await self.tracer.trace_append(event_type, actor, event.seq)
+        # Delegate to the shared fabric append pipeline (extraction + embedding +
+        # projection + generated inferences + metrics + cache invalidation +
+        # degraded-projection handling) so the MCP and Python paths are one.
+        event = await self._fabric.append(
+            event_type, actor, payload, session_id=session_id
+        )
 
         return [TextContent(type="text", text=json.dumps({"seq": event.seq, "hash": event.hash}))]
 
@@ -2042,18 +2051,8 @@ class ZaxyMCPServer:
         return event
 
     def _memory_fabric(self) -> MemoryFabric:
-        return MemoryFabric(
-            eventloom_path=self._eventloom_path,
-            neo4j_uri=self._neo4j_uri,
-            neo4j_user=self._neo4j_user,
-            neo4j_password=self._neo4j_password,
-            neo4j_ca_cert=self._neo4j_ca_cert,
-            neo4j_trust_all=self._neo4j_trust_all,
-            projection_backend=self._projection_backend,
-            pggraph_dsn=self._pggraph_dsn,
-            embedded_graph_path=self._embedded_graph_path,
-            latticedb_path=self._latticedb_path,
-        )
+        """Return the persistent fabric wired to this server's components."""
+        return self._fabric
 
     async def handle_coordination_start(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Handle coordination_start tool calls."""
@@ -2348,54 +2347,25 @@ class ZaxyMCPServer:
             )
             return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
-        offset = 0
-        if cursor:
-            decoded = validate_query_cursor(
-                cursor,
-                query=query,
-                session_id=session_id,
-                temporal_point=temporal,
-            )
-            offset = decoded.offset
-        fetch_limit = min(offset + limit + 1, MAX_QUERY_LIMIT)
-
-        router = QueryRouter(
-            self.graph,
+        # Delegate to the shared fabric query path (embedding + source-lane /
+        # cue / projection blend + reranker + page cache). The fabric returns
+        # Context objects carrying citation/score_explanation in metadata; flatten
+        # them to the memory_query output contract (those fields at top level).
+        page = await self._fabric.query_page(
+            query,
+            temporal_point=temporal,
+            limit=limit,
             session_id=session_id,
-            retention_policy=self._retention_policy,
+            cursor=cursor,
         )
-        results = await router.query(query, temporal_point=temporal, limit=fetch_limit)
-        await self.tracer.trace_query(query, len(results), 0.0, temporal)
-        page_results = results[offset : offset + limit]
-        has_more = len(results) > offset + limit
-        next_cursor = None
-        if has_more:
-            next_cursor = encode_query_cursor(
-                query=query,
-                session_id=session_id,
-                temporal_point=temporal,
-                offset=offset + limit,
-            )
-
-        output = [
-            {
-                "content": r.content,
-                "source": r.source,
-                "score": r.score,
-                "valid_from": r.valid_from,
-                "valid_to": r.valid_to,
-                "citation": r.citation,
-                "score_explanation": r.score_explanation,
-            }
-            for r in page_results
-        ]
+        output = [_query_context_payload(context) for context in page.contexts]
         if paged:
             page_output = {
                 "contexts": output,
-                "next_cursor": next_cursor,
-                "cursor": cursor,
-                "has_more": has_more,
-                "offset": offset,
+                "next_cursor": page.next_cursor,
+                "cursor": page.cursor,
+                "has_more": page.has_more,
+                "offset": page.offset,
                 "session_id": session_id,
             }
             return [TextContent(type="text", text=json.dumps(page_output, indent=2))]
@@ -3005,47 +2975,32 @@ class ZaxyMCPServer:
         max_recent_events = validate_limit(arguments.get("max_recent_events"), default=20)
         max_tokens = _optional_max_tokens(arguments.get("max_tokens"))
         ref = _optional_text(arguments.get("ref"))
-        resolved_ref = self._resolve_checkout_ref(ref, session_id=session_id)
-        checkout_session_id = resolved_ref.session_id if resolved_ref is not None else session_id
 
-        # Hold the checkout lock across the heavy retrieval/build so the
-        # synchronous, thread-offloaded sections stay serialized (preserving the
-        # prior single-flight invariant) while the event loop remains free to
-        # service stdin and cancellations. If the client cancels mid-checkout,
-        # the await points below raise CancelledError and unwind cleanly; the
-        # orphaned worker thread finishes harmlessly and the server stays up.
+        # Delegate to the shared fabric checkout so the MCP and Python paths are
+        # one. fabric.checkout_memory resolves the ref, assembles cited context,
+        # and records the 'surfaced' salience reinforcement itself. Its heavy
+        # retrieval (replay/verbatim) is thread-offloaded, so the lock — held to
+        # preserve the single-flight invariant the shared retrieval cache was
+        # written under — keeps the event loop free to service cancellations.
         async with self._checkout_lock:
-            assembly, replay_events = await self._assemble_context(
-                query=query,
-                session_id=checkout_session_id,
+            checkout = await self._fabric.checkout_memory(
+                query,
+                session_id=session_id,
                 replay_from_seq=replay_from_seq,
                 limit=limit,
                 max_recent_events=max_recent_events,
-                as_of_seq=resolved_ref.target_seq if resolved_ref is not None else None,
-            )
-            built = await asyncio.to_thread(
-                build_memory_checkout,
-                query=query,
-                assembly=_context_assembly_from_payload(assembly, replay_events=replay_events),
-                ref=resolved_ref,
+                ref=ref,
                 purpose=arguments.get("purpose"),
-                now=datetime.now(UTC),
             )
-        output = built.to_dict()
-        output = apply_checkout_budget(output, max_tokens=max_tokens)
-        activity = record_memory_activity(
+        output = apply_checkout_budget(checkout.to_dict(), max_tokens=max_tokens)
+        # MCP-only: record the checkout activity for hook-status / metrics.
+        record_memory_activity(
             self._eventloom_path,
             session_id=session_id,
             activity="checkout",
             source="mcp",
             query=query,
             metadata=_checkout_activity_metadata(output),
-        )
-        self._record_surfaced_reinforcement(
-            output,
-            replay_events=replay_events,
-            session_id=checkout_session_id,
-            activity_event=activity,
         )
         return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
@@ -3704,6 +3659,24 @@ def _context_payload(result: Any) -> dict[str, Any]:
         "score_explanation": metadata.get("score_explanation")
         or getattr(result, "score_explanation", None),
         "metadata": metadata,
+    }
+
+
+def _query_context_payload(context: Context) -> dict[str, Any]:
+    """Flatten a Context into the memory_query output contract.
+
+    Lifts citation/score_explanation out of ``metadata`` to top level so the
+    shared fabric query path preserves the historical memory_query result shape.
+    """
+    metadata = context.metadata or {}
+    return {
+        "content": context.content,
+        "source": context.source,
+        "score": context.score,
+        "valid_from": context.valid_from,
+        "valid_to": context.valid_to,
+        "citation": _result_citation(context),
+        "score_explanation": metadata.get("score_explanation"),
     }
 
 
