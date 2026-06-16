@@ -891,6 +891,75 @@ def verify_export_subset_cmd(
         raise typer.Exit(code=1)
 
 
+@app.command("export-push")
+def export_push(
+    sink: str = typer.Option(..., "--sink", help="destination type: file or webhook"),
+    dest: str = typer.Option(..., "--dest", help="file path (file sink) or http(s) URL (webhook sink)"),
+    eventloom_path: str = typer.Option(".eventloom", "--eventloom-path"),
+    session_id: str = typer.Option("default", "--session-id"),
+    types: str = typer.Option("decision.made,goal.created,task.completed", "--types", help="comma-separated event types (empty for all)"),
+    grains: str = typer.Option("event", "--grains", help="comma-separated grains: event, semantic"),
+    since_seq: int | None = typer.Option(None, "--since", help="exclusive delta cursor: export events with seq > this"),
+    max_seq: int | None = typer.Option(None, "--max-seq", help="inclusive upper bound on seq"),
+    since_time: str | None = typer.Option(None, "--since-time", help="inclusive ISO-8601 lower time bound"),
+    until_time: str | None = typer.Option(None, "--until-time", help="inclusive ISO-8601 upper time bound"),
+    query: str | None = typer.Option(None, "--query", help="lexical pre-filter via the verbatim index"),
+    exclude_sensitivities: str = typer.Option("", "--exclude-sensitivities", help="comma-separated sensitivity tiers to drop"),
+    limit: int | None = typer.Option(None, "--limit", help="cap to the most recent N matching events"),
+    private_key: Path | None = typer.Option(None, "--private-key", help="PKCS8 PEM private key file (omit for an unsigned bundle)"),  # noqa: B008
+    public_key: Path | None = typer.Option(None, "--public-key", help="hex public key file (omit for an unsigned bundle)"),  # noqa: B008
+    algorithm: str = typer.Option("ml-dsa-65", "--algorithm", help="signature algorithm of the key"),
+    auth_token_file: Path | None = typer.Option(None, "--auth-token-file", help="file with the webhook bearer token"),  # noqa: B008
+) -> None:
+    """Build an export bundle and push it to a sink (one-shot; cron for recurring).
+
+    Uses the same shared export path as `zaxy export`, so a pushed bundle is
+    identical to the same export pulled. Signs when key files are supplied.
+    """
+    from zaxy.export_sinks import FileSink, WebhookSink, push_memory_export
+    from zaxy.export_view import ExportSelector, load_signing_key
+    from zaxy.retrieval_cache import SessionRetrievalCache
+    from zaxy.session import SessionManager
+
+    selector = ExportSelector(
+        grains=frozenset(g.strip() for g in grains.split(",") if g.strip()),
+        kinds=frozenset(t.strip() for t in types.split(",") if t.strip()) or None,
+        since_seq=since_seq,
+        max_seq=max_seq,
+        since_time=since_time,
+        until_time=until_time,
+        query=query,
+        exclude_sensitivities=frozenset(
+            s.strip() for s in exclude_sensitivities.split(",") if s.strip()
+        ),
+        limit=limit,
+    )
+
+    signing_key = None
+    if private_key is not None or public_key is not None:
+        if private_key is None or public_key is None:
+            raise typer.BadParameter("signing requires both --private-key and --public-key")
+        signing_key = load_signing_key(
+            private_key_path=private_key, public_key_path=public_key, algorithm=algorithm
+        )
+
+    sink_impl: FileSink | WebhookSink
+    if sink == "file":
+        sink_impl = FileSink(dest)
+    elif sink == "webhook":
+        token = auth_token_file.read_text(encoding="utf-8").strip() if auth_token_file else None
+        sink_impl = WebhookSink(dest, token=token)
+    else:
+        raise typer.BadParameter("--sink must be 'file' or 'webhook'")
+
+    cache = SessionRetrievalCache(SessionManager(base_path=eventloom_path))
+    bundle = push_memory_export(
+        session_id, selector, retrieval_cache=cache, signing_key=signing_key, sink=sink_impl
+    )
+    signed = "signed" if signing_key is not None else "unsigned"
+    typer.echo(f"pushed {len(bundle['entries'])} entries ({signed}) to {sink} {dest}")
+
+
 def _resolve_cli_projection_backend(
     projection_backend: str | None,
     settings: Settings,
