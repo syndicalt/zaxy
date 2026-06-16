@@ -150,6 +150,7 @@ See [LLM Packet Analyzer](docs/packet-analyzer.md).
 - Architecture: `docs/architecture.md`
 - Configuration: `docs/configuration.md`
 - MCP interface: `docs/mcp.md`
+- Memory export contract: `docs/export-contract.md`
 - Eventloom contract: `docs/eventloom.md`
 - Graph schema: `docs/graph-schema.md`
 - Retrieval: `docs/retrieval.md`

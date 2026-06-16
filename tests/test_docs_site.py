@@ -1332,3 +1332,31 @@ def test_github_pages_workflow_publishes_site_directory() -> None:
     assert "actions/upload-pages-artifact@v3" in workflow
     assert "path: _site" in workflow
     assert "actions/deploy-pages@v4" in workflow
+
+
+def test_export_contract_spec_pins_code_identifiers() -> None:
+    """The export-contract spec must name the load-bearing identifiers from code,
+    so the prose cannot silently drift from what Zaxy actually emits."""
+    import warnings
+
+    from zaxy.export_view import EXPORT_ENTRY_SCHEMA_VERSION, UNSIGNED_BUNDLE_VERSION
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        from zaxy.portable.export import BUNDLE_VERSION
+
+    spec = Path("docs/export-contract.md").read_text(encoding="utf-8")
+
+    # Version strings (the things a consumer pins).
+    assert EXPORT_ENTRY_SCHEMA_VERSION in spec
+    assert UNSIGNED_BUNDLE_VERSION in spec
+    assert BUNDLE_VERSION in spec
+
+    # The pull surfaces (tool name + CLI command names).
+    assert "memory_export" in spec
+    for command in ("zaxy export", "export-disclose", "verify-export-subset"):
+        assert command in spec
+
+    # Referenced from the docs index.
+    readme = Path("README.md").read_text(encoding="utf-8")
+    assert "docs/export-contract.md" in readme
