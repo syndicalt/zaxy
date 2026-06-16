@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Memory Export Contract - Zaxy Docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,600&family=Inter:wght@400;550;650;750;850&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../index.html">Overview</a>
+      <a href="../docs/coordinate-roadmap.html">Coordinate</a>
+      <a href="../docs/why-zaxy.html">Why Zaxy</a>
+      <a href="../docs/benchmarks.html">Benchmarks</a>
+      <a href="getting-started.html">Start</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="memory-export-contract">Memory Export Contract</h1>
+      <p>The export contract is the product-agnostic way to pull a session&#x27;s Zaxy memory out as a portable, cited, optionally-signed bundle that <strong>any</strong> consumer can verify and reuse. Zaxy never needs to know who is asking: a consumer expresses <em>what</em> it wants with a selector and receives entries that carry sealed Eventloom provenance.</p>
+      <p>This page is the authoritative spec. It documents the entry schema, the selector, the three bundle shapes, the two pull surfaces, and the versioning policy. The load-bearing identifiers here are pinned against the code by a drift-guard test, so this document cannot silently fall out of sync with what Zaxy emits.</p>
+      <blockquote><strong>Signing is EXPERIMENTAL and UNAUDITED.</strong> The signed-bundle and partial- disclosure paths build on <code>zaxy.portable</code>, which is opt-in (install <code>zaxy-memory[export]</code>) and pending an independent cryptographic review before any general-availability use. Treat signed export as a preview. The <em>unsigned</em> canonical bundle has no such caveat and is usable today.</blockquote>
+      <h2 id="entry-schema-zaxyexportv1">Entry schema (<code>zaxy.export.v1</code>)</h2>
+      <p>Every export entry is a self-describing, canonical JSON object. It carries its own <code>schema_version</code> so a single entry stays meaningful when disclosed in isolation. Fields:</p>
+      <table>
+        <thead>
+          <tr>
+            <th>field</th>
+            <th>type</th>
+            <th>meaning</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>schema_version</code></td>
+            <td>string</td>
+            <td>Always <code>zaxy.export.v1</code>. Pin this.</td>
+          </tr>
+          <tr>
+            <td><code>grain</code></td>
+            <td>string</td>
+            <td><code>event</code> or <code>semantic</code>.</td>
+          </tr>
+          <tr>
+            <td><code>kind</code></td>
+            <td>string</td>
+            <td>For <code>event</code> grain: the event type (e.g. <code>decision.made</code>). For <code>semantic</code> grain: <code>entity:&lt;entity_type&gt;</code> or <code>edge:&lt;relation_type&gt;</code>.</td>
+          </tr>
+          <tr>
+            <td><code>citation</code></td>
+            <td>string</td>
+            <td>Sealed Eventloom provenance ref: <code>eventloom://&lt;thread&gt;/events/&lt;seq&gt;#&lt;hash&gt;</code> (full-hash form).</td>
+          </tr>
+          <tr>
+            <td><code>seq</code></td>
+            <td>integer</td>
+            <td>Source event sequence number.</td>
+          </tr>
+          <tr>
+            <td><code>valid_from</code></td>
+            <td>string \</td>
+            <td>null</td>
+            <td>ISO-8601 validity start (event timestamp / entity <code>observed_at</code> / edge <code>valid_from</code>).</td>
+          </tr>
+          <tr>
+            <td><code>valid_to</code></td>
+            <td>string \</td>
+            <td>null</td>
+            <td>ISO-8601 validity end (edge <code>valid_to</code>; otherwise <code>null</code>).</td>
+          </tr>
+          <tr>
+            <td><code>source</code></td>
+            <td>string</td>
+            <td>Lane label: <code>eventloom</code> for event grain, <code>extraction</code> for semantic grain.</td>
+          </tr>
+          <tr>
+            <td><code>content</code></td>
+            <td>object</td>
+            <td>The grain-specific payload (below).</td>
+          </tr>
+        </tbody>
+      </table>
+      <p><strong>Event grain</strong> (<code>grain: &quot;event&quot;</code>, <code>source: &quot;eventloom&quot;</code>) — the sealed event:</p>
+      <pre><code class="language-json">{
+  &quot;schema_version&quot;: &quot;zaxy.export.v1&quot;,
+  &quot;grain&quot;: &quot;event&quot;,
+  &quot;kind&quot;: &quot;decision.made&quot;,
+  &quot;citation&quot;: &quot;eventloom://agent-1/events/42#&lt;64-hex-hash&gt;&quot;,
+  &quot;seq&quot;: 42,
+  &quot;valid_from&quot;: &quot;2026-06-15T00:00:00Z&quot;,
+  &quot;valid_to&quot;: null,
+  &quot;source&quot;: &quot;eventloom&quot;,
+  &quot;content&quot;: {&quot;type&quot;: &quot;decision.made&quot;, &quot;actor&quot;: &quot;assistant&quot;, &quot;thread&quot;: &quot;agent-1&quot;, &quot;payload&quot;: {&quot;decision&quot;: &quot;ship it&quot;}}
+}</code></pre>
+      <p><strong>Semantic grain</strong> (<code>grain: &quot;semantic&quot;</code>, <code>source: &quot;extraction&quot;</code>) — the deterministic extraction that also feeds the graph. Entities:</p>
+      <pre><code class="language-json">{
+  &quot;grain&quot;: &quot;semantic&quot;,
+  &quot;kind&quot;: &quot;entity:goal&quot;,
+  &quot;source&quot;: &quot;extraction&quot;,
+  &quot;content&quot;: {&quot;name&quot;: &quot;...&quot;, &quot;entity_type&quot;: &quot;goal&quot;, &quot;summary&quot;: &quot;...&quot;, &quot;properties&quot;: {}}
+}</code></pre>
+      <p>Edges use <code>kind: &quot;edge:&lt;relation_type&gt;&quot;</code> and a <code>content</code> of <code>{source, target, relation_type, confidence, inferred, inference_method, evidence}</code>.</p>
+      <p>Entries are deterministically ordered (ascending <code>seq</code>; within an event the event entry precedes its semantic entries) and byte-stable, so Merkle roots and signatures over them are reproducible.</p>
+      <h2 id="selector">Selector</h2>
+      <p>The selector describes which memory to export. Every axis is optional; the default selects both grains of the whole session.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>axis</th>
+            <th>applies to</th>
+            <th>meaning</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>grains</code></td>
+            <td>both</td>
+            <td>Subset of <code>{event, semantic}</code> (default both).</td>
+          </tr>
+          <tr>
+            <td><code>kinds</code></td>
+            <td>projection</td>
+            <td>Restrict to these <strong>event types</strong> (gates both grains).</td>
+          </tr>
+          <tr>
+            <td><code>since_seq</code></td>
+            <td>both</td>
+            <td>Exclusive delta cursor: <code>seq</code> strictly greater.</td>
+          </tr>
+          <tr>
+            <td><code>max_seq</code></td>
+            <td>both</td>
+            <td>Inclusive upper bound on <code>seq</code>.</td>
+          </tr>
+          <tr>
+            <td><code>since_time</code> / <code>until_time</code></td>
+            <td>both</td>
+            <td>Inclusive ISO-8601 time window over <code>valid_from</code>.</td>
+          </tr>
+          <tr>
+            <td><code>query</code></td>
+            <td>projection-only</td>
+            <td>Lexical pre-filter via the verbatim index.</td>
+          </tr>
+          <tr>
+            <td><code>query_limit</code></td>
+            <td>projection-only</td>
+            <td>Top-N for the <code>query</code> pre-filter (default 50).</td>
+          </tr>
+          <tr>
+            <td><code>exclude_sensitivities</code></td>
+            <td>projection-only</td>
+            <td>Drop entries whose source event sensitivity tier is listed.</td>
+          </tr>
+          <tr>
+            <td><code>limit</code></td>
+            <td>projection</td>
+            <td>Cap to the most recent N matching events.</td>
+          </tr>
+        </tbody>
+      </table>
+      <h3 id="projection-time-vs-entry-level">Projection-time vs entry-level</h3>
+      <p>There are two contexts in which a selector is applied, and they support <strong>different</strong> axes:</p>
+      <ul>
+        <li><strong>Projection</strong> (building entries from the log) supports every axis. <code>query</code> and <code>exclude_sensitivities</code> are decided from the log/event and are therefore</li>
+      </ul>
+      <p><em>projection-only</em>.</p>
+      <ul>
+        <li><strong>Partial disclosure</strong> (selecting which already-built entries to reveal from a signed bundle) is decided from a static entry alone. It supports <code>grains</code>, <code>kinds</code> (matched against the entry&#x27;s <code>kind</code>), and the <code>seq</code>/time bounds. <code>query</code>, <code>exclude_sensitivities</code>, and <code>limit</code> have no meaning over a static entry and are <strong>ignored</strong> during disclosure.</li>
+      </ul>
+      <p>For event-grain entries <code>kinds</code> behaves identically in both contexts (the entry&#x27;s <code>kind</code> <em>is</em> the event type). For semantic entries, disclosure-time <code>kinds</code> matches the <code>entity:</code>/<code>edge:</code> kind.</p>
+      <h2 id="bundle-shapes">Bundle shapes</h2>
+      <h3 id="1-unsigned-canonical-bundle-zaxyexportunsignedv1">1. Unsigned canonical bundle (<code>zaxy.export.unsigned.v1</code>)</h3>
+      <p>Returned when no signing key is supplied. No crypto dependency required.</p>
+      <pre><code class="language-json">{
+  &quot;version&quot;: &quot;zaxy.export.unsigned.v1&quot;,
+  &quot;schema_version&quot;: &quot;zaxy.export.v1&quot;,
+  &quot;session_id&quot;: &quot;agent-1&quot;,
+  &quot;signed&quot;: false,
+  &quot;entries&quot;: [ /* canonical entries, in order */ ]
+}</code></pre>
+      <h3 id="2-signed-bundle-zaxyportablev1">2. Signed bundle (<code>zaxy.portable.v1</code>)</h3>
+      <p>Returned when a signing key is supplied. The signature binds the Merkle root and all metadata. Verify with <code>verify_export(bundle, expect_public_key=...)</code>.</p>
+      <pre><code class="language-json">{
+  &quot;version&quot;: &quot;zaxy.portable.v1&quot;,
+  &quot;algorithm&quot;: &quot;ml-dsa-65&quot;,
+  &quot;public_key&quot;: &quot;&lt;hex&gt;&quot;,
+  &quot;session_id&quot;: &quot;agent-1&quot;,
+  &quot;created_at&quot;: &quot;2026-06-15T00:00:00+00:00&quot;,
+  &quot;nonce&quot;: &quot;&lt;hex&gt;&quot;,
+  &quot;merkle_root&quot;: &quot;&lt;hex&gt;&quot;,
+  &quot;anchor&quot;: null,
+  &quot;entries&quot;: [ {&quot;id&quot;: &quot;&lt;sha256&gt;&quot;, &quot;content&quot;: { /* canonical entry */ }} ],
+  &quot;signature&quot;: &quot;&lt;hex&gt;&quot;
+}</code></pre>
+      <h3 id="3-disclosed-subset">3. Disclosed subset</h3>
+      <p>A verifiable partial disclosure of a signed bundle: only the chosen entries plus Merkle inclusion proofs, so a recipient can prove each disclosed entry is an authentic member of the signed set <strong>without seeing the undisclosed ones</strong>. Verify with <code>verify_memory_export_subset(subset, expect_public_key=...)</code>.</p>
+      <pre><code class="language-json">{
+  &quot;version&quot;: &quot;zaxy.portable.v1&quot;,
+  &quot;algorithm&quot;: &quot;ml-dsa-65&quot;,
+  &quot;public_key&quot;: &quot;&lt;hex&gt;&quot;,
+  &quot;session_id&quot;: &quot;agent-1&quot;,
+  &quot;created_at&quot;: &quot;...&quot;, &quot;nonce&quot;: &quot;...&quot;, &quot;merkle_root&quot;: &quot;&lt;hex&gt;&quot;, &quot;signature&quot;: &quot;&lt;hex&gt;&quot;,
+  &quot;disclosed&quot;: [ {&quot;index&quot;: 0, &quot;content&quot;: { /* canonical entry */ }, &quot;proof&quot;: [[&quot;&lt;hex&gt;&quot;, &quot;left&quot;]]} ]
+}</code></pre>
+      <p>Partial disclosure requires a <strong>signed</strong> bundle (it proves membership against the signed Merkle root); an unsigned envelope cannot be disclosed.</p>
+      <h2 id="pull-surfaces">Pull surfaces</h2>
+      <p>Both surfaces converge on a single projection + signing path, so they always agree on entry contents.</p>
+      <h3 id="mcp-tool-memoryexport">MCP tool: <code>memory_export</code></h3>
+      <p>Arguments mirror the selector: <code>session_id</code>, <code>grains</code>, <code>kinds</code>, <code>since_seq</code>, <code>max_seq</code>, <code>since_time</code>, <code>until_time</code>, <code>query</code>, <code>query_limit</code>, <code>exclude_sensitivities</code>, <code>limit</code>. Plus:</p>
+      <ul>
+        <li><code>sign</code> (boolean): sign with the <strong>server-configured</strong> export key. A private key is never accepted as a tool argument.</li>
+        <li><code>disclose</code> (object): an entry-level sub-selector (<code>grains</code>, <code>kinds</code>, <code>since_seq</code>, <code>max_seq</code>, <code>since_time</code>, <code>until_time</code>). When present, the tool signs the full bundle over the main selector and returns the verifiable subset for entries matching <code>disclose</code> (requires the server key).</li>
+        <li><code>admin_token</code>: required when admin gating is configured.</li>
+      </ul>
+      <p>The tool is admin-gated and session-scoped, and runs the projection off the event loop. Server-side signing is configured via the <code>mcp_export_signing_private_key_file</code>, <code>mcp_export_signing_public_key_file</code>, and <code>mcp_export_signing_algorithm</code> settings.</p>
+      <h3 id="cli">CLI</h3>
+      <pre><code class="language-sh"># Generate a self-sovereign signing keypair (optional; for signed bundles).
+zaxy export-keygen --out-private k.pem --out-public k.pub --algorithm ed25519
+
+# Export a bundle. Omit the keys for an unsigned canonical bundle.
+zaxy export --out bundle.json --eventloom-path .eventloom --session-id agent-1 \
+    --grains event,semantic --since 100 --types decision.made,goal.created \
+    --private-key k.pem --public-key k.pub --algorithm ed25519
+
+# Verify a signed bundle (pin the public key to establish trust).
+zaxy verify-export bundle.json --expect-public-key &lt;hex&gt;
+
+# Disclose a verifiable subset of a signed bundle, selected by predicate.
+zaxy export-disclose bundle.json --grains event --kinds goal.created --out subset.json
+
+# Verify a disclosed subset.
+zaxy verify-export-subset subset.json --expect-public-key &lt;hex&gt;</code></pre>
+      <p>The CLI <code>export</code> accepts the full selector: <code>--grains</code>, <code>--types</code> (event-type <code>kinds</code>), <code>--since</code> (<code>since_seq</code>), <code>--max-seq</code>, <code>--since-time</code>, <code>--until-time</code>, <code>--query</code>, <code>--exclude-sensitivities</code>, <code>--limit</code>.</p>
+      <h2 id="versioning-and-compatibility">Versioning and compatibility</h2>
+      <p>Three independent version strings let a consumer pin exactly what it depends on:</p>
+      <ul>
+        <li><strong><code>schema_version</code></strong> (<code>zaxy.export.v1</code>) — the entry shape. Present on every entry and on the unsigned envelope.</li>
+        <li><strong>The unsigned envelope <code>version</code></strong> (<code>zaxy.export.unsigned.v1</code>).</li>
+        <li><strong>The signed bundle/subset <code>version</code></strong> (<code>zaxy.portable.v1</code>) — the portable signing + Merkle format.</li>
+      </ul>
+      <p>Compatibility policy:</p>
+      <ul>
+        <li><strong>Additive change</strong> (new optional entry field, new selector axis, new event type surfaced) does <strong>not</strong> bump a version. Consumers must ignore unknown fields.</li>
+        <li><strong>Breaking change</strong> (removing/renaming a field, changing a field&#x27;s meaning, or changing canonicalization) bumps the relevant version string. A consumer should pin the version(s) it understands and reject others.</li>
+      </ul>
+      <p>Verifiers establish trust in a signer out-of-band by pinning the public key (<code>expect_public_key</code>); there is no certificate authority.</p>
+      <p>See also: the <a href="mcp.html">MCP interface</a>, the <a href="eventloom.html">Eventloom contract</a>, and <code>docs/experimental/portable-export-security.md</code> for the signing security model.</p>
+    </article>
+  </main>
+</body>
+</html>
