@@ -34,7 +34,6 @@ from zaxy.cli.runtime import (
 )
 from zaxy.cli.workspace import (
     _checkout_activity_metadata,
-    _checkout_fallback_embedded_graph_path,
     _is_embedded_projection_lock_error,
     _resolve_cli_projection_backend,
 )
@@ -330,8 +329,17 @@ def memory_checkout(
     """Checkout current, cited memory state for an agent turn."""
     import asyncio
 
-    async def _checkout_with_path(embedded_graph_path: Path) -> dict[str, object]:
+    async def _checkout_with_path(
+        embedded_graph_path: Path, *, projection_backend_override: str | None = None
+    ) -> dict[str, object]:
         settings = _status_settings(_profile_root_for_eventloom_path(eventloom_path))
+        projection_backend = projection_backend_override or _resolve_cli_projection_backend(
+            None,
+            settings,
+            neo4j_uri=neo4j_uri,
+            neo4j_user=neo4j_user,
+            neo4j_password=neo4j_password,
+        )
         fabric = _runtime.MemoryFabric(
             eventloom_path=str(eventloom_path),
             neo4j_uri=neo4j_uri,
@@ -339,13 +347,7 @@ def memory_checkout(
             neo4j_password=neo4j_password,
             neo4j_ca_cert=neo4j_ca_cert,
             neo4j_trust_all=neo4j_trust_all,
-            projection_backend=_resolve_cli_projection_backend(
-                None,
-                settings,
-                neo4j_uri=neo4j_uri,
-                neo4j_user=neo4j_user,
-                neo4j_password=neo4j_password,
-            ),
+            projection_backend=projection_backend,
             pggraph_dsn=settings.pggraph_dsn,
             embedded_graph_path=embedded_graph_path,
             latticedb_path=Path(settings.latticedb_path),
@@ -373,20 +375,24 @@ def memory_checkout(
         except RuntimeError as exc:
             if not _is_embedded_projection_lock_error(exc):
                 raise
-            fallback_path = _checkout_fallback_embedded_graph_path(
-                eventloom_path=eventloom_path,
-                session_id=session_id,
+            # The embedded projection is held by another process (typically the
+            # long-lived MCP server's exclusive lock). Rather than stand up a
+            # throwaway empty projection — which pays full schema/index setup
+            # (~10s) yet returns no graph results anyway — run the checkout
+            # graph-degraded on the verbatim + verified-replay lanes. Same
+            # retrieval outcome a locked-out checkout produced before, far faster.
+            payload = await _checkout_with_path(
+                embedded_graph_path, projection_backend_override="null"
             )
-            payload = await _checkout_with_path(fallback_path)
             diagnostics = payload.get("diagnostics")
             if not isinstance(diagnostics, dict):
                 diagnostics = {}
                 payload["diagnostics"] = diagnostics
             diagnostics["projection_fallback"] = {
-                "status": "used",
+                "status": "graph_degraded",
                 "reason": "embedded_projection_locked",
                 "original_path": str(embedded_graph_path),
-                "fallback_path": str(fallback_path),
+                "detail": "graph lane disabled; verbatim + verified replay only",
             }
             return payload
 
