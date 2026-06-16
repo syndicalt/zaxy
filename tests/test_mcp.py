@@ -2685,26 +2685,18 @@ class TestContextLifecycleTools:
         )
         replay = MagicMock(events=[event])
         server.session_manager.replay.return_value = replay
-        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
-            router = AsyncMock()
-            router.query.return_value = [
-                MagicMock(
-                    content="MMR diversity (decision)",
-                    source="keyword",
-                    score=0.9,
-                    valid_from=None,
-                    valid_to=None,
-                    citation=None,
-                    score_explanation=None,
-                )
+        server._fabric.query = AsyncMock(  # type: ignore[method-assign]
+            return_value=[
+                Context(content="MMR diversity (decision)", source="keyword", score=0.9, metadata={})
             ]
-            mock_router_cls.return_value = router
+        )
+        server._fabric.query_verbatim = AsyncMock(return_value=[])  # type: ignore[method-assign]
 
-            result = await server.handle_context_assemble({
-                "query": "retrieval decision",
-                "session_id": "agent-1",
-                "max_recent_events": 1,
-            })
+        result = await server.handle_context_assemble({
+            "query": "retrieval decision",
+            "session_id": "agent-1",
+            "max_recent_events": 1,
+        })
 
         output = json_loads(result[0].text)
         assert output["session_id"] == "agent-1"
@@ -3144,35 +3136,20 @@ class TestContextLifecycleTools:
             },
             thread="agent-1",
         )
-        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
-            router = AsyncMock()
-            router.query.return_value = [
-                MagicMock(
-                    content="Graph summary of audit trail",
-                    source="keyword",
-                    score=0.7,
-                    valid_from=None,
-                    valid_to=None,
-                    citation="eventloom://agent-1/events/1#graph",
-                    score_explanation=None,
-                ),
-                MagicMock(
-                    content="Lower-priority graph context",
-                    source="traversal",
-                    score=0.4,
-                    valid_from=None,
-                    valid_to=None,
-                    citation="eventloom://agent-1/events/2#graph",
-                    score_explanation=None,
-                ),
+        # Graph lane via the shared fabric; verbatim lane stays real (the appended
+        # transcript event), exercising the assembly's source-lane blend.
+        server._fabric.query = AsyncMock(  # type: ignore[method-assign]
+            return_value=[
+                Context(content="Graph summary of audit trail", source="keyword", score=0.7, metadata={"citation": "eventloom://agent-1/events/1#graph"}),
+                Context(content="Lower-priority graph context", source="traversal", score=0.4, metadata={"citation": "eventloom://agent-1/events/2#graph"}),
             ]
-            mock_router_cls.return_value = router
+        )
 
-            result = await server.handle_context_assemble({
-                "query": "identity-code-0042",
-                "session_id": "agent-1",
-                "limit": 2,
-            })
+        result = await server.handle_context_assemble({
+            "query": "identity-code-0042",
+            "session_id": "agent-1",
+            "limit": 2,
+        })
 
         output = json_loads(result[0].text)
         assert [context["source"] for context in output["contexts"]] == ["keyword", "verbatim"]

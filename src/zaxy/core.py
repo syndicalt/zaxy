@@ -299,6 +299,27 @@ class HandoffBundle:
     replay_event_count: int
     integrity_ok: bool
 
+    def to_dict(self) -> dict[str, Any]:
+        """Return a stable JSON-serializable handoff payload."""
+        return {
+            "session_id": self.session_id,
+            "summary": self.summary,
+            "prompt": self.prompt,
+            "contexts": [
+                {
+                    "content": context.content,
+                    "source": context.source,
+                    "score": context.score,
+                    "valid_from": context.valid_from,
+                    "valid_to": context.valid_to,
+                    "metadata": context.metadata,
+                }
+                for context in self.contexts
+            ],
+            "replay_event_count": self.replay_event_count,
+            "integrity_ok": self.integrity_ok,
+        }
+
 
 @dataclass(frozen=True)
 class ContextRefreshReport:
