@@ -2,6 +2,31 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 2.5.2 - 2026-06-16
+
+Maintenance release: cold-checkout performance on large logs. No new features,
+no API or retrieval-result changes — a fresh process (CLI invocation, server
+restart) now rehydrates from a large session log substantially faster.
+
+- **Persistent verified-replay checkpoint.** A cold process verifies only the
+  tail appended after a persisted `{covered_seq, covered_hash}` tip instead of
+  re-hashing the whole chain. Cold verified replay on a ~115 MB log: ~7.3s → ~3.5s.
+  Pure cache: any mismatch/corruption falls back to a full verified replay, so
+  the hash-chain integrity guarantee is preserved.
+- **Persistent verbatim index checkpoint.** The BM25 index is persisted
+  (chunks + tokenization) and a cold process loads it and extends only the tail
+  instead of re-tokenizing the whole corpus. Verbatim cold path ~16s → ~6s.
+  Byte-identical rankings to a full rebuild; full-rebuild fallback on any miss.
+- **Graph-degraded fallback when the embedded projection is locked.** When the
+  exclusive LadybugDB lock is held by another process (typically a long-lived
+  MCP server), a second-process checkout now runs graph-degraded (verbatim +
+  verified replay) via a null projection backend instead of standing up a
+  throwaway empty projection — removing wasted schema/index setup and per-process
+  projection litter. Surfaced via checkout diagnostics.
+
+Net: cold/restart checkout on a large log ~18-22s → ~10-12s; steady-state
+(warm) checkout is unchanged.
+
 ## 2.5.1 - 2026-06-16
 
 Maintenance release: architectural alignment and internal decomposition. No
