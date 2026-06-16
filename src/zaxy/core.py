@@ -242,6 +242,26 @@ class QueryPage:
     has_more: bool
     offset: int
 
+    def to_dict(self) -> dict[str, Any]:
+        """Return a stable JSON-serializable pagination payload."""
+        return {
+            "contexts": [
+                {
+                    "content": context.content,
+                    "source": context.source,
+                    "score": context.score,
+                    "valid_from": context.valid_from,
+                    "valid_to": context.valid_to,
+                    "metadata": context.metadata,
+                }
+                for context in self.contexts
+            ],
+            "next_cursor": self.next_cursor,
+            "cursor": self.cursor,
+            "has_more": self.has_more,
+            "offset": self.offset,
+        }
+
 
 def checkout_token_efficiency(
     *,
@@ -265,26 +285,6 @@ def _approx_tokens(text: str) -> int:
     if not text:
         return 0
     return max(1, (len(text) + 3) // 4)
-
-    def to_dict(self) -> dict[str, Any]:
-        """Return a stable JSON-serializable pagination payload."""
-        return {
-            "contexts": [
-                {
-                    "content": context.content,
-                    "source": context.source,
-                    "score": context.score,
-                    "valid_from": context.valid_from,
-                    "valid_to": context.valid_to,
-                    "metadata": context.metadata,
-                }
-                for context in self.contexts
-            ],
-            "next_cursor": self.next_cursor,
-            "cursor": self.cursor,
-            "has_more": self.has_more,
-            "offset": self.offset,
-        }
 
 
 @dataclass(frozen=True)
