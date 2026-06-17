@@ -1033,6 +1033,11 @@ def doctor(
         "--require-external-validation",
         help="Fail beta readiness when external validation evidence is missing",
     ),
+    repair: bool = typer.Option(
+        False,
+        "--repair",
+        help="Reap a broken embedded MCP owner (lock held but no healthy socket) for this workspace",
+    ),
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
 ) -> None:
     """Run local setup and onboarding checks."""
@@ -1082,7 +1087,7 @@ def doctor(
                 Path(eventloom_path) / "projections" / "embedded.kuzu"
             )
         settings = settings.model_copy(update=update)
-    report = run_doctor(settings=settings)
+    report = run_doctor(settings=settings, repair=repair)
     if json_output:
         typer.echo(json.dumps(report, indent=2, sort_keys=True))
     else:

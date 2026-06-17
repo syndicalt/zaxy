@@ -1248,6 +1248,15 @@ def serve(
         )
         owner_claim = embedded_stdio_coordinator.try_claim_owner()
         if owner_claim is None:
+            # A live-but-broken owner (lock held, socket dead) would wedge every
+            # client that tries to proxy to it. Attempt a verified reap-and-reclaim
+            # before falling back to proxy; a healthy owner is never reaped.
+            repair = embedded_stdio_coordinator.repair_stale_runtime(
+                reap=True, expected_graph_path=embedded_graph_path
+            )
+            if repair.get("repaired"):
+                owner_claim = embedded_stdio_coordinator.try_claim_owner()
+        if owner_claim is None:
             asyncio.run(mcp_server.proxy_main(embedded_stdio_coordinator))
             return
 
