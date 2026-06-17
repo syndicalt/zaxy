@@ -79,9 +79,7 @@ class EmbeddedMcpRuntimeCoordinator:
         self.paths = paths
 
     @classmethod
-    def from_eventloom_path(cls, eventloom_path: str | Path) -> EmbeddedMcpRuntimeCoordinator:
-        eventloom = Path(eventloom_path)
-        runtime_dir = eventloom / "runtime"
+    def _from_runtime_dir(cls, runtime_dir: Path) -> EmbeddedMcpRuntimeCoordinator:
         return cls(
             EmbeddedMcpRuntimePaths(
                 runtime_dir=runtime_dir,
@@ -90,6 +88,28 @@ class EmbeddedMcpRuntimeCoordinator:
                 socket_path=runtime_dir / "zaxy-embedded-owner.sock",
             )
         )
+
+    @classmethod
+    def from_eventloom_path(cls, eventloom_path: str | Path) -> EmbeddedMcpRuntimeCoordinator:
+        return cls._from_runtime_dir(Path(eventloom_path) / "runtime")
+
+    @classmethod
+    def from_embedded_graph_path(
+        cls, embedded_graph_path: str | Path
+    ) -> EmbeddedMcpRuntimeCoordinator:
+        """Coordinate on the embedded STORE path, not the eventloom path.
+
+        The owner lock must protect the actual store: two processes that open the
+        same embedded store must coordinate even if they resolved their eventloom
+        path differently (the divergence that let multiple owners corrupt one
+        store). The runtime dir is derived from the *resolved* store path, so it
+        is identical for any process pointing at the same store. For the standard
+        layout (``<eventloom>/projections/embedded.kuzu``) this resolves to the
+        same ``<eventloom>/runtime`` location as :meth:`from_eventloom_path`.
+        """
+        store = Path(embedded_graph_path).resolve()
+        eventloom = store.parent.parent if store.parent.name == "projections" else store.parent
+        return cls._from_runtime_dir(eventloom / "runtime")
 
     def try_claim_owner(self) -> EmbeddedMcpOwnerClaim | None:
         """Return an owner claim, or None when another owner is active."""

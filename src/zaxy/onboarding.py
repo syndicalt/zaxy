@@ -186,8 +186,8 @@ async def run_onboarding(
     steps.append(OnboardingStep("eventloom", "ok", "Eventloom directory is ready", str(eventloom)))
     selected_projection_backend = projection_backend or Settings().projection_backend
     if selected_projection_backend.casefold().strip() == "embedded":
-        embedded_runtime_report = EmbeddedMcpRuntimeCoordinator.from_eventloom_path(
-            eventloom
+        embedded_runtime_report = EmbeddedMcpRuntimeCoordinator.from_embedded_graph_path(
+            Path(eventloom) / "projections" / "embedded.kuzu"
         ).repair_stale_runtime()
         if embedded_runtime_report["repaired"] or embedded_runtime_report["status"] != "ok":
             steps.append(
