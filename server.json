@@ -6,12 +6,12 @@
     "url": "https://github.com/syndicalt/zaxy",
     "source": "github"
   },
-  "version": "2.5.2",
+  "version": "2.5.3",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "zaxy-memory",
-      "version": "2.5.2",
+      "version": "2.5.3",
       "runtimeHint": "uvx",
       "packageArguments": [
         { "type": "positional", "value": "serve" }
