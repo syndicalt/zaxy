@@ -975,7 +975,9 @@ def _check_embedded_mcp_runtime(settings: Settings) -> dict[str, Any]:
             "status": "ok",
             "message": f"not applicable for projection backend {backend}",
         }
-    report = EmbeddedMcpRuntimeCoordinator.from_eventloom_path(settings.eventloom_path).repair_stale_runtime()
+    report = EmbeddedMcpRuntimeCoordinator.from_embedded_graph_path(
+        settings.embedded_graph_path
+    ).repair_stale_runtime()
     check = {
         "name": "embedded_mcp_runtime",
         "status": report["status"],

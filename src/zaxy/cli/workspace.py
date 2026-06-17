@@ -1074,7 +1074,14 @@ def doctor(
 
     settings = get_settings()
     if eventloom_path is not None:
-        settings = settings.model_copy(update={"eventloom_path": eventloom_path})
+        update: dict[str, str] = {"eventloom_path": eventloom_path}
+        # Keep the embedded store (and thus the owner-runtime lock, which keys on
+        # the store) aligned with the overridden eventloom path, mirroring serve.
+        if settings.embedded_graph_path == ".eventloom/projections/embedded.kuzu":
+            update["embedded_graph_path"] = str(
+                Path(eventloom_path) / "projections" / "embedded.kuzu"
+            )
+        settings = settings.model_copy(update=update)
     report = run_doctor(settings=settings)
     if json_output:
         typer.echo(json.dumps(report, indent=2, sort_keys=True))

@@ -282,6 +282,28 @@ def _is_incompatible_storage_error(exc: RuntimeError) -> bool:
     return _INCOMPATIBLE_STORAGE_MARKER in str(exc)
 
 
+# Markers for a structurally damaged store (vs an unreadable-format one). The
+# common case is a dirty/uncheckpointed WAL left by an uncleanly-killed owner,
+# which surfaces as a LadybugDB C++ assertion on WAL replay. The store is
+# derived state, so the correct remediation is identical to the incompatible
+# case: move the artifact aside (never delete) and rebuild from the Eventloom
+# log. The lock-contention error is deliberately NOT matched here — that is
+# handled by graph-degraded fallback, not by moving the store aside.
+_CORRUPT_STORE_MARKERS = (
+    "UNREACHABLE_CODE",
+    "wal_record",
+    "Assertion failed",
+)
+
+
+def _is_corrupt_store_error(exc: RuntimeError) -> bool:
+    """Match a structurally corrupt embedded store (e.g. dirty/broken WAL)."""
+    message = str(exc)
+    if "Could not set lock" in message:
+        return False
+    return any(marker in message for marker in _CORRUPT_STORE_MARKERS)
+
+
 def pre_ladybug_backup_paths(path: Path) -> list[Path]:
     """Return existing pre-LadybugDB backup artifacts for one projection path.
 

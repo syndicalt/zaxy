@@ -9,6 +9,7 @@ import tempfile
 from collections import Counter
 from functools import lru_cache
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 import pytest
@@ -4064,6 +4065,90 @@ def test_embedded_store_incompatible_storage_error_matcher_is_specific() -> None
         RuntimeError("IO exception: Could not set lock on file : embedded.kuzu")
     )
     assert not embedded_graph_store._is_incompatible_storage_error(RuntimeError("disk full"))
+
+
+def test_embedded_store_corrupt_store_error_matcher_is_specific() -> None:
+    """A structurally damaged store (dirty WAL / assertion) self-heals; the
+    lock-contention error must NOT (that is graph-degraded, not move-aside).
+    """
+    assert embedded_graph_store._is_corrupt_store_error(
+        RuntimeError(
+            'Assertion failed in file "/__w/ladybug/ladybug/src/storage/wal/'
+            'wal_record.cpp" on line 76: UNREACHABLE_CODE'
+        )
+    )
+    # Lock contention is a different remedy (degrade), never move-aside.
+    assert not embedded_graph_store._is_corrupt_store_error(
+        RuntimeError("IO exception: Could not set lock on file : embedded.kuzu")
+    )
+    assert not embedded_graph_store._is_corrupt_store_error(RuntimeError("disk full"))
+
+
+@pytest.mark.asyncio
+async def test_embedded_store_connect_self_heals_a_corrupt_store(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A store that throws a corruption error on open is moved aside (not deleted)
+    and a fresh projection is opened in its place — the F4 self-heal so a dirty
+    WAL degrades gracefully instead of crashing every checkout.
+    """
+    import logging
+
+    path = tmp_path / "embedded.kuzu"
+    path.write_bytes(b"corrupt store bytes " * 32)
+    path.with_name(path.name + ".wal").write_bytes(b"dirty wal bytes")
+
+    real_database = embedded_graph_store.__dict__.get("ladybug")
+    calls = {"n": 0}
+    import ladybug
+
+    real_db_cls = ladybug.Database
+
+    def _flaky_database(arg, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+        calls["n"] += 1
+        # First open (the corrupt artifact still in place) raises a WAL assertion;
+        # after connect() moves it aside, the fresh open succeeds.
+        if calls["n"] == 1 and Path(str(arg)) == path and path.exists():
+            raise RuntimeError(
+                'Assertion failed in file "src/storage/wal/wal_record.cpp" on line 76: '
+                "UNREACHABLE_CODE"
+            )
+        return real_db_cls(arg, *args, **kwargs)
+
+    store = EmbeddedGraphStore(path)
+    with caplog.at_level(logging.WARNING, logger="zaxy.embedded_graph_store"), patch.object(
+        ladybug, "Database", _flaky_database
+    ):
+        await store.connect()
+    try:
+        await store.init_schema()
+        await store.upsert_extraction(
+            ExtractionResult(
+                entities=[
+                    ExtractedEntity(
+                        name="Healed Goal",
+                        entity_type="goal",
+                        observed_at="2026-06-16T01:00:00Z",
+                        summary="rebuilt after WAL corruption",
+                    )
+                ],
+                edges=[],
+                source_event_seq=1,
+                source_event_hash="heal-hash",
+            ),
+            session_id="agent-1",
+        )
+        assert [e.name for e in await store.search_exact("Healed Goal", session_id="agent-1")] == [
+            "Healed Goal"
+        ]
+    finally:
+        await store.close()
+
+    backup = path.with_name(path.name + ".pre-ladybug.bak")
+    assert backup.read_bytes() == b"corrupt store bytes " * 32  # moved aside, not deleted
+    assert any("corrupt" in record.getMessage().casefold() for record in caplog.records)
+    _ = real_database
 
 
 def test_embedded_store_armor_inlines_json_shaped_string_parameters() -> None:

@@ -27,6 +27,35 @@ def _short_socket_coordinator(tmp_path: Path) -> EmbeddedMcpRuntimeCoordinator:
     )
 
 
+def test_store_keyed_coordinator_coordinates_same_store_across_eventloom_paths(tmp_path):
+    """The owner lock must key on the STORE, not the eventloom path, so two
+    processes that open the same embedded store coordinate even if they resolved
+    their eventloom path differently (the divergence that allowed multiple owners).
+    """
+    eventloom = tmp_path / ".eventloom"
+    store = eventloom / "projections" / "embedded.kuzu"
+    store.parent.mkdir(parents=True, exist_ok=True)
+
+    # Standard layout: the store-keyed runtime resolves to <eventloom>/runtime,
+    # matching the eventloom-keyed location (no transition orphaning).
+    by_store = EmbeddedMcpRuntimeCoordinator.from_embedded_graph_path(store)
+    by_eventloom = EmbeddedMcpRuntimeCoordinator.from_eventloom_path(eventloom)
+    assert by_store.paths.lock_path.resolve() == by_eventloom.paths.lock_path.resolve()
+
+    # Same store reached via a different (un-normalized) path string still keys
+    # to the same lock — so a divergent eventloom arg can't mint a second owner.
+    divergent = EmbeddedMcpRuntimeCoordinator.from_embedded_graph_path(
+        eventloom / "x" / ".." / "projections" / "embedded.kuzu"
+    )
+    assert divergent.paths.lock_path.resolve() == by_store.paths.lock_path.resolve()
+
+    owner = by_store.try_claim_owner()
+    second = divergent.try_claim_owner()
+    assert owner is not None
+    assert second is None  # same store -> same lock -> refused
+    owner.close()
+
+
 def test_embedded_runtime_allows_single_owner_claim(tmp_path):
     """Only one embedded MCP process should own a workspace runtime."""
     coordinator = _short_socket_coordinator(tmp_path)

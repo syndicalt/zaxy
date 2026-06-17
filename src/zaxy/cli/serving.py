@@ -1240,7 +1240,12 @@ def serve(
     owner_claim = None
     embedded_stdio_coordinator = None
     if transport == "stdio" and projection_backend.casefold().strip() == "embedded":
-        embedded_stdio_coordinator = EmbeddedMcpRuntimeCoordinator.from_eventloom_path(resolved_eventloom_path)
+        # Key the owner lock on the STORE path (not the eventloom path) so two
+        # processes opening the same embedded store always coordinate, even if
+        # they resolved their eventloom path differently.
+        embedded_stdio_coordinator = EmbeddedMcpRuntimeCoordinator.from_embedded_graph_path(
+            embedded_graph_path
+        )
         owner_claim = embedded_stdio_coordinator.try_claim_owner()
         if owner_claim is None:
             asyncio.run(mcp_server.proxy_main(embedded_stdio_coordinator))

@@ -58,6 +58,7 @@ from zaxy.embedded_graph_internals import (
     _event_key,
     _exact_rerank_results,
     _first_count,
+    _is_corrupt_store_error,
     _is_incompatible_storage_error,
     _is_missing_projection_table_error,
     _json_dict,
@@ -148,16 +149,24 @@ class EmbeddedGraphStore:
         try:
             self._database = ladybug.Database(str(self.path))
         except RuntimeError as exc:
-            if not _is_incompatible_storage_error(exc):
+            incompatible = _is_incompatible_storage_error(exc)
+            corrupt = _is_corrupt_store_error(exc)
+            if not (incompatible or corrupt):
                 raise
             backup_path = _move_incompatible_store_aside(self.path)
+            reason = (
+                "was written by the pre-fork Kuzu engine and is not readable by LadybugDB"
+                if incompatible
+                else "is structurally corrupt (e.g. a dirty WAL left by an uncleanly-killed "
+                "process); the projection is derived state"
+            )
             logger.warning(
-                "embedded projection at %s was written by the pre-fork Kuzu engine and is "
-                "not readable by LadybugDB; it was moved aside to %s (no data deleted) and "
+                "embedded projection at %s %s; it was moved aside to %s (no data deleted) and "
                 "a fresh projection store was created. Rebuild full history with "
                 "`zaxy reproject <eventloom log>`; the backup is safe to delete once the "
                 "rebuilt projection is verified (zaxy doctor reports it until then).",
                 self.path,
+                reason,
                 backup_path,
             )
             self._database = ladybug.Database(str(self.path))

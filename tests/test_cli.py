@@ -4339,13 +4339,17 @@ def test_serve_embedded_stdio_claims_runtime_owner(
     owner = MagicMock()
     coordinator = MagicMock()
     coordinator.try_claim_owner.return_value = owner
-    mock_coordinator_cls.from_eventloom_path.return_value = coordinator
+    mock_coordinator_cls.from_embedded_graph_path.return_value = coordinator
     runner = CliRunner()
 
     result = runner.invoke(app, ["serve"], catch_exceptions=False, env={}, color=False, prog_name="zaxy")
 
     assert result.exit_code == 0
-    mock_coordinator_cls.from_eventloom_path.assert_called_once_with(str(tmp_path / ".eventloom"))
+    # The owner lock is keyed on the STORE path (not the eventloom path) so two
+    # processes opening the same store always coordinate.
+    mock_coordinator_cls.from_embedded_graph_path.assert_called_once()
+    claimed_store = str(mock_coordinator_cls.from_embedded_graph_path.call_args.args[0])
+    assert claimed_store.endswith("embedded.kuzu")
     coordinator.try_claim_owner.assert_called_once_with()
     mock_server_cls.assert_called_once()
     mock_mcp_main.assert_awaited_once_with(owner_claim=owner)
@@ -4366,7 +4370,7 @@ def test_serve_embedded_stdio_proxies_when_owner_exists(
     monkeypatch.setattr("zaxy.mcp_server.server", None)
     coordinator = MagicMock()
     coordinator.try_claim_owner.return_value = None
-    mock_coordinator_cls.from_eventloom_path.return_value = coordinator
+    mock_coordinator_cls.from_embedded_graph_path.return_value = coordinator
     runner = CliRunner()
 
     result = runner.invoke(app, ["serve"], catch_exceptions=False, env={}, color=False, prog_name="zaxy")
