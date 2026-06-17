@@ -2,6 +2,31 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 2.5.3 - 2026-06-16
+
+Reliability release: protect the embedded projection from multi-owner corruption.
+Fixes a class of failure where multiple `zaxy serve` processes against one
+Eventloom (e.g. accumulated orphans from prior sessions, or two clients in one
+repo) could corrupt the LadybugDB store and hang every checkout.
+
+- **Owner lock keyed on the store, not the eventloom path.** Two processes that
+  open the same embedded store now coordinate (one owner + N proxies) even if
+  they resolved their eventloom path differently — closing the divergence that
+  let multiple owners open one store.
+- **Corrupt-store self-heal.** A structurally damaged store (e.g. a dirty WAL
+  left by an uncleanly-killed process) is now moved aside and rebuilt from the
+  log on open — the projection is derived state — instead of crashing every
+  checkout. Recovery mirrors the existing incompatible-format path; nothing is
+  deleted.
+- **Broken/orphaned owner reaping.** A live-but-broken owner (lock held, owner
+  socket dead) is now recovered automatically, but only when verifiably a
+  `zaxy serve` for this store: via serve-startup self-heal and a new
+  `zaxy doctor --repair`. A healthy owner or another workspace's server is never
+  touched.
+
+No API or retrieval-result changes. Multi-client use (two agents in one repo)
+keeps working as one-owner-plus-proxies.
+
 ## 2.5.2 - 2026-06-16
 
 Maintenance release: cold-checkout performance on large logs. No new features,
