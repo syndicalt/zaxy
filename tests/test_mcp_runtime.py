@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import socket
 import threading
@@ -54,6 +55,82 @@ def test_store_keyed_coordinator_coordinates_same_store_across_eventloom_paths(t
     assert owner is not None
     assert second is None  # same store -> same lock -> refused
     owner.close()
+
+
+def test_owner_pid_reapable_only_when_verified(tmp_path, monkeypatch):
+    """The reaper must refuse to kill anything it cannot verify is a broken
+    zaxy-serve owner for THIS store — the safety guard on a dangerous operation.
+    """
+    coord = _short_socket_coordinator(tmp_path)
+
+    assert coord._owner_pid_is_reapable(None, None) is False  # no record
+    assert coord._owner_pid_is_reapable({"pid": "x"}, None) is False  # bad pid
+    assert coord._owner_pid_is_reapable({"pid": os.getpid()}, None) is False  # never self
+
+    # Pretend the pid is alive for the remaining checks.
+    monkeypatch.setattr(os, "kill", lambda pid, sig: None)
+
+    # Alive but not a zaxy serve -> never reaped.
+    monkeypatch.setattr(coord, "_process_cmdline", lambda pid: "/usr/bin/python other_app.py")
+    assert coord._owner_pid_is_reapable({"pid": 4242}, None) is False
+
+    # A zaxy serve, but for a DIFFERENT store -> never reaped.
+    monkeypatch.setattr(coord, "_process_cmdline", lambda pid: "python /x/zaxy serve")
+    assert (
+        coord._owner_pid_is_reapable(
+            {"pid": 4242, "graph_path": "/a/.eventloom/projections/embedded.kuzu"},
+            "/b/.eventloom/projections/embedded.kuzu",
+        )
+        is False
+    )
+
+    # A zaxy serve for THIS store -> reapable.
+    assert (
+        coord._owner_pid_is_reapable(
+            {"pid": 4242, "graph_path": "/b/.eventloom/projections/embedded.kuzu"},
+            "/b/.eventloom/projections/embedded.kuzu",
+        )
+        is True
+    )
+
+
+def test_repair_reaps_verified_broken_owner_and_reclaims(tmp_path, monkeypatch):
+    """A live-but-broken owner (lock held, dead socket) is reaped and the runtime
+    reclaimed — but only with reap=True and only when verified.
+    """
+    coord = _short_socket_coordinator(tmp_path)
+    holder = coord.try_claim_owner()  # stand in for the broken owner holding the lock
+    assert holder is not None
+    coord.paths.owner_path.parent.mkdir(parents=True, exist_ok=True)
+    coord.paths.owner_path.write_text(
+        json.dumps(
+            {
+                "pid": 4242,
+                "graph_path": "/b/.eventloom/projections/embedded.kuzu",
+                "socket_path": str(coord.paths.socket_path),  # never created -> dead socket
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    # reap=False must NOT touch a held lock (read-only diagnostic contract).
+    passive = coord.repair_stale_runtime()
+    assert passive["repaired"] is False and passive["owner_active"] is True
+
+    # reap=True: verified broken owner -> terminate (simulated by releasing the
+    # held lock) -> reclaim.
+    monkeypatch.setattr(coord, "_owner_pid_is_reapable", lambda record, expected: True)
+
+    def _fake_terminate(pid, **kwargs):
+        holder.close()  # the broken owner "dies", freeing the flock
+        return True
+
+    monkeypatch.setattr(coord, "_terminate_pid", _fake_terminate)
+    report = coord.repair_stale_runtime(
+        reap=True, expected_graph_path="/b/.eventloom/projections/embedded.kuzu"
+    )
+    assert report["repaired"] is True
+    assert report["reaped_pid"] == 4242
 
 
 def test_embedded_runtime_allows_single_owner_claim(tmp_path):

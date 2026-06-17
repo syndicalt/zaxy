@@ -6200,6 +6200,26 @@ def test_doctor_repairs_stale_embedded_mcp_runtime(tmp_path: Path) -> None:
     assert not (runtime / "zaxy-embedded-owner.sock").exists()
 
 
+def test_doctor_repair_flag_is_clean_when_no_broken_owner(tmp_path: Path) -> None:
+    """`doctor --repair` is safe when there is nothing to reap: it reports ok and
+    kills nothing (the reaper only acts on a verified broken owner).
+    """
+    runner = CliRunner()
+    eventloom = tmp_path / ".eventloom"
+    eventloom.mkdir(parents=True)
+
+    result = runner.invoke(
+        app,
+        ["doctor", "--repair", "--eventloom-path", str(eventloom), "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    checks = {check["name"]: check for check in payload["checks"]}
+    assert checks["embedded_mcp_runtime"]["status"] == "ok"
+    assert checks["embedded_mcp_runtime"]["details"]["repaired"] is False
+
+
 def test_doctor_release_smoke_reports_packaging_readiness() -> None:
     """Release smoke mode should verify local release metadata without external services."""
     runner = CliRunner()

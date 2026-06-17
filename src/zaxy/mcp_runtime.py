@@ -156,8 +156,19 @@ class EmbeddedMcpRuntimeCoordinator:
             f"{last_record.get('socket_path')}"
         )
 
-    def repair_stale_runtime(self) -> dict[str, Any]:
-        """Clean stale owner metadata when no live owner lock is held."""
+    def repair_stale_runtime(
+        self, *, reap: bool = False, expected_graph_path: str | Path | None = None
+    ) -> dict[str, Any]:
+        """Clean stale owner metadata, optionally reaping a live-broken owner.
+
+        With ``reap=False`` (default) this only cleans metadata when the owner
+        lock is free (a dead owner) and otherwise reports — preserving the
+        read-only diagnostic contract. With ``reap=True`` a *live-but-broken*
+        owner (lock held, owner socket not accepting) is recovered: the owner
+        process is terminated and the lock reclaimed, but only after verifying it
+        is genuinely a ``zaxy serve`` process for *this* store (never a healthy
+        owner, never another workspace's server, never a non-Zaxy process).
+        """
         had_runtime_files = self.paths.owner_path.exists() or self.paths.socket_path.exists()
         owner = self.try_claim_owner()
         if owner is not None:
@@ -188,6 +199,26 @@ class EmbeddedMcpRuntimeCoordinator:
                 "pid": record.get("pid"),
             }
 
+        # Live-but-broken owner: lock held, but the owner socket is dead. Reap
+        # only when asked AND the holder is verifiably a zaxy serve for this store.
+        if reap and self._owner_pid_is_reapable(record, expected_graph_path):
+            pid = int(record["pid"])  # type: ignore[index]
+            reaped = self._terminate_pid(pid)
+            if reaped:
+                self._clear_stale_runtime_files()
+                reclaimed = self.try_claim_owner()
+                if reclaimed is not None:
+                    reclaimed.close()
+                    return {
+                        "status": "ok",
+                        "message": f"reaped broken embedded MCP owner pid {pid} and reclaimed runtime",
+                        "repaired": True,
+                        "reaped_pid": pid,
+                        "owner_active": False,
+                        "owner_path": str(self.paths.owner_path),
+                        "socket_path": str(socket_path),
+                    }
+
         return {
             "status": "warning",
             "message": "embedded MCP owner lock is held but no healthy owner socket is available",
@@ -197,6 +228,70 @@ class EmbeddedMcpRuntimeCoordinator:
             "socket_path": str(socket_path),
             "action": "Fully exit stale Codex/Zaxy processes for this workspace, then run zaxy doctor again.",
         }
+
+    def _owner_pid_is_reapable(
+        self, record: dict[str, Any] | None, expected_graph_path: str | Path | None
+    ) -> bool:
+        """Return whether the recorded owner is a safe-to-reap broken zaxy serve.
+
+        Conservative by construction: a process is reapable only when it is alive,
+        is not this process, its command line is a ``zaxy serve``, and — when an
+        expected store path is given — the owner record's ``graph_path`` resolves
+        to that same store. Any unverifiable condition (including non-Linux where
+        ``/proc`` is unavailable) returns False, so nothing is killed on doubt.
+        """
+        if not isinstance(record, dict):
+            return False
+        pid = record.get("pid")
+        if not isinstance(pid, int) or pid <= 0 or pid == os.getpid():
+            return False
+        try:
+            os.kill(pid, 0)
+        except (ProcessLookupError, PermissionError, OSError):
+            return False
+        cmdline = self._process_cmdline(pid)
+        if cmdline is None or not ("zaxy" in cmdline and "serve" in cmdline):
+            return False
+        if expected_graph_path is not None:
+            recorded = record.get("graph_path")
+            if not isinstance(recorded, str):
+                return False
+            with suppress(OSError):
+                if Path(recorded).resolve() != Path(expected_graph_path).resolve():
+                    return False
+        return True
+
+    @staticmethod
+    def _process_cmdline(pid: int) -> str | None:
+        """Return a process's command line via /proc, or None if unavailable."""
+        try:
+            raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+        except (FileNotFoundError, OSError):
+            return None
+        return raw.replace(b"\x00", b" ").decode("utf-8", "replace")
+
+    @staticmethod
+    def _terminate_pid(pid: int, *, timeout_seconds: float = 3.0) -> bool:
+        """Terminate a pid (SIGTERM then SIGKILL); return whether it is gone."""
+        import signal
+
+        with suppress(ProcessLookupError, PermissionError, OSError):
+            os.kill(pid, signal.SIGTERM)
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            try:
+                os.kill(pid, 0)
+            except OSError:
+                return True
+            time.sleep(0.05)
+        with suppress(ProcessLookupError, PermissionError, OSError):
+            os.kill(pid, signal.SIGKILL)
+        time.sleep(0.05)
+        try:
+            os.kill(pid, 0)
+        except OSError:
+            return True
+        return False
 
     def _clear_stale_runtime_files(self) -> None:
         for path in (self.paths.owner_path, self.paths.socket_path):

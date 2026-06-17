@@ -48,6 +48,7 @@ def run_doctor(
     settings: Settings | None = None,
     workspace_root: str | Path | None = None,
     zaxy_executable: str | Path | None = None,
+    repair: bool = False,
 ) -> dict[str, Any]:
     """Run local setup checks without starting external services."""
     active = settings or get_settings()
@@ -76,7 +77,7 @@ def run_doctor(
         _check_capture_health(hook_status),
         _check_memory_activation(hook_status),
         _check_packet_memory(active),
-        _check_embedded_mcp_runtime(active),
+        _check_embedded_mcp_runtime(active, repair=repair),
         _check_projection_backend(active),
         _check_projection_freshness(active),
         _check_projection_backup_artifacts(active),
@@ -967,7 +968,7 @@ def _check_projection_backend(settings: Settings) -> dict[str, str]:
     return _check_neo4j(settings)
 
 
-def _check_embedded_mcp_runtime(settings: Settings) -> dict[str, Any]:
+def _check_embedded_mcp_runtime(settings: Settings, *, repair: bool = False) -> dict[str, Any]:
     backend = settings.projection_backend.casefold().strip()
     if backend != "embedded":
         return {
@@ -977,7 +978,7 @@ def _check_embedded_mcp_runtime(settings: Settings) -> dict[str, Any]:
         }
     report = EmbeddedMcpRuntimeCoordinator.from_embedded_graph_path(
         settings.embedded_graph_path
-    ).repair_stale_runtime()
+    ).repair_stale_runtime(reap=repair, expected_graph_path=settings.embedded_graph_path)
     check = {
         "name": "embedded_mcp_runtime",
         "status": report["status"],
