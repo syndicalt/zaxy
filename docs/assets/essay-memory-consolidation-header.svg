@@ -1,0 +1,79 @@
+<svg width="1600" height="640" viewBox="0 0 1600 640" xmlns="http://www.w3.org/2000/svg" font-family="Inter, system-ui, sans-serif">
+  <defs>
+    <pattern id="grid" width="86" height="86" patternUnits="userSpaceOnUse">
+      <path d="M86 0H0V86" fill="none" stroke="#dce6e2" stroke-opacity="0.05" stroke-width="1"/>
+    </pattern>
+    <radialGradient id="vig" cx="62%" cy="40%" r="80%">
+      <stop offset="0%" stop-color="#16212b"/>
+      <stop offset="72%" stop-color="#0b1014"/>
+      <stop offset="100%" stop-color="#070b0e"/>
+    </radialGradient>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3"/></filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 1 L9 5 L0 9 z" fill="#2eb7a4"/>
+    </marker>
+    <g id="zmark">
+      <rect x="-19" y="-19" width="38" height="38" rx="9" fill="#f8faf7"/>
+      <path d="M-9,-7 H9 L-9,7 H10" fill="none" stroke="#0b1014" stroke-width="3.6" stroke-linejoin="round" stroke-linecap="round"/>
+    </g>
+  </defs>
+
+  <rect width="1600" height="640" fill="url(#vig)"/>
+  <rect width="1600" height="640" fill="url(#grid)"/>
+
+  <!-- LEFT: title block -->
+  <text x="96" y="150" font-family="JetBrains Mono, monospace" font-size="22" letter-spacing="5" fill="#2eb7a4">ESSAY · MEMORY CONSOLIDATION</text>
+  <text x="92" y="248" font-family="Georgia, 'Times New Roman', serif" font-size="84" font-weight="700" fill="#f8faf7">Memory that keeps</text>
+  <text x="92" y="332" font-family="Georgia, 'Times New Roman', serif" font-size="84" font-weight="700" fill="#f8faf7">the receipts.</text>
+  <text x="96" y="392" font-family="Inter, system-ui, sans-serif" font-size="25" fill="#9fb0aa">Two biologically-grounded ways to consolidate agent</text>
+  <text x="96" y="426" font-family="Inter, system-ui, sans-serif" font-size="25" fill="#9fb0aa">memory — and why only one survives an audit.</text>
+
+  <!-- approach pill -->
+  <g transform="translate(96,470)">
+    <rect x="0" y="0" width="472" height="44" rx="22" fill="none" stroke="#2eb7a4" stroke-width="2"/>
+    <circle cx="26" cy="22" r="6" fill="#2eb7a4"/>
+    <text x="44" y="29" font-family="JetBrains Mono, monospace" font-size="15" fill="#8fd9cd">SALIENCE + DECAY · CITED, REVIEWED ABSTRACTION</text>
+  </g>
+
+  <!-- RIGHT: two ways to consolidate -->
+  <g transform="translate(1052,168)" font-family="JetBrains Mono, monospace">
+    <!-- source events -->
+    <g font-size="15">
+      <rect x="0" y="40" width="104" height="40" rx="9" fill="#0e1620" stroke="#3a4750" stroke-width="2"/>
+      <text x="52" y="65" text-anchor="middle" fill="#9fb0aa">event</text>
+      <rect x="0" y="110" width="104" height="40" rx="9" fill="#0e1620" stroke="#3a4750" stroke-width="2"/>
+      <text x="52" y="135" text-anchor="middle" fill="#9fb0aa">event</text>
+      <rect x="0" y="180" width="104" height="40" rx="9" fill="#0e1620" stroke="#3a4750" stroke-width="2"/>
+      <text x="52" y="205" text-anchor="middle" fill="#9fb0aa">event</text>
+    </g>
+
+    <!-- KEPT: solid cited lines event -> cited claim -->
+    <g stroke="#2eb7a4" stroke-width="2.5" stroke-opacity="0.85" fill="none">
+      <line x1="104" y1="60"  x2="296" y2="198" marker-end="url(#arrow)"/>
+      <line x1="104" y1="130" x2="296" y2="198" marker-end="url(#arrow)"/>
+      <line x1="104" y1="200" x2="296" y2="198" marker-end="url(#arrow)"/>
+    </g>
+    <rect x="300" y="168" width="172" height="64" rx="12" fill="#0e1620" stroke="#2eb7a4" stroke-width="2.5" filter="url(#glow)"/>
+    <text x="386" y="195" text-anchor="middle" font-size="16" fill="#cdd9d3">cited claim</text>
+    <text x="386" y="217" text-anchor="middle" font-size="12.5" fill="#2eb7a4">salience + decay</text>
+    <text x="386" y="262" text-anchor="middle" font-size="14" fill="#2eb7a4">provenance kept</text>
+
+    <!-- LOST: severed amber link -> detached fact -->
+    <g stroke="#c58b2c" stroke-width="2.5" stroke-dasharray="7 9" stroke-opacity="0.8" fill="none">
+      <line x1="104" y1="58" x2="172" y2="32"/>
+      <line x1="214" y1="22" x2="296" y2="22"/>
+    </g>
+    <g stroke="#c58b2c" stroke-width="2.6"><line x1="184" y1="20" x2="202" y2="38"/><line x1="202" y1="20" x2="184" y2="38"/></g>
+    <rect x="300" y="-4" width="172" height="54" rx="12" fill="#0e1620" stroke="#c58b2c" stroke-width="2"/>
+    <text x="386" y="19" text-anchor="middle" font-size="16" fill="#e0c08a">semantic fact</text>
+    <text x="386" y="39" text-anchor="middle" font-size="12.5" fill="#9a7a3a">LLM-promoted</text>
+    <text x="386" y="86" text-anchor="middle" font-size="14" fill="#c58b2c">provenance lost</text>
+  </g>
+
+  <!-- footer brand -->
+  <g transform="translate(98,560)">
+    <use href="#zmark" transform="scale(0.85)"/>
+    <text x="32" y="7" font-family="Georgia, 'Times New Roman', serif" font-size="27" font-weight="700" fill="#f8faf7">Zaxy</text>
+    <text x="104" y="7" font-family="JetBrains Mono, monospace" font-size="15" fill="#66747a">auditable agent memory · MIT</text>
+  </g>
+</svg>
