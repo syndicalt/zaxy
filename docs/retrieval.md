@@ -63,7 +63,7 @@ profile enables three flags:
   payload metadata are exempt from the floor and reported as exempt.
 - **Cue blending** (`cue_blending`). Appends may carry a `cues` payload
   record with optional `mission`, `workspace`, `tool`, and `phase` string
-  fields (the Codex capture path records `workspace` and `tool`
+  fields (the Codex and Claude capture paths record `workspace` and `tool`
   automatically). Checkout and `memory_query` accept an optional `cues`
   argument; the Jaccard overlap between query cues and stored cues is
   blended as a bounded bonus of `0.25 * jaccard` (at most `0.25` for a

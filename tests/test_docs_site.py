@@ -82,8 +82,8 @@ def test_public_site_has_product_positioning_and_required_sections() -> None:
     assert "<title>Zaxy - event-sourced memory for agent work</title>" in html
     assert 'name="description"' in html
     assert 'property="og:image"' in html
-    assert "https://docs.zaxy.io/assets/zaxy-v2.3-header.png" in html
-    for path in ("docs/assets/zaxy-v2.3-header.png", "site/assets/zaxy-v2.3-header.png"):
+    assert "https://docs.zaxy.io/assets/zaxy-v2.6-header.png" in html
+    for path in ("docs/assets/zaxy-v2.6-header.png", "site/assets/zaxy-v2.6-header.png"):
         assert Path(path).exists(), path
         assert Path(path).stat().st_size > 0, path
     assert "Event-sourced memory for agent work" in html
@@ -102,7 +102,7 @@ def test_public_site_has_product_positioning_and_required_sections() -> None:
     assert "Eventloom source of truth" in html
     assert "Pathlight" in html
     assert "embedded LadybugDB" in html
-    assert "PyPI 2.5.3" in html
+    assert "PyPI 2.6.0" in html
     assert "Harvey LAB 10/10 tasks" in html
     assert "Harvey LAB mean 0.788" in html
     assert "Headline 500 R@5 1.000" in html
@@ -190,6 +190,30 @@ def test_v11_release_article_and_graph_image_are_published() -> None:
     # test_public_site_has_product_positioning_and_required_sections); the
     # v1.1 article page keeps its own header asset above.
     assert "zaxy-v1.1-header.png" not in homepage
+
+
+def test_v26_release_article_and_header_are_published() -> None:
+    """The v2.6 release should publish the X article, rendered page, header, and homepage links."""
+    x_article = Path("docs/announcements/zaxy-v2.6-x-article.md").read_text(encoding="utf-8")
+    rendered = Path("site/docs/announcements/zaxy-v2.6-x-article.html").read_text(encoding="utf-8")
+    homepage = Path("site/index.html").read_text(encoding="utf-8")
+
+    for path in (
+        "docs/assets/zaxy-v2.6-header.png",
+        "site/assets/zaxy-v2.6-header.png",
+        "docs/assets/zaxy-v2.6-header.svg",
+    ):
+        assert Path(path).exists(), path
+        assert Path(path).stat().st_size > 0, path
+
+    assert "zaxy claude-capture" in x_article
+    assert "unified Claude Code and Codex" in x_article
+    assert "no new retrieval surface" in x_article
+    assert "memory_query" in x_article
+    assert "../../assets/zaxy-v2.6-header.png" in rendered
+    assert 'docs/announcements/zaxy-v2.6-x-article.html' in homepage
+    assert "What's new in 2.6" in homepage
+    assert "PyPI 2.6.0" in homepage
 
 
 def test_mcp_docs_show_memory_checkout_consumption_contract() -> None:

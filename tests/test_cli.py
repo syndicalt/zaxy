@@ -6641,6 +6641,129 @@ def test_codex_capture_can_project_captured_events_to_graph(
     store.close.assert_awaited_once()
 
 
+@patch("zaxy.cli.runtime.capture_claude_sessions")
+def test_claude_capture_command_imports_local_claude_records(mock_capture: MagicMock, tmp_path: Path) -> None:
+    """claude-capture should expose deterministic local Claude observation import."""
+    mock_capture.return_value.imported = 4
+    mock_capture.return_value.scanned_files = 1
+    mock_capture.return_value.skipped = 2
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "claude-capture",
+            "--workspace",
+            str(tmp_path),
+            "--claude-home",
+            str(tmp_path / "claude-home"),
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "repo-default",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Imported 4 Claude observations from 1 session log" in result.output
+    mock_capture.assert_called_once_with(
+        workspace=tmp_path,
+        claude_home=tmp_path / "claude-home",
+        eventloom_path=tmp_path / ".eventloom",
+        session_id="repo-default",
+        source="claude-local",
+        max_records_per_file=1000,
+    )
+
+
+@patch("zaxy.cli.workspace.time.sleep")
+@patch("zaxy.cli.runtime.capture_claude_sessions")
+def test_claude_capture_watch_mode_supports_bounded_iterations(
+    mock_capture: MagicMock,
+    mock_sleep: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """claude-capture --watch should support bounded supervisor/test runs."""
+    first = MagicMock(imported=2, scanned_files=1, skipped=0)
+    second = MagicMock(imported=0, scanned_files=1, skipped=2)
+    mock_capture.side_effect = [first, second]
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "claude-capture",
+            "--workspace",
+            str(tmp_path),
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "repo-default",
+            "--watch",
+            "--watch-iterations",
+            "2",
+            "--interval-seconds",
+            "0.25",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Watching Claude session logs" in result.output
+    assert result.output.count("Imported ") == 2
+    assert mock_capture.call_count == 2
+    mock_sleep.assert_called_once_with(0.25)
+
+
+@patch("zaxy.cli.runtime.GraphStore")
+@patch("zaxy.cli.runtime.capture_claude_sessions")
+def test_claude_capture_can_project_captured_events_to_graph(
+    mock_capture: MagicMock,
+    mock_graph_store: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """claude-capture --graph should project only events captured in that pass."""
+    event = EventLog(tmp_path / ".eventloom" / "repo-default.jsonl").append(
+        "transcript.turn",
+        actor="assistant",
+        payload={"content": "Remember bounded capture."},
+        thread="repo-default",
+    )
+    mock_capture.return_value.imported = 1
+    mock_capture.return_value.scanned_files = 1
+    mock_capture.return_value.skipped = 0
+    mock_capture.return_value.events = (event,)
+    store = AsyncMock()
+    mock_graph_store.return_value = store
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "claude-capture",
+            "--workspace",
+            str(tmp_path),
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "repo-default",
+            "--graph",
+            "--neo4j-uri",
+            "bolt://test:7687",
+            "--neo4j-password",
+            "testpassword",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Projected 1 captured observations into graph" in result.output
+    mock_graph_store.assert_called_once_with("bolt://test:7687", "neo4j", "testpassword")
+    store.connect.assert_awaited_once()
+    store.init_schema.assert_awaited_once()
+    store.upsert_extraction.assert_awaited_once()
+    assert store.upsert_extraction.await_args.kwargs == {"session_id": "repo-default"}
+    store.close.assert_awaited_once()
+
+
 @patch("zaxy.cli.runtime.MemoryFabric")
 def test_index_codebase_command_reports_indexed_count(mock_fabric_cls: MagicMock, tmp_path: Path) -> None:
     """index-codebase should append codebase mapping events through MemoryFabric."""

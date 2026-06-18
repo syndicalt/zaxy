@@ -333,6 +333,22 @@ What changes for you:
   correct results, no error, fully on-box. The default exact path is pure
   NumPy and needs nothing fetched.
 
+## From 2.3 to 2.6: additive feature releases
+
+2.4, 2.5, and 2.6 are additive. There are **no Eventloom envelope changes, no
+projection migrations, and no required steps** — upgrade the package and keep
+working. What each added:
+
+- **2.4** — experimental, opt-in signed portable export (`zaxy.portable`,
+  `pip install "zaxy-memory[export]"`). Unsigned canonical export needs nothing
+  extra; the signed path warns on import and is preview-only.
+- **2.5** — the general memory export contract (`memory_export` / `zaxy export`,
+  verifiable partial disclosure, outbound sinks) over the 2.4 bundle format.
+- **2.6** — `zaxy claude-capture`, deterministic local Claude Code session
+  capture into the same Eventloom observations as `zaxy codex-capture`. It reads
+  Claude's own session logs out-of-band, is idempotent, and surfaces through the
+  existing `memory_query` path — no new retrieval surface, no config required.
+
 ## Compatibility Tests
 
 The compatibility suite should prove that old public behavior still works or

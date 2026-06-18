@@ -29,6 +29,18 @@ The underlying `zaxy codex-capture --watch` command remains available for
 supervisors that need direct control; use `--watch-iterations <n>` for bounded
 health checks and tests.
 
+For Claude Code, `zaxy claude-capture` provides the same deterministic,
+out-of-band path against Claude's own local session logs under
+`~/.claude/projects` (or `$CLAUDE_CONFIG_DIR`). It imports each conversation's
+transcript turns, tool calls, Bash command results, and file edits into
+Eventloom as the same normalized observations, matched to the workspace by each
+record's `cwd` and deduplicated by source ref, so captured turns flow through
+the existing hybrid query path and `memory_query` for unified Claude + Codex
+thread search. Run it one-shot or with `--watch` (`--watch-iterations <n>` for
+bounded passes), and add `--graph` to project new observations immediately.
+Unlike Codex capture, it is standalone today — there is no managed watcher or
+onboarding config, and reasoning/thinking blocks are never ingested.
+
 Write config directly during onboarding:
 
 ```bash

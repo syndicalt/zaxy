@@ -1,0 +1,79 @@
+<svg width="1600" height="640" viewBox="0 0 1600 640" xmlns="http://www.w3.org/2000/svg" font-family="Inter, system-ui, sans-serif">
+  <defs>
+    <pattern id="grid" width="86" height="86" patternUnits="userSpaceOnUse">
+      <path d="M86 0H0V86" fill="none" stroke="#dce6e2" stroke-opacity="0.05" stroke-width="1"/>
+    </pattern>
+    <radialGradient id="vig" cx="64%" cy="40%" r="80%">
+      <stop offset="0%" stop-color="#16212b"/>
+      <stop offset="72%" stop-color="#0b1014"/>
+      <stop offset="100%" stop-color="#070b0e"/>
+    </radialGradient>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3"/></filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 1 L9 5 L0 9 z" fill="#2eb7a4"/>
+    </marker>
+    <g id="zmark">
+      <rect x="-19" y="-19" width="38" height="38" rx="9" fill="#f8faf7"/>
+      <path d="M-9,-7 H9 L-9,7 H10" fill="none" stroke="#0b1014" stroke-width="3.6" stroke-linejoin="round" stroke-linecap="round"/>
+    </g>
+  </defs>
+
+  <rect width="1600" height="640" fill="url(#vig)"/>
+  <rect width="1600" height="640" fill="url(#grid)"/>
+
+  <!-- LEFT: title block -->
+  <text x="96" y="150" font-family="JetBrains Mono, monospace" font-size="22" letter-spacing="5" fill="#2eb7a4">RELEASE · v2.6.0</text>
+  <text x="92" y="248" font-family="Georgia, 'Times New Roman', serif" font-size="84" font-weight="700" fill="#f8faf7">Claude and Codex,</text>
+  <text x="92" y="332" font-family="Georgia, 'Times New Roman', serif" font-size="84" font-weight="700" fill="#f8faf7">one memory.</text>
+  <text x="96" y="392" font-family="Inter, system-ui, sans-serif" font-size="25" fill="#9fb0aa">Deterministic local capture turns Claude Code and Codex</text>
+  <text x="96" y="426" font-family="Inter, system-ui, sans-serif" font-size="25" fill="#9fb0aa">sessions into one cited, searchable thread history.</text>
+
+  <!-- capture honesty pill -->
+  <g transform="translate(96,470)">
+    <rect x="0" y="0" width="486" height="44" rx="22" fill="none" stroke="#2eb7a4" stroke-width="2"/>
+    <circle cx="26" cy="22" r="6" fill="#2eb7a4"/>
+    <text x="44" y="29" font-family="JetBrains Mono, monospace" font-size="15" fill="#8fd9cd">OUT-OF-BAND · IDEMPOTENT · REDACTED · SAME QUERY PATH</text>
+  </g>
+
+  <!-- RIGHT: two agents -> one log -> search -->
+  <g transform="translate(940,176)" font-family="JetBrains Mono, monospace">
+    <!-- two local session sources -->
+    <g font-size="15">
+      <rect x="0" y="20" width="132" height="44" rx="9" fill="#0e1620" stroke="#3a4750" stroke-width="2"/>
+      <text x="66" y="47" text-anchor="middle" fill="#9fb0aa">claude code</text>
+      <rect x="0" y="128" width="132" height="44" rx="9" fill="#0e1620" stroke="#3a4750" stroke-width="2"/>
+      <text x="66" y="155" text-anchor="middle" fill="#9fb0aa">codex</text>
+    </g>
+
+    <!-- sources converge into one log -->
+    <g stroke="#2eb7a4" stroke-width="2.5" stroke-opacity="0.85" fill="none">
+      <line x1="136" y1="42" x2="226" y2="86" marker-end="url(#arrow)"/>
+      <line x1="136" y1="150" x2="226" y2="106" marker-end="url(#arrow)"/>
+    </g>
+
+    <!-- one cited Eventloom log -->
+    <rect x="230" y="64" width="156" height="64" rx="12" fill="#0e1620" stroke="#2eb7a4" stroke-width="2.5" filter="url(#glow)"/>
+    <text x="308" y="91" text-anchor="middle" font-size="16" fill="#cdd9d3">Eventloom</text>
+    <text x="308" y="113" text-anchor="middle" font-size="12.5" fill="#2eb7a4">one cited log</text>
+
+    <!-- log feeds the existing query surfaces -->
+    <g stroke="#2eb7a4" stroke-width="2.5" stroke-opacity="0.8" fill="none">
+      <line x1="386" y1="86" x2="438" y2="66" marker-end="url(#arrow)"/>
+      <line x1="386" y1="106" x2="438" y2="126" marker-end="url(#arrow)"/>
+    </g>
+    <g font-size="15">
+      <rect x="442" y="46" width="150" height="40" rx="20" fill="#0e1620" stroke="#3a4750" stroke-width="2"/>
+      <text x="517" y="71" text-anchor="middle" fill="#9fb0aa">memory_query</text>
+      <rect x="442" y="106" width="150" height="40" rx="20" fill="#0e1620" stroke="#3a4750" stroke-width="2"/>
+      <text x="517" y="131" text-anchor="middle" fill="#9fb0aa">checkout</text>
+    </g>
+  </g>
+  <text x="1236" y="470" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="15" fill="#66747a">transcript · tool calls · commands · file edits</text>
+
+  <!-- footer brand -->
+  <g transform="translate(98,560)">
+    <use href="#zmark" transform="scale(0.85)"/>
+    <text x="32" y="7" font-family="Georgia, 'Times New Roman', serif" font-size="27" font-weight="700" fill="#f8faf7">Zaxy</text>
+    <text x="104" y="7" font-family="JetBrains Mono, monospace" font-size="15" fill="#66747a">auditable agent memory · MIT</text>
+  </g>
+</svg>
