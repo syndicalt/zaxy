@@ -69,7 +69,7 @@ treated as public release-candidate surfaces. Internal helper functions in
 | `zaxy init`, `zaxy activate`, `zaxy doctor`, `zaxy status` | `Beta` | First-run, activation, and readiness checks. |
 | `zaxy serve`, `zaxy replay`, `zaxy compact`, `zaxy refresh-context`, `zaxy reproject` | `Beta` | Runtime, replay, compaction, and projection operations. |
 | `zaxy memory bootstrap`, `zaxy memory checkout`, `zaxy memory status`, `zaxy memory log`, `zaxy memory diff`, `zaxy memory refs` | `Beta` | Model-facing memory and Eventloom inspection. |
-| `zaxy hook-status`, `zaxy hook-event`, `zaxy capture start`, `zaxy capture stop`, `zaxy capture status`, `zaxy capture-soak`, `zaxy codex-capture` | `Beta` | Deterministic capture and lifecycle observation. |
+| `zaxy hook-status`, `zaxy hook-event`, `zaxy capture start`, `zaxy capture stop`, `zaxy capture status`, `zaxy capture-soak`, `zaxy codex-capture`, `zaxy claude-capture` | `Beta` | Deterministic capture and lifecycle observation. |
 | `zaxy coordinate ...` | `Beta` | Coordinate mission, worker, finding, approval, handoff, audit, and benchmark commands. |
 | `zaxy integration-template`, `zaxy integrations`, `zaxy ide-config`, `zaxy local-profile` | `Beta` | Integration discovery and config rendering. |
 | `zaxy trace export` | `Beta` | Provider-neutral Eventloom-derived trace export. |

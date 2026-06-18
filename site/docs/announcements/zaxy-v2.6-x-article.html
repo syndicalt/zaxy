@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>X Article Draft: Zaxy 2.6.0 - Zaxy Docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,600&family=Inter:wght@400;550;650;750;850&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../../index.html">Overview</a>
+      <a href="../../docs/coordinate-roadmap.html">Coordinate</a>
+      <a href="../../docs/why-zaxy.html">Why Zaxy</a>
+      <a href="../../docs/benchmarks.html">Benchmarks</a>
+      <a href="../getting-started.html">Start</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="x-article-draft-zaxy-260">X Article Draft: Zaxy 2.6.0</h1>
+      <p><img src="../../assets/zaxy-v2.6-header.png" alt="Zaxy 2.6 release header" /></p>
+      <p>Zaxy 2.6.0 makes agent thread history <strong>cross-tool</strong>: a <code>zaxy claude-capture</code> command that turns your local Claude Code sessions into the same cited, searchable Eventloom memory that <code>zaxy codex-capture</code> already produces. One project, two coding agents, <strong>one memory</strong> — searchable through the exact same query path, with <strong>no new retrieval surface</strong> to learn.</p>
+      <p>The short version: your work with an agent is the most valuable context you have, and it is normally trapped in that vendor&#x27;s local session log, in that vendor&#x27;s shape, readable by nothing else. 2.5 made memory <em>portable out</em>. 2.6 makes the two agents you actually code with <em>capturable in</em>, into one place, on equal terms.</p>
+      <h2 id="what-shipped">What shipped</h2>
+      <p><code>zaxy claude-capture</code> reads Claude Code&#x27;s own local session JSONL under <code>~/.claude/projects</code> (or <code>$CLAUDE_CONFIG_DIR</code>) and imports each conversation into Eventloom as <strong>first-class normalized observations</strong> — the same event types Codex capture emits:</p>
+      <ul>
+        <li><strong>transcript turns</strong> — user and assistant text (reasoning/thinking blocks are never ingested);</li>
+        <li><strong>tool calls</strong> — Read, Edit, Grep, Task, and the rest;</li>
+        <li><strong>commands</strong> — Bash invocations with their exit signal;</li>
+        <li><strong>file edits</strong> — Edit / Write / NotebookEdit targets.</li>
+      </ul>
+      <p>Because those are the <em>same</em> event types, captured Claude turns flow through the <em>same</em> extraction → projection → hybrid retrieval path and surface through the existing <code>memory_query</code> MCP tool and <code>memory checkout</code>. There is deliberately <strong>no new search surface</strong>: unified Claude Code and Codex thread search falls out of reusing the path that already exists.</p>
+      <p>It is built to be safe to run unattended:</p>
+      <ul>
+        <li><strong>Out-of-band.</strong> It reads the log Claude already writes; it never proxies model traffic.</li>
+        <li><strong>Workspace-scoped.</strong> Each session is matched to your project by the record&#x27;s own <code>cwd</code>, so only this repo&#x27;s conversations are imported.</li>
+        <li><strong>Idempotent.</strong> Turns are de-duplicated by source ref, so re-running — or a <code>--watch</code> loop — only ever adds what is new.</li>
+        <li><strong>Redacted.</strong> Transcript and command content pass through the same secret masking as Codex capture.</li>
+      </ul>
+      <p>Run it one-shot, or <code>--watch</code> for continuous capture (<code>--watch-iterations &lt;n&gt;</code> for bounded supervisor/CI passes), and add <code>--graph</code> to project new observations into the graph immediately.</p>
+      <h2 id="why-it-matters">Why it matters</h2>
+      <p>Memory that only knows about one tool is a silo with extra steps. The point of an event-sourced, cited memory layer is that <em>provenance is the product</em> — and provenance is far more useful when it spans the tools you actually switched between to get the work done. Ask &quot;what did I change in the auth module and why&quot; and get an answer drawn from both the Claude session where you reasoned about it and the Codex session where you ran the tests, each turn carrying an <code>eventloom://…#&lt;hash&gt;</code> citation back to the exact source.</p>
+      <p>This is also the boring, correct kind of feature: it ships by <em>reusing</em> the capture, projection, and query machinery that was already load-bearing for Codex, rather than bolting on a parallel &quot;Claude path.&quot; Less surface, same guarantees.</p>
+      <h2 id="the-honest-caveats">The honest caveats</h2>
+      <ul>
+        <li><strong>Standalone today.</strong> <code>zaxy claude-capture</code> is the one-shot and <code>--watch</code> command. It is not yet wired into the managed capture supervisor or <code>zaxy init</code> onboarding the way Codex capture is — there is no <code>.claude/zaxy-capture.json</code> and no <code>zaxy activate claude</code> in this release. The command covers both modes; the managed integration is next.</li>
+        <li><strong>Top-level sessions.</strong> Capture scans the main session files; subagent turns are already inlined in those files, so the deeper <code>subagents/</code> logs are intentionally skipped to avoid double-ingest.</li>
+        <li><strong>Reasoning is never captured.</strong> Thinking blocks are dropped by design — parity with Codex, and a privacy/leanness choice, not an oversight.</li>
+      </ul>
+      <h2 id="try-it">Try it</h2>
+      <pre><code class="language-sh"># One-shot: import this repo&#x27;s Claude Code sessions into Eventloom.
+zaxy claude-capture --workspace . --eventloom-path .eventloom --session-id default
+
+# Continuous capture, bounded for a supervisor or CI.
+zaxy claude-capture --watch --watch-iterations 2
+
+# Then search Claude + Codex turns through the existing surface.
+zaxy memory checkout &quot;what did I change in the auth module and why&quot;</code></pre>
+      <p>Two agents, one cited log, one query. Memory you can search across the tools you actually work in — and still prove where every line came from.</p>
+    </article>
+  </main>
+</body>
+</html>

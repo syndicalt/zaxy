@@ -66,6 +66,13 @@ def capture_codex_sessions(*args: Any, **kwargs: Any) -> Any:
     return _capture_codex_sessions(*args, **kwargs)
 
 
+def capture_claude_sessions(*args: Any, **kwargs: Any) -> Any:
+    """Patchable lazy seam for local Claude Code capture."""
+    from zaxy.claude_capture import capture_claude_sessions as _capture_claude_sessions
+
+    return _capture_claude_sessions(*args, **kwargs)
+
+
 def _local_embedded_graph_runtime(*args: Any, **kwargs: Any) -> Any:
     """Patchable lazy seam for embedded runtime checks."""
     from zaxy.runtime import LocalEmbeddedGraphRuntime as _LocalEmbeddedGraphRuntime

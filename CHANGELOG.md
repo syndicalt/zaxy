@@ -2,6 +2,20 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 2.6.0 - 2026-06-18
+
+- Added `zaxy claude-capture` for deterministic local Claude Code session
+  capture. Claude Code conversations under `~/.claude/projects` (or
+  `CLAUDE_CONFIG_DIR`) are imported into Eventloom as first-class
+  `transcript.turn`, `tool.call.completed`, `command.completed`, and
+  `file.edit.applied` observations, matched to the workspace by each record's
+  `cwd` and deduplicated by source ref. Captured turns flow through the same
+  extraction, projection, and hybrid `memory_query` path as Codex capture — no
+  new retrieval surface — giving unified Claude + Codex thread search. Supports
+  one-shot and `--watch` continuous capture, optional `--graph` projection, and
+  `--max-records-per-file` for watch mode. Reasoning/thinking blocks are never
+  ingested; command and transcript content stay redacted.
+
 ## 2.5.3 - 2026-06-16
 
 Reliability release: protect the embedded projection from multi-owner corruption.

@@ -444,6 +444,90 @@ def codex_capture(
         typer.echo("Stopped Codex capture.")
 
 
+@app.command("claude-capture")
+def claude_capture(
+    workspace: Path = typer.Option(Path("."), help="Workspace root whose Claude Code sessions should be captured"),  # noqa: B008
+    claude_home: Path | None = typer.Option(None, help="Claude config home; defaults to CLAUDE_CONFIG_DIR or ~/.claude"),  # noqa: B008
+    eventloom_path: Path = typer.Option(Path(".eventloom"), help="Eventloom directory for captured observations"),  # noqa: B008
+    session_id: str = typer.Option("default", help="Zaxy Eventloom session ID to append into"),
+    source: str = typer.Option("claude-local", help="Capture source label"),
+    max_records_per_file: int = typer.Option(
+        1000,
+        "--max-records-per-file",
+        min=1,
+        help="Maximum recent records to scan from each Claude session log per pass",
+    ),
+    graph: bool = typer.Option(False, "--graph", help="Project captured observations into Neo4j"),
+    neo4j_uri: str | None = typer.Option(None, help="Neo4j Bolt URI"),
+    neo4j_user: str | None = typer.Option(None, help="Neo4j username"),
+    neo4j_password: str | None = typer.Option(None, help="Neo4j password"),
+    watch: bool = typer.Option(False, "--watch", help="Continuously poll Claude session logs"),
+    interval_seconds: float = typer.Option(2.0, "--interval-seconds", min=0.25, help="Watch poll interval"),
+    watch_iterations: int | None = typer.Option(
+        None,
+        "--watch-iterations",
+        min=1,
+        help="Optional bounded watch pass count for supervisors and tests",
+    ),
+) -> None:
+    """Capture local Claude Code session JSONL records into Eventloom without proxying model traffic."""
+    import asyncio
+
+    from zaxy.config import get_settings
+
+    async def project_events(events: tuple[Any, ...]) -> int:
+        if not events:
+            return 0
+        from zaxy.extract import extract
+
+        settings = get_settings()
+        store = _runtime.GraphStore(
+            neo4j_uri or settings.neo4j_uri,
+            neo4j_user or settings.neo4j_user,
+            neo4j_password or settings.neo4j_password,
+        )
+        await store.connect()
+        try:
+            await store.init_schema()
+            for event in events:
+                await store.upsert_extraction(extract(event), session_id=session_id)
+            return len(events)
+        finally:
+            await store.close()
+
+    def run_once() -> None:
+        result = _runtime.capture_claude_sessions(
+            workspace=workspace,
+            claude_home=claude_home,
+            eventloom_path=eventloom_path,
+            session_id=session_id,
+            source=source,
+            max_records_per_file=max_records_per_file,
+        )
+        plural = "" if result.scanned_files == 1 else "s"
+        typer.echo(
+            f"Imported {result.imported} Claude observations from "
+            f"{result.scanned_files} session log{plural} ({result.skipped} skipped)"
+        )
+        if graph:
+            projected = asyncio.run(project_events(result.events))
+            typer.echo(f"Projected {projected} captured observations into graph")
+
+    if not watch:
+        run_once()
+        return
+    typer.echo("Watching Claude session logs for deterministic Zaxy capture. Press Ctrl-C to stop.")
+    try:
+        iterations = 0
+        while watch_iterations is None or iterations < watch_iterations:
+            run_once()
+            iterations += 1
+            if watch_iterations is None or iterations < watch_iterations:
+                time.sleep(interval_seconds)
+    except KeyboardInterrupt:
+        typer.echo("Stopped Claude capture.")
+
+
 @capture_app.command("status")
 def capture_status(
     workspace: Path = typer.Option(Path("."), help="Workspace root with capture config"),  # noqa: B008

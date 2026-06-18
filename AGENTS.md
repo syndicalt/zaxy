@@ -336,6 +336,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Model-facing memory capability manifest with ambient checkout/capture/feedback loop guidance
 - [x] Deterministic capture as default onboarding mode with optional packet/hybrid capture and local Codex preset
 - [x] Deterministic local Codex session JSONL capture into Eventloom transcript, tool-call, command, and file-edit observations
+- [x] Deterministic local Claude Code session JSONL capture into Eventloom transcript, tool-call, command, and file-edit observations
 - [x] Memory Checkout diagnostics for source lanes, citation coverage, retention exclusions, warnings, and feedback guidance
 - [x] Memory Checkout guidance with trust/ignore instructions, follow-up checkout suggestions, and feedback payload templates
 - [x] Memory Checkout quality scoring with answerability, confidence, reasons, and required actions

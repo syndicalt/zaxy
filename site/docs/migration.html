@@ -148,6 +148,13 @@
         <li><strong>Behavior.</strong> Query semantics, schema, retrieval results, and the ANN engagement defaults are unchanged; the vector index code is unchanged since the fork, and the 2.3 lane reruns reproduced the 2.2 deterministic blocks (identical corpus hashes and recall). Superseded ANN shadow generations are now dropped instead of emptied (full space reclaim, enabled by an upstream fix verified through Zaxy&#x27;s own rebuild cycle).</li>
         <li><strong>Vector extension fetch (local-first, one-time).</strong> Kuzu 0.11.3 bundled the vector index; LadybugDB ships it as an official <code>vector</code> extension fetched on first use (a small one-time download cached under <code>~/.lbdb</code>), much like installing the package itself. Zaxy fetches it automatically the first time the ANN path engages, then it runs entirely on-box. Air-gapped deployments that want ANN run <code>INSTALL vector</code> once on a networked host and ship the <code>~/.lbdb</code> cache; with no network and no cache, approximate (HNSW) search is simply unavailable and retrieval falls back to <strong>exact</strong> float search — correct results, no error, fully on-box. The default exact path is pure NumPy and needs nothing fetched.</li>
       </ul>
+      <h2 id="from-23-to-26-additive-feature-releases">From 2.3 to 2.6: additive feature releases</h2>
+      <p>2.4, 2.5, and 2.6 are additive. There are <strong>no Eventloom envelope changes, no projection migrations, and no required steps</strong> — upgrade the package and keep working. What each added:</p>
+      <ul>
+        <li><strong>2.4</strong> — experimental, opt-in signed portable export (<code>zaxy.portable</code>, <code>pip install &quot;zaxy-memory[export]&quot;</code>). Unsigned canonical export needs nothing extra; the signed path warns on import and is preview-only.</li>
+        <li><strong>2.5</strong> — the general memory export contract (<code>memory_export</code> / <code>zaxy export</code>, verifiable partial disclosure, outbound sinks) over the 2.4 bundle format.</li>
+        <li><strong>2.6</strong> — <code>zaxy claude-capture</code>, deterministic local Claude Code session capture into the same Eventloom observations as <code>zaxy codex-capture</code>. It reads Claude&#x27;s own session logs out-of-band, is idempotent, and surfaces through the existing <code>memory_query</code> path — no new retrieval surface, no config required.</li>
+      </ul>
       <h2 id="compatibility-tests">Compatibility Tests</h2>
       <p>The compatibility suite should prove that old public behavior still works or that a migration path is documented:</p>
       <ul>
