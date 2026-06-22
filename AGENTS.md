@@ -379,6 +379,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Memory Persistence / Agent Recall Hardening with reminder policy, lifecycle hook suggestions, checkout activity markers, dashboard status, and framework checkout middleware
 - [x] Full-set LongMemEval synthesis improved without floor regression: archived hash checkout mean 0.724, Answer@5 0.628, R@5 0.972, citation coverage 1.000
 - [x] LatticeDB backend candidate behind `PROJECTION_BACKEND=latticedb` with projection, exact search, native full-text search, native vector search, traversal, temporal invalidation, source retirement, Eventloom citation metadata, projection status, inferred-edge diagnostics, and backend shootout routing
+- [x] CLI `zaxy memory append` twin of the MCP `memory_append` tool, writing byte-identical events through the shared `MemoryFabric.append` pipeline for trusted daemon/agent shims
 
 ## Metrics
 

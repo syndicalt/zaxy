@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import asdict
@@ -421,6 +422,130 @@ def memory_checkout(
                 err=True,
             )
         typer.echo(payload["prompt"])
+
+
+def _resolve_append_payload(
+    payload_json: str | None, payload_file: Path | None
+) -> dict[str, Any]:
+    """Resolve the append payload from --payload-json, --payload-file, or stdin.
+
+    Exactly one source is honored. The parsed value MUST be a JSON object so it
+    matches the MCP ``memory_append`` contract; non-objects are rejected.
+    """
+    if payload_json is not None and payload_file is not None:
+        raise ValueError("provide only one of --payload-json or --payload-file")
+    if payload_json is not None:
+        source, origin = payload_json, "--payload-json"
+    elif payload_file is not None:
+        try:
+            source = payload_file.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise ValueError(f"--payload-file could not be read: {exc}") from exc
+        origin = "--payload-file"
+    else:
+        source = sys.stdin.read()
+        origin = "stdin"
+    if not source.strip():
+        raise ValueError(
+            "payload is required via --payload-json, --payload-file, or stdin"
+        )
+    try:
+        parsed = json.loads(source)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{origin} must be a JSON object") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError(f"{origin} must be a JSON object")
+    return parsed
+
+
+@memory_app.command("append")
+def memory_append(
+    event_type: str = typer.Argument(..., help="Dotted lowercase event type, e.g. decision.made"),  # noqa: B008
+    actor: str = typer.Option(..., "--actor", help="Actor id that produced the event, e.g. ainix-agent"),
+    payload_json: str | None = typer.Option(None, "--payload-json", help="Event payload as a JSON object"),  # noqa: B008
+    payload_file: Path | None = typer.Option(None, "--payload-file", help="Read the JSON payload object from this file"),  # noqa: B008
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    session_id: str = typer.Option("default", help="Session ID to append into"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Append one cited event through the shared MemoryFabric pipeline (CLI twin of MCP memory_append)."""
+    import asyncio
+
+    from zaxy.security import validate_event_text, validate_payload, validate_session_id
+
+    try:
+        safe_event_type = validate_event_text(event_type, "event_type")
+        safe_actor = validate_event_text(actor, "actor")
+        safe_session_id = validate_session_id(session_id)
+        safe_payload = validate_payload(_resolve_append_payload(payload_json, payload_file))
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    async def _append_with_path(
+        embedded_graph_path: Path, *, projection_backend_override: str | None = None
+    ) -> Any:
+        settings = _status_settings(_profile_root_for_eventloom_path(eventloom_path))
+        projection_backend = projection_backend_override or _resolve_cli_projection_backend(
+            None, settings
+        )
+        fabric = _runtime._memory_fabric(
+            eventloom_path=str(eventloom_path),
+            projection_backend=projection_backend,
+            pggraph_dsn=settings.pggraph_dsn,
+            embedded_graph_path=embedded_graph_path,
+            latticedb_path=Path(settings.latticedb_path),
+        )
+        try:
+            await fabric.connect()
+            return await fabric.append(
+                safe_event_type, safe_actor, safe_payload, session_id=safe_session_id
+            )
+        finally:
+            with suppress(Exception):
+                await fabric.close()
+
+    async def _append() -> Any:
+        settings = _status_settings(_profile_root_for_eventloom_path(eventloom_path))
+        embedded_graph_path = Path(settings.embedded_graph_path)
+        try:
+            return await _append_with_path(embedded_graph_path)
+        except RuntimeError as exc:
+            if not _is_embedded_projection_lock_error(exc):
+                raise
+            # A server (typically the long-lived MCP daemon) holds the embedded
+            # projection's single-owner lock. The append must stay durable, so
+            # write the event with the graph lane degraded instead of hard-failing
+            # on projection contention — same degraded behavior `memory checkout`
+            # uses when locked out.
+            return await _append_with_path(
+                embedded_graph_path, projection_backend_override="null"
+            )
+
+    try:
+        event = asyncio.run(_append())
+    except (RuntimeError, OSError) as exc:
+        # Lock/fsync errors, unreadable dir, etc. Exit non-zero with a message on
+        # stderr and no partial JSON on stdout so a trusted shim can degrade.
+        typer.echo(f"zaxy memory append failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    citation = f"eventloom://{event.thread}/events/{event.seq}#{event.hash[:12]}"
+    if json_output:
+        typer.echo(
+            json.dumps(
+                {
+                    "seq": event.seq,
+                    "hash": event.hash,
+                    "event_id": event.id,
+                    "session_id": event.thread,
+                    "event_type": event.type,
+                    "citation": citation,
+                },
+                sort_keys=True,
+            )
+        )
+    else:
+        typer.echo(f"Recorded {event.type} seq={event.seq}")
 
 
 async def _run_reasoning_primitive(

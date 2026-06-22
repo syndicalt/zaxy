@@ -205,9 +205,9 @@
             <td>Runtime, replay, compaction, and projection operations.</td>
           </tr>
           <tr>
-            <td><code>zaxy memory bootstrap</code>, <code>zaxy memory checkout</code>, <code>zaxy memory status</code>, <code>zaxy memory log</code>, <code>zaxy memory diff</code>, <code>zaxy memory refs</code></td>
+            <td><code>zaxy memory append</code>, <code>zaxy memory bootstrap</code>, <code>zaxy memory checkout</code>, <code>zaxy memory status</code>, <code>zaxy memory log</code>, <code>zaxy memory diff</code>, <code>zaxy memory refs</code></td>
             <td><code>Beta</code></td>
-            <td>Model-facing memory and Eventloom inspection.</td>
+            <td>Model-facing memory writes plus Eventloom inspection. The CLI <code>memory append</code> is the daemon/agent twin of the MCP <code>memory_append</code> tool and writes byte-identical events through the same <code>MemoryFabric.append</code> pipeline.</td>
           </tr>
           <tr>
             <td><code>zaxy hook-status</code>, <code>zaxy hook-event</code>, <code>zaxy capture start</code>, <code>zaxy capture stop</code>, <code>zaxy capture status</code>, <code>zaxy capture-soak</code>, <code>zaxy codex-capture</code>, <code>zaxy claude-capture</code></td>

@@ -3740,6 +3740,376 @@ def test_memory_checkout_degrades_gracefully_when_embedded_projection_locked(
     fallback.close.assert_awaited_once()
 
 
+@patch("zaxy.cli.runtime._memory_fabric")
+def test_memory_append_delegates_to_fabric_like_mcp(
+    mock_fabric_cls: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """memory append should drive the same fabric.append call the MCP handler uses."""
+    fabric = AsyncMock()
+    event = MagicMock()
+    event.seq = 7
+    event.hash = "de79a025395f36af0226330c4b0e04151a15264af7907959713490684095af18"
+    event.id = "evt_zaxy_000000000007_aabbccddeeff0011"
+    event.thread = "memory"
+    event.type = "decision.made"
+    fabric.append.return_value = event
+    mock_fabric_cls.return_value = fabric
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "append",
+            "decision.made",
+            "--actor",
+            "ainix-agent",
+            "--session-id",
+            "memory",
+            "--payload-json",
+            '{"summary": "chose Landlock egress pinning"}',
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    fabric.connect.assert_awaited_once()
+    fabric.append.assert_awaited_once_with(
+        "decision.made",
+        "ainix-agent",
+        {"summary": "chose Landlock egress pinning"},
+        session_id="memory",
+    )
+    fabric.close.assert_awaited_once()
+    payload = json.loads(result.output)
+    assert payload == {
+        "seq": 7,
+        "hash": event.hash,
+        "event_id": event.id,
+        "session_id": "memory",
+        "event_type": "decision.made",
+        "citation": "eventloom://memory/events/7#de79a025395f",
+    }
+
+
+def test_memory_append_writes_replayable_eventloom_event(tmp_path: Path) -> None:
+    """memory append should durably write a chain-verifiable Eventloom row."""
+    from zaxy.event import verify_event_chain
+
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    eventloom_path = workspace / ".eventloom"
+    (workspace / ".env.local").write_text("PROJECTION_BACKEND=null\n", encoding="utf-8")
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "append",
+            "decision.made",
+            "--actor",
+            "ainix-agent",
+            "--session-id",
+            "memory",
+            "--payload-json",
+            '{"summary": "ship it"}',
+            "--eventloom-path",
+            str(eventloom_path),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    events = EventLog(eventloom_path / "memory.jsonl").read_all()
+    assert len(events) == 1
+    event = events[0]
+    assert verify_event_chain(events).ok
+    assert payload["seq"] == event.seq == 1
+    assert payload["hash"] == event.hash
+    assert payload["event_id"] == event.id
+    assert payload["session_id"] == "memory"
+    assert payload["event_type"] == "decision.made"
+    assert payload["citation"] == f"eventloom://memory/events/{event.seq}#{event.hash[:12]}"
+    assert event.payload["summary"] == "ship it"
+
+
+def test_memory_append_row_is_byte_identical_to_mcp(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A CLI append and an MCP memory_append with identical inputs write identical rows."""
+    import asyncio
+
+    import zaxy.event as event_module
+    from zaxy.mcp_server import ZaxyMCPServer
+
+    fixed = datetime(2026, 1, 2, 3, 4, 5, 123456, tzinfo=UTC)
+
+    class _FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz: object | None = None) -> datetime:  # type: ignore[override]
+            return fixed
+
+    monkeypatch.setattr(event_module, "datetime", _FrozenDateTime)
+
+    inputs_payload = {
+        "summary": "chose Landlock egress pinning",
+        "rationale": "weaker boundary via proxy",
+    }
+
+    mcp_dir = tmp_path / "mcp" / ".eventloom"
+    with (
+        patch("zaxy.mcp_server.build_projection_store", return_value=AsyncMock()),
+        patch("zaxy.mcp_server.MemoryTracer", return_value=AsyncMock()),
+    ):
+        server = ZaxyMCPServer(eventloom_path=str(mcp_dir))
+        server.graph = AsyncMock()
+        server.tracer = AsyncMock()
+    asyncio.run(
+        server.handle_memory_append(
+            {
+                "event_type": "decision.made",
+                "actor": "ainix-agent",
+                "payload": inputs_payload,
+                "session_id": "memory",
+            }
+        )
+    )
+
+    cli_workspace = tmp_path / "cli"
+    cli_workspace.mkdir()
+    cli_dir = cli_workspace / ".eventloom"
+    (cli_workspace / ".env.local").write_text("PROJECTION_BACKEND=null\n", encoding="utf-8")
+    result = CliRunner().invoke(
+        app,
+        [
+            "memory",
+            "append",
+            "decision.made",
+            "--actor",
+            "ainix-agent",
+            "--session-id",
+            "memory",
+            "--payload-json",
+            json.dumps(inputs_payload),
+            "--eventloom-path",
+            str(cli_dir),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    mcp_row = (mcp_dir / "memory.jsonl").read_text(encoding="utf-8")
+    cli_row = (cli_dir / "memory.jsonl").read_text(encoding="utf-8")
+    assert cli_row == mcp_row
+
+
+def test_memory_append_round_trip_checkout_surfaces_cited_fact(tmp_path: Path) -> None:
+    """An appended event should resurface in memory checkout with its eventloom citation."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    eventloom_path = workspace / ".eventloom"
+    (workspace / ".env.local").write_text("PROJECTION_BACKEND=null\n", encoding="utf-8")
+    runner = CliRunner()
+
+    append_result = runner.invoke(
+        app,
+        [
+            "memory",
+            "append",
+            "decision.made",
+            "--actor",
+            "ainix-agent",
+            "--session-id",
+            "memory",
+            "--payload-json",
+            '{"summary": "chose Landlock egress pinning"}',
+            "--eventloom-path",
+            str(eventloom_path),
+            "--json",
+        ],
+    )
+    assert append_result.exit_code == 0
+    citation = json.loads(append_result.output)["citation"]
+
+    checkout_result = runner.invoke(
+        app,
+        [
+            "memory",
+            "checkout",
+            "what egress decision was made",
+            "--eventloom-path",
+            str(eventloom_path),
+            "--session-id",
+            "memory",
+            "--json",
+        ],
+    )
+
+    assert checkout_result.exit_code == 0
+    assert citation in checkout_result.output
+    assert "Landlock" in checkout_result.output
+
+
+def test_memory_append_human_output_without_json(tmp_path: Path) -> None:
+    """Without --json the command prints a single human-readable line."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    (workspace / ".env.local").write_text("PROJECTION_BACKEND=null\n", encoding="utf-8")
+    result = CliRunner().invoke(
+        app,
+        [
+            "memory",
+            "append",
+            "decision.made",
+            "--actor",
+            "ainix-agent",
+            "--session-id",
+            "memory",
+            "--payload-json",
+            '{"summary": "ship it"}',
+            "--eventloom-path",
+            str(workspace / ".eventloom"),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert result.output.strip() == "Recorded decision.made seq=1"
+
+
+def test_memory_append_legacy_envelope_has_null_event_id(tmp_path: Path) -> None:
+    """A non-v1 event type writes a legacy envelope and reports event_id null."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    (workspace / ".env.local").write_text("PROJECTION_BACKEND=null\n", encoding="utf-8")
+    result = CliRunner().invoke(
+        app,
+        [
+            "memory",
+            "append",
+            "LegacyType",
+            "--actor",
+            "ainix-agent",
+            "--payload-json",
+            "{}",
+            "--eventloom-path",
+            str(workspace / ".eventloom"),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["event_id"] is None
+    assert payload["event_type"] == "LegacyType"
+    assert payload["session_id"] == "default"
+
+
+def test_memory_append_reads_payload_from_stdin(tmp_path: Path) -> None:
+    """When no payload flag is given, the payload is read from stdin."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    eventloom_path = workspace / ".eventloom"
+    (workspace / ".env.local").write_text("PROJECTION_BACKEND=null\n", encoding="utf-8")
+    result = CliRunner().invoke(
+        app,
+        [
+            "memory",
+            "append",
+            "note.added",
+            "--actor",
+            "ainix-agent",
+            "--session-id",
+            "memory",
+            "--eventloom-path",
+            str(eventloom_path),
+            "--json",
+        ],
+        input='{"via": "stdin"}',
+    )
+
+    assert result.exit_code == 0
+    events = EventLog(eventloom_path / "memory.jsonl").read_all()
+    assert events[0].payload["via"] == "stdin"
+
+
+def test_memory_append_redacts_secret_payload_fields(tmp_path: Path) -> None:
+    """secure_payload runs as the second line of defense on appended payloads."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    eventloom_path = workspace / ".eventloom"
+    (workspace / ".env.local").write_text("PROJECTION_BACKEND=null\n", encoding="utf-8")
+    result = CliRunner().invoke(
+        app,
+        [
+            "memory",
+            "append",
+            "decision.made",
+            "--actor",
+            "ainix-agent",
+            "--session-id",
+            "memory",
+            "--payload-json",
+            '{"summary": "ok", "api_key": "sk-supersecretvalue1234567890"}',
+            "--eventloom-path",
+            str(eventloom_path),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    event = EventLog(eventloom_path / "memory.jsonl").read_all()[0]
+    assert event.payload["api_key"] == "[REDACTED]"
+    assert event.security is not None
+    assert event.security.sensitivity == "restricted"
+    assert "api_key" in event.security.redacted_paths
+
+
+@pytest.mark.parametrize(
+    ("args", "stdin_text"),
+    [
+        (["--actor", "", "--payload-json", "{}"], None),
+        (["--actor", "a", "--session-id", "bad/session", "--payload-json", "{}"], None),
+        (["--actor", "a", "--payload-json", "[]"], None),
+        (["--actor", "a", "--payload-json", "not-json"], None),
+        (["--actor", "a", "--payload-json", "{}", "--payload-file", "x.json"], None),
+        (["--actor", "a"], ""),
+    ],
+)
+def test_memory_append_failure_paths_exit_nonzero_without_success_json(
+    tmp_path: Path,
+    args: list[str],
+    stdin_text: str | None,
+) -> None:
+    """Invalid inputs exit non-zero and never print a success JSON object."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    (workspace / ".env.local").write_text("PROJECTION_BACKEND=null\n", encoding="utf-8")
+    result = CliRunner().invoke(
+        app,
+        [
+            "memory",
+            "append",
+            "decision.made",
+            "--eventloom-path",
+            str(workspace / ".eventloom"),
+            "--json",
+            *args,
+        ],
+        input=stdin_text,
+    )
+
+    assert result.exit_code != 0
+    assert '"seq"' not in result.output
+    assert '"citation"' not in result.output
+
+
+
 def test_packet_analyzer_cli_help_exposes_observe_only_gateway() -> None:
     """packet-analyzer should expose the low-latency observe-only gateway."""
     runner = CliRunner()
