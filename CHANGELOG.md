@@ -2,6 +2,22 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 2.6.1 - 2026-06-22
+
+- Added `zaxy memory append`, the CLI twin of the MCP `memory_append` tool, for
+  trusted daemons and agent shims that record memory without an MCP client. It
+  appends one event through the same `MemoryFabric.append` pipeline the MCP
+  handler uses, so CLI-written rows are byte-identical to MCP-written ones —
+  same hash chain, envelope selection (legacy vs `eventloom.v1`), projection,
+  inference, and append-time secret redaction. The payload is read from
+  `--payload-json`, `--payload-file`, or stdin; flags mirror `zaxy memory
+  checkout` (`--actor`, `--eventloom-path`, `--session-id`, `--json`). With
+  `--json` it emits `{seq, hash, event_id, session_id, event_type, citation}`
+  (the same `eventloom://<thread>/events/<seq>#<hash>` citation `memory
+  checkout` surfaces); on any failure it exits non-zero with a stderr message
+  and no partial stdout, and it never hard-fails the durable write on embedded
+  projection lock contention.
+
 ## 2.6.0 - 2026-06-18
 
 - Added `zaxy claude-capture` for deterministic local Claude Code session
