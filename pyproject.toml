@@ -96,9 +96,12 @@ dev = [
     "build>=1.2.0",
     "twine>=5.0.0",
     "ruff>=0.4.0",
-    # Pin below 2.0: mypy 2.x rejects PEP 695 `type` statements that newer numpy
-    # stubs emit when type-checking under python_version = 3.11 (our floor).
-    "mypy>=1.10.0,<2.0",
+    "mypy>=2.0",
+    # Dev/type-check toolchain only: numpy >=2.5 requires Python 3.12+ and ships
+    # PEP 695 `type` stubs that mypy rejects under our python_version = 3.11
+    # floor, so pin the type-check env to numpy with 3.11-valid stubs. Runtime
+    # numpy is intentionally unconstrained (see [project.dependencies]).
+    "numpy>=1.26.0,<2.5",
     "neo4j>=5.20.0",
     "latticedb>=0.9.6",
     "types-requests>=2.32.0",
@@ -209,11 +212,3 @@ show_error_codes = true
 [[tool.mypy.overrides]]
 module = ["pathlight", "psycopg", "psycopg.rows", "pyarrow"]
 ignore_missing_imports = true
-
-# numpy >= 2.5 ships stubs that use PEP 695 `type` statements; mypy flags those
-# as syntax errors under python_version = 3.11 (our supported floor). We do not
-# rely on numpy's own types, so skip following its stubs to stay version-robust.
-[[tool.mypy.overrides]]
-module = ["numpy", "numpy.*"]
-follow_imports = "skip"
-follow_imports_for_stubs = true
