@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import typer
+from typer.core import TyperGroup
 
 if TYPE_CHECKING:
     pass
@@ -128,7 +129,159 @@ def resolve_zaxy_executable(*args: Any, **kwargs: Any) -> str:
     return str(_resolve_zaxy_executable(*args, **kwargs))
 
 
-app = typer.Typer(help="Zaxy: Event-sourced temporal knowledge graph fabric")
+# ---------------------------------------------------------------------------
+# `zaxy --help` organization.
+#
+# The top-level command list is large. Group it into ordered, labeled panels so
+# high-value commands lead and testing/benchmark commands trail. Typer renders
+# command panels in `list_commands()` order, so the custom group below assigns
+# each command a ``rich_help_panel`` from this map and lists commands grouped by
+# panel in the order declared here (top panel first).
+# ---------------------------------------------------------------------------
+_COMMAND_PANELS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "Essentials",
+        ("init", "serve", "dashboard", "activate", "doctor", "status"),
+    ),
+    (
+        "Memory",
+        (
+            "memory",
+            "coordinate",
+            "replay",
+            "index-codebase",
+            "refresh-context",
+            "compact",
+            "reproject",
+        ),
+    ),
+    (
+        "Setup & integrations",
+        (
+            "ide-config",
+            "integrations",
+            "integration-template",
+            "local-profile",
+            "init-session",
+            "extractor-template",
+        ),
+    ),
+    (
+        "Capture & observability",
+        (
+            "capture",
+            "codex-capture",
+            "claude-capture",
+            "capture-soak",
+            "hooks",
+            "hook-event",
+            "hook-status",
+            "packet-analyzer",
+            "packet-project",
+            "packet-status",
+            "trace",
+        ),
+    ),
+    (
+        "Export & verification",
+        (
+            "export",
+            "export-keygen",
+            "verify-export",
+            "export-disclose",
+            "verify-export-subset",
+            "export-push",
+        ),
+    ),
+    (
+        "Inspection & maintenance",
+        ("schema-plan", "schema-recovery-plan", "viewer", "offload-get"),
+    ),
+    (
+        "Benchmarks & evaluation",
+        (
+            "benchmark",
+            "benchmark-inventory",
+            "benchmark-compare",
+            "benchmark-freeze",
+            "purpose-benchmark",
+            "harvey-lab-benchmark",
+            "harvey-lab-import",
+            "harvey-lab-index",
+            "harvey-lab-adapter-kit",
+            "harvey-lab-ready",
+            "harvey-lab-plan",
+            "harvey-lab-normalize-run",
+            "harvey-lab-gate",
+            "harvey-lab-validate",
+            "harvey-lab-publish",
+            "harvey-lab-doctor",
+            "harvey-lab-preflight",
+            "harvey-lab-status",
+            "longmembench-bootstrap",
+            "longmembench-adapter-kit",
+            "longmembench-plan",
+            "longmembench-ready",
+            "longmembench-import",
+            "longmembench-generate-hypotheses",
+            "longmembench-evaluate-official",
+            "longmembench-validator-evidence",
+            "longmembench-validate",
+            "longmembench-gate",
+            "longmembench-audit",
+            "longmembench-publish",
+            "longmembench-doctor",
+        ),
+    ),
+    (
+        "Internal & experimental lanes",
+        (
+            "state-recovery-benchmark",
+            "agent-experience-lanes",
+            "cognitive-lanes",
+            "graph-scale-lanes",
+            "experimental",
+        ),
+    ),
+)
+
+_FALLBACK_PANEL = "Other commands"
+
+_COMMAND_PANEL: dict[str, str] = {}
+_COMMAND_RANK: dict[str, tuple[int, int]] = {}
+for _panel_index, (_panel_name, _panel_cmds) in enumerate(_COMMAND_PANELS):
+    for _cmd_index, _cmd_name in enumerate(_panel_cmds):
+        _COMMAND_PANEL[_cmd_name] = _panel_name
+        _COMMAND_RANK[_cmd_name] = (_panel_index, _cmd_index)
+
+
+class _PanelOrderedGroup(TyperGroup):
+    """Render top-level ``zaxy`` help in ordered, labeled command panels.
+
+    Each command is assigned a ``rich_help_panel`` from ``_COMMAND_PANEL`` and
+    listed grouped by panel in ``_COMMAND_PANELS`` order, so high-value commands
+    lead and testing/benchmark commands trail. Commands missing from the map
+    fall back to a trailing "Other commands" panel rather than disappearing,
+    keeping new commands visible until they are categorized.
+    """
+
+    def list_commands(self, ctx: Any) -> list[str]:
+        names = super().list_commands(ctx)
+        fallback_rank = (len(_COMMAND_PANELS), 0)
+
+        def sort_key(name: str) -> tuple[int, int, int]:
+            panel_index, cmd_index = _COMMAND_RANK.get(name, fallback_rank)
+            return (panel_index, cmd_index, names.index(name))
+
+        ordered = sorted(names, key=sort_key)
+        for name in ordered:
+            command = self.commands.get(name)
+            if command is not None:
+                cast(Any, command).rich_help_panel = _COMMAND_PANEL.get(name, _FALLBACK_PANEL)
+        return ordered
+
+
+app = typer.Typer(cls=_PanelOrderedGroup, help="Zaxy: Event-sourced temporal knowledge graph fabric")
 
 
 memory_app = typer.Typer(help="Inspect Eventloom-backed agent memory")

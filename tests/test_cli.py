@@ -9014,3 +9014,67 @@ def test_memory_mine_procedures_rejects_invalid_min_support(tmp_path: Path) -> N
     )
 
     assert result.exit_code != 0
+
+
+def _top_level_group():
+    import click
+
+    group = get_command(app)
+    ctx = click.Context(group)
+    return group, ctx
+
+
+def test_top_level_help_groups_commands_into_ordered_panels() -> None:
+    """`zaxy --help` should render high-value panels first and test/benchmark last."""
+    group, ctx = _top_level_group()
+    ordered = group.list_commands(ctx)
+
+    # Every command is placed exactly once, grouped into a known panel.
+    assert set(ordered) == set(group.commands)
+    assert all(
+        group.commands[name].rich_help_panel != cli_runtime._FALLBACK_PANEL for name in ordered
+    )
+
+    # Panels appear in the declared priority order (Typer renders panels in
+    # list_commands order).
+    seen: list[str] = []
+    for name in ordered:
+        panel = group.commands[name].rich_help_panel
+        if panel not in seen:
+            seen.append(panel)
+    assert seen == [panel for panel, _ in cli_runtime._COMMAND_PANELS]
+
+    # High-value lead, testing/benchmark trail.
+    assert seen[0] == "Essentials"
+    assert seen[-2:] == ["Benchmarks & evaluation", "Internal & experimental lanes"]
+
+
+def test_every_top_level_command_is_categorized_into_a_panel() -> None:
+    """New top-level commands must be assigned a help panel, not silently uncategorized.
+
+    This guards the grouped `zaxy --help`: an unmapped command would fall into the
+    trailing "Other commands" panel, which signals the map needs updating.
+    """
+    group, _ = _top_level_group()
+    uncategorized = sorted(set(group.commands) - set(cli_runtime._COMMAND_PANEL))
+    assert not uncategorized, f"uncategorized top-level commands: {uncategorized}"
+
+
+def test_panel_map_has_no_stale_command_names() -> None:
+    """The help panel map should not reference commands that no longer exist."""
+    group, _ = _top_level_group()
+    stale = sorted(set(cli_runtime._COMMAND_PANEL) - set(group.commands))
+    assert not stale, f"panel map references unregistered commands: {stale}"
+
+
+def test_top_level_help_renders_panel_titles_in_order() -> None:
+    """The rendered help text should show the ordered panel titles."""
+    result = CliRunner().invoke(app, ["--help"])
+    assert result.exit_code == 0
+    output = result.output
+    positions = [output.find(panel) for panel, _ in cli_runtime._COMMAND_PANELS]
+    assert all(pos != -1 for pos in positions), positions
+    assert positions == sorted(positions)
+    # Benchmark/internal panels render below the Essentials panel.
+    assert output.find("Essentials") < output.find("Benchmarks & evaluation")
+    assert output.find("Benchmarks & evaluation") < output.find("Internal & experimental lanes")

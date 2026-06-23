@@ -2,6 +2,18 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 2.6.3 - 2026-06-23
+
+- Organized `zaxy --help` into ordered, labeled command panels. The top-level
+  command list had grown to 76 entries rendered as one flat block (with
+  benchmark/eval commands leading, an artifact of module import order). Commands
+  are now grouped so high-value commands lead and testing/benchmark commands
+  trail: Essentials, Memory, Setup & integrations, Capture & observability,
+  Export & verification, Inspection & maintenance, Benchmarks & evaluation, and
+  Internal & experimental lanes. A command missing from the grouping map falls
+  back to a trailing "Other commands" panel rather than disappearing, so new
+  commands stay visible until categorized. Sub-command help is unchanged.
+
 ## 2.6.2 - 2026-06-23
 
 - Added external-producer batch ingest so tools and bridges can record their own
