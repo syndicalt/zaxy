@@ -1,5 +1,5 @@
 {
-  "tool_count": 48,
+  "tool_count": 49,
   "tools": [
     {
       "description": "The front door to Zaxy memory: call this first, before substantial work, to checkout current, cited, prompt-ready memory state for a session. Start here; every other memory tool is plumbing or power use, discoverable through memory_capabilities.",
@@ -297,7 +297,7 @@
       "name": "memory_capabilities"
     },
     {
-      "description": "Experimental metamemory pre-check: predict whether memory_checkout would likely return something for a query, in roughly a millisecond, from in-memory session state only (no embedding call, no graph query). Returns a non-authoritative verdict (likely | possible | unlikely) with its signal breakdown and raw score. It is a cheap prediction about checkout, never a memory answer or evidence, and its calibration against real checkout outcomes is still being measured — when in doubt, call memory_checkout.",
+      "description": "Experimental metamemory pre-check: predict whether memory_checkout would likely return something for a query, in roughly a millisecond, from in-memory session state only (no embedding call, no graph query). Returns a non-authoritative verdict (likely | possible | unlikely) with its signal breakdown and raw score. It is a cheap prediction about checkout, never a memory answer or evidence, and its calibration against real checkout outcomes is still being measured \u2014 when in doubt, call memory_checkout.",
       "input_schema": {
         "additionalProperties": false,
         "properties": {
@@ -323,6 +323,68 @@
         "type": "object"
       },
       "name": "memory_feeling_of_knowing"
+    },
+    {
+      "description": "Batch-ingest typed events from an external producer into the agent's persistent memory log. Records each event's producer via 'actor', preserves caller-supplied causal links (parent_event_id, caused_by, id), dedups re-ingest by 'producer_ref', and projects each event so it is retrievable through memory_checkout. Use this instead of many memory_append calls when a tool or bridge replays its own event stream into Zaxy.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "events": {
+            "description": "Events to ingest under one atomic seal.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "actor": {
+                  "description": "Producer that emitted the event",
+                  "type": "string"
+                },
+                "caused_by": {
+                  "description": "Producer's causal predecessor ids",
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "event_type": {
+                  "description": "Event type, e.g. 'goal.created'",
+                  "type": "string"
+                },
+                "id": {
+                  "description": "Producer's external event id",
+                  "type": "string"
+                },
+                "parent_event_id": {
+                  "description": "Producer's parent event id",
+                  "type": "string"
+                },
+                "payload": {
+                  "description": "Structured payload",
+                  "type": "object"
+                },
+                "producer_ref": {
+                  "description": "Stable producer source reference used for idempotent dedup",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "event_type",
+                "actor"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "session_id": {
+            "description": "Session ID for multi-agent sharding",
+            "type": "string"
+          }
+        },
+        "required": [
+          "events"
+        ],
+        "type": "object"
+      },
+      "name": "memory_ingest"
     },
     {
       "description": "Read directed causal effects of an entity from graph-backed memory.",

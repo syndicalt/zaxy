@@ -548,6 +548,134 @@ def memory_append(
         typer.echo(f"Recorded {event.type} seq={event.seq}")
 
 
+def _resolve_ingest_items(items_file: Path | None) -> list[dict[str, Any]]:
+    """Resolve a batch of ingest items from a JSONL --file or stdin.
+
+    Each non-empty line MUST parse to a JSON object (one event per line), so the
+    CLI matches the MCP ``memory_ingest`` per-event contract.
+    """
+    if items_file is not None:
+        try:
+            source = items_file.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise ValueError(f"--file could not be read: {exc}") from exc
+        origin = "--file"
+    else:
+        source = sys.stdin.read()
+        origin = "stdin"
+    items: list[dict[str, Any]] = []
+    for line_number, line in enumerate(source.splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            parsed = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"{origin} line {line_number} is not valid JSON") from exc
+        if not isinstance(parsed, dict):
+            raise ValueError(f"{origin} line {line_number} must be a JSON object")
+        items.append(parsed)
+    if not items:
+        raise ValueError(
+            "no ingest items provided via --file or stdin (one JSON object per line)"
+        )
+    return items
+
+
+@memory_app.command("ingest")
+def memory_ingest(
+    items_file: Path | None = typer.Option(None, "--file", help="JSONL file of events (one JSON object per line); reads stdin if omitted"),  # noqa: B008
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    session_id: str = typer.Option("default", help="Session ID to ingest into"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Batch-ingest external-producer events through the shared MemoryFabric pipeline (CLI twin of MCP memory_ingest)."""
+    import asyncio
+
+    from zaxy.security import validate_event_text, validate_payload, validate_session_id
+
+    try:
+        safe_session_id = validate_session_id(session_id)
+        items = _resolve_ingest_items(items_file)
+        for index, item in enumerate(items):
+            validate_event_text(item.get("event_type"), "event_type")
+            validate_event_text(item.get("actor"), "actor")
+            validate_payload(item.get("payload") or {})
+            for field in ("producer_ref", "parent_event_id", "id"):
+                value = item.get(field)
+                if value is not None and not isinstance(value, str):
+                    raise ValueError(f"item {index} {field} must be a string")
+            caused_by = item.get("caused_by")
+            if caused_by is not None and (
+                not isinstance(caused_by, list) or not all(isinstance(c, str) for c in caused_by)
+            ):
+                raise ValueError(f"item {index} caused_by must be a list of strings")
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    async def _ingest_with_path(
+        embedded_graph_path: Path, *, projection_backend_override: str | None = None
+    ) -> Any:
+        settings = _status_settings(_profile_root_for_eventloom_path(eventloom_path))
+        projection_backend = projection_backend_override or _resolve_cli_projection_backend(
+            None, settings
+        )
+        fabric = _runtime._memory_fabric(
+            eventloom_path=str(eventloom_path),
+            projection_backend=projection_backend,
+            pggraph_dsn=settings.pggraph_dsn,
+            embedded_graph_path=embedded_graph_path,
+            latticedb_path=Path(settings.latticedb_path),
+        )
+        try:
+            await fabric.connect()
+            return await fabric.append_batch(items, session_id=safe_session_id)
+        finally:
+            with suppress(Exception):
+                await fabric.close()
+
+    async def _ingest() -> Any:
+        settings = _status_settings(_profile_root_for_eventloom_path(eventloom_path))
+        embedded_graph_path = Path(settings.embedded_graph_path)
+        try:
+            return await _ingest_with_path(embedded_graph_path)
+        except RuntimeError as exc:
+            if not _is_embedded_projection_lock_error(exc):
+                raise
+            # A server holds the embedded projection's single-owner lock; keep the
+            # ingest durable by writing with the graph lane degraded (null backend),
+            # mirroring `memory append`.
+            return await _ingest_with_path(
+                embedded_graph_path, projection_backend_override="null"
+            )
+
+    try:
+        events = asyncio.run(_ingest())
+    except (RuntimeError, OSError) as exc:
+        typer.echo(f"zaxy memory ingest failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    imported = len(events)
+    deduped = len(items) - imported
+    if json_output:
+        typer.echo(
+            json.dumps(
+                {
+                    "imported": imported,
+                    "deduped": deduped,
+                    "session_id": safe_session_id,
+                    "events": [
+                        {"seq": event.seq, "hash": event.hash, "event_id": event.id}
+                        for event in events
+                    ],
+                },
+                sort_keys=True,
+            )
+        )
+    else:
+        seq_range = f"{events[0].seq}..{events[-1].seq}" if events else "-"
+        typer.echo(f"imported={imported} deduped={deduped} seq={seq_range}")
+
+
 async def _run_reasoning_primitive(
     *,
     method_name: str,

@@ -634,6 +634,144 @@ class TestAppend:
         assert fabric.graph.upsert_extraction.await_count == 2
 
 
+class TestAppendBatch:
+    """Tests for external-producer batch ingest (append_batch)."""
+
+    async def test_append_batch_seals_chain_and_preserves_causal_links(
+        self, tmp_path: Path
+    ) -> None:
+        """A batch is sealed atomically with contiguous seq and preserved causal links."""
+        fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
+        await fabric.connect()
+        try:
+            events = await fabric.append_batch(
+                [
+                    {
+                        "event_type": "decision.made",
+                        "actor": "limina",
+                        "payload": {"title": "pick X"},
+                        "id": "lim-1",
+                    },
+                    {
+                        "event_type": "task.created",
+                        "actor": "limina",
+                        "payload": {"title": "do Y"},
+                        "id": "lim-2",
+                        "parent_event_id": "lim-1",
+                        "caused_by": ["lim-1"],
+                    },
+                ],
+                session_id="ext",
+            )
+        finally:
+            await fabric.close()
+
+        assert [e.seq for e in events] == [1, 2]
+        assert events[1].prev_hash == events[0].hash
+        assert events[1].parent_event_id == "lim-1"
+        assert events[1].caused_by == ["lim-1"]
+        assert events[1].id == "lim-2"
+        assert events[1].envelope_version == "eventloom.v1"
+        assert events[1].verify() is True
+
+        log = fabric.session_manager.get("ext").eventlog
+        assert log.verify().ok is True
+        assert [e.type for e in log.read_all()] == ["decision.made", "task.created"]
+
+    async def test_append_batch_dedups_by_producer_ref(self, tmp_path: Path) -> None:
+        """Re-ingesting the same producer_ref is an idempotent no-op."""
+        fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
+        await fabric.connect()
+        try:
+            batch = [
+                {"event_type": "decision.made", "actor": "limina", "producer_ref": "limina:evt:1"},
+                {"event_type": "task.created", "actor": "limina", "producer_ref": "limina:evt:2"},
+            ]
+            first = await fabric.append_batch(batch, session_id="ext")
+            second = await fabric.append_batch(batch, session_id="ext")
+            # An item without producer_ref always appends, even on replay.
+            third = await fabric.append_batch(
+                [{"event_type": "note.created", "actor": "limina"}], session_id="ext"
+            )
+        finally:
+            await fabric.close()
+
+        assert [e.seq for e in first] == [1, 2]
+        assert second == []
+        assert [e.seq for e in third] == [3]
+        log = fabric.session_manager.get("ext").eventlog
+        assert [e.type for e in log.read_all()] == [
+            "decision.made",
+            "task.created",
+            "note.created",
+        ]
+        assert log.verify().ok is True
+
+    async def test_append_batch_dedups_within_a_single_batch(self, tmp_path: Path) -> None:
+        """Duplicate producer_refs inside one batch keep only the first."""
+        fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
+        await fabric.connect()
+        try:
+            events = await fabric.append_batch(
+                [
+                    {"event_type": "decision.made", "actor": "limina", "producer_ref": "dup"},
+                    {"event_type": "task.created", "actor": "limina", "producer_ref": "dup"},
+                ],
+                session_id="ext",
+            )
+        finally:
+            await fabric.close()
+        assert [e.type for e in events] == ["decision.made"]
+
+    async def test_append_batch_projects_each_event_for_retrieval(self, tmp_path: Path) -> None:
+        """Every appended event is projected, so it is immediately retrievable."""
+        fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
+        await fabric.connect()
+        try:
+            await fabric.append_batch(
+                [
+                    {
+                        "event_type": "goal.created",
+                        "actor": "limina",
+                        "payload": {"title": "Ship batch ingest"},
+                    }
+                ],
+                session_id="ext",
+            )
+            results = await fabric.query("Ship batch ingest", session_id="ext", limit=5)
+        finally:
+            await fabric.close()
+        assert results
+        assert any("Ship batch ingest" in (r.content or "") for r in results)
+
+    async def test_append_batch_rejects_invalid_item_without_writing(self, tmp_path: Path) -> None:
+        """One invalid item rejects the whole batch with no partial writes."""
+        fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
+        await fabric.connect()
+        try:
+            with pytest.raises(ValueError):
+                await fabric.append_batch(
+                    [
+                        {"event_type": "decision.made", "actor": "limina"},
+                        {"event_type": "task.created"},  # missing actor
+                    ],
+                    session_id="ext",
+                )
+        finally:
+            await fabric.close()
+        log = fabric.session_manager.get("ext").eventlog
+        assert log.read_all() == []
+
+    async def test_append_batch_empty_is_noop(self, tmp_path: Path) -> None:
+        """An empty batch returns no events."""
+        fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
+        await fabric.connect()
+        try:
+            assert await fabric.append_batch([], session_id="ext") == []
+        finally:
+            await fabric.close()
+
+
 class TestQueryPagination:
     """Tests for stable query continuation pages."""
 

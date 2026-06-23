@@ -304,6 +304,11 @@ class EventLog:
                         thread=validate_event_text(item.get("thread", "default"), "thread"),
                         timestamp=item.get("timestamp") if isinstance(item.get("timestamp"), datetime) else None,
                         envelope_version="eventloom.v1" if write_v1 else "zaxy.legacy",
+                        event_id=item.get("id") if isinstance(item.get("id"), str) else None,
+                        parent_event_id=(
+                            item.get("parent_event_id") if isinstance(item.get("parent_event_id"), str) else None
+                        ),
+                        caused_by=item.get("caused_by") if isinstance(item.get("caused_by"), list) else None,
                     )
                     batch.append(event)
                     seq = event.seq + 1
@@ -332,6 +337,9 @@ class EventLog:
         thread: str,
         timestamp: datetime | None,
         envelope_version: str = "zaxy.legacy",
+        event_id: str | None = None,
+        parent_event_id: str | None = None,
+        caused_by: list[str] | None = None,
     ) -> Event:
         ts = (timestamp or datetime.now(UTC)).isoformat().replace("+00:00", "Z")
         secured = secure_payload(payload or {})
@@ -349,12 +357,14 @@ class EventLog:
             "security": security,
             "prev_hash": prev_hash,
             "hash": "0" * 64,
+            "id": event_id,
+            "parent_event_id": parent_event_id,
+            "caused_by": list(caused_by or []),
             "envelope_version": envelope_version,
         }
         tmp = Event.model_validate(raw)
         if envelope_version == "eventloom.v1":
-            event_id = _eventloom_v1_event_id(seq, event_type, actor, ts)
-            raw["id"] = event_id
+            raw["id"] = event_id or _eventloom_v1_event_id(seq, event_type, actor, ts)
             tmp = Event.model_validate(raw)
             raw["hash"] = _strip_sha256_prefix(
                 _eventloom_v1_hash(tmp.to_eventloom_v1_unsigned(), _with_sha256_prefix(prev_hash))

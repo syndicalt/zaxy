@@ -314,6 +314,47 @@ class TestEventLogIO:
         assert written[-1].hash == events[-1].hash
         assert EventLog(log_path).verify().ok is True
 
+    def test_append_many_threads_and_seals_producer_causal_fields(
+        self, tmp_eventlog: EventLog
+    ) -> None:
+        """append_many should preserve caller id/parent/caused_by and seal them under v1."""
+        events = tmp_eventlog.append_many(
+            [
+                {"event_type": "decision.made", "actor": "limina", "id": "lim-1"},
+                {
+                    "event_type": "task.created",
+                    "actor": "limina",
+                    "id": "lim-2",
+                    "parent_event_id": "lim-1",
+                    "caused_by": ["lim-1"],
+                },
+            ]
+        )
+
+        assert events[0].envelope_version == "eventloom.v1"
+        assert events[0].id == "lim-1"
+        assert events[1].id == "lim-2"
+        assert events[1].parent_event_id == "lim-1"
+        assert events[1].caused_by == ["lim-1"]
+        # The v1 seal must cover the causal fields.
+        assert events[1].verify() is True
+        assert tmp_eventlog.verify().ok is True
+
+        # Causal links round-trip through replay.
+        replayed = tmp_eventlog.replay().events
+        assert replayed[1].parent_event_id == "lim-1"
+        assert replayed[1].caused_by == ["lim-1"]
+        assert replayed[1].id == "lim-2"
+
+    def test_append_many_generates_v1_id_when_absent(self, tmp_eventlog: EventLog) -> None:
+        """A v1 event without a caller id still gets a deterministic generated id."""
+        events = tmp_eventlog.append_many(
+            [{"event_type": "decision.made", "actor": "limina"}]
+        )
+        assert events[0].envelope_version == "eventloom.v1"
+        assert isinstance(events[0].id, str) and events[0].id
+        assert events[0].verify() is True
+
     def test_read_roundtrip(self, tmp_eventlog: EventLog) -> None:
         """Events written should be identical when read back."""
         original = tmp_eventlog.append("goal.created", actor="u", payload={"x": 1})
