@@ -276,6 +276,50 @@ TOOLS = [
         },
     ),
     Tool(
+        name="memory_ingest",
+        description=(
+            "Batch-ingest typed events from an external producer into the agent's "
+            "persistent memory log. Records each event's producer via 'actor', preserves "
+            "caller-supplied causal links (parent_event_id, caused_by, id), dedups "
+            "re-ingest by 'producer_ref', and projects each event so it is retrievable "
+            "through memory_checkout. Use this instead of many memory_append calls when a "
+            "tool or bridge replays its own event stream into Zaxy."
+        ),
+        inputSchema={
+            "type": "object",
+            "required": ["events"],
+            "properties": {
+                "events": {
+                    "type": "array",
+                    "description": "Events to ingest under one atomic seal.",
+                    "items": {
+                        "type": "object",
+                        "required": ["event_type", "actor"],
+                        "properties": {
+                            "event_type": {"type": "string", "description": "Event type, e.g. 'goal.created'"},
+                            "actor": {"type": "string", "description": "Producer that emitted the event"},
+                            "payload": {"type": "object", "description": "Structured payload"},
+                            "producer_ref": {
+                                "type": "string",
+                                "description": "Stable producer source reference used for idempotent dedup",
+                            },
+                            "parent_event_id": {"type": "string", "description": "Producer's parent event id"},
+                            "caused_by": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Producer's causal predecessor ids",
+                            },
+                            "id": {"type": "string", "description": "Producer's external event id"},
+                        },
+                        "additionalProperties": False,
+                    },
+                },
+                "session_id": {"type": "string", "description": "Session ID for multi-agent sharding"},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
         name="memory_causal_successors",
         description="Read directed causal effects of an entity from graph-backed memory.",
         inputSchema={

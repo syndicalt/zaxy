@@ -2,6 +2,23 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 2.6.2 - 2026-06-23
+
+- Added external-producer batch ingest so tools and bridges can record their own
+  event streams through a real Zaxy API instead of writing Eventloom JSONL
+  directly — keeping the hash chain, append-time secret redaction, and graph
+  projection. Each item records its producer through the standard `actor` field
+  and may carry the producer's causal links (`parent_event_id`, `caused_by`,
+  external `id`); Zaxy always reseals into its own `seq`/`prev_hash`/`hash`, and
+  the causal links round-trip on replay and are hash-sealed under the
+  `eventloom.v1` envelope. A whole batch is appended under one lock (an invalid
+  item rejects the batch with no partial writes), every event is projected so it
+  is immediately retrievable through `memory_checkout`, and re-ingest is
+  idempotent via a reserved `__zaxy_producer_ref` payload key. Exposed three
+  ways: `MemoryFabric.append_batch`, the MCP `memory_ingest` tool (returns
+  `{imported, deduped, events}`), and `zaxy memory ingest` (JSONL via `--file` or
+  stdin). See `docs/external-ingest.md`.
+
 ## 2.6.1 - 2026-06-22
 
 - Added `zaxy memory append`, the CLI twin of the MCP `memory_append` tool, for

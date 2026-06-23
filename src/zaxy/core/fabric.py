@@ -149,6 +149,7 @@ from zaxy.salience import (
 )
 from zaxy.security import (
     MAX_QUERY_LIMIT,
+    validate_event_text,
     validate_limit,
     validate_payload,
     validate_query,
@@ -179,6 +180,21 @@ from zaxy.workspace import (
 
 QUERY_PAGE_CACHE_TTL_SECONDS = 30.0
 QUERY_PAGE_CACHE_MAX_ENTRIES = 32
+
+# Reserved payload key carrying an external producer's source reference, used to
+# dedup re-ingest of the same producer event (see ``MemoryFabric.append_batch``).
+# Follows the ``__zaxy_*`` reserved-key convention.
+PRODUCER_REF_PAYLOAD_KEY = "__zaxy_producer_ref"
+
+
+def _existing_producer_refs(eventlog: EventLog) -> set[str]:
+    """Collect producer source refs already recorded in a session's log."""
+    refs: set[str] = set()
+    for event in eventlog.read_all():
+        ref = event.payload.get(PRODUCER_REF_PAYLOAD_KEY)
+        if isinstance(ref, str):
+            refs.add(ref)
+    return refs
 
 
 class MemoryFabric:
@@ -1130,6 +1146,106 @@ class MemoryFabric:
         if interference is not None:
             await self._propose_interference_update(interference, session_id=sid)
         return event
+
+    async def append_batch(
+        self,
+        items: list[dict[str, Any]],
+        *,
+        session_id: str | None = None,
+    ) -> list[Any]:
+        """Ingest a batch of external-producer events under one atomic seal.
+
+        Each item records its producer via ``actor`` and may carry the
+        producer's causal links (``parent_event_id``, ``caused_by``, external
+        ``id``) plus a ``producer_ref`` used for idempotent dedup. Zaxy always
+        computes its own ``seq``/``prev_hash``/``hash`` from the locked tail;
+        the causal links round-trip on replay and are hash-sealed when the
+        event is written as ``eventloom.v1``. Every appended event is projected
+        to the graph so it is immediately retrievable.
+
+        Unlike :meth:`append`, batch ingest skips the agent-turn encoding gate
+        and generated-inference appends. Returns only the events appended
+        (deduped items are excluded).
+        """
+        if not self._connected:
+            try:
+                await self.connect()
+            except Exception:
+                get_metrics().record_degraded_operation("append", "graph_connect_unavailable")
+                self._connected = False
+
+        sid = validate_session_id(session_id or "default")
+        eventlog = self.session_manager.get(sid).eventlog
+
+        if not items:
+            return []
+
+        # Validate every item up front; on any invalid item reject the whole
+        # batch with no writes (atomic).
+        validated: list[dict[str, Any]] = []
+        for index, item in enumerate(items):
+            if not isinstance(item, dict):
+                raise ValueError(f"ingest item {index} must be an object")
+            event_type = validate_event_text(item.get("event_type"), "event_type")
+            actor = validate_event_text(item.get("actor"), "actor")
+            payload = dict(validate_payload(item.get("payload") or {}))
+            producer_ref = item.get("producer_ref")
+            if producer_ref is not None and not isinstance(producer_ref, str):
+                raise ValueError(f"ingest item {index} producer_ref must be a string")
+            parent_event_id = item.get("parent_event_id")
+            if parent_event_id is not None and not isinstance(parent_event_id, str):
+                raise ValueError(f"ingest item {index} parent_event_id must be a string")
+            event_id = item.get("id")
+            if event_id is not None and not isinstance(event_id, str):
+                raise ValueError(f"ingest item {index} id must be a string")
+            caused_by = item.get("caused_by")
+            if caused_by is not None and (
+                not isinstance(caused_by, list) or not all(isinstance(c, str) for c in caused_by)
+            ):
+                raise ValueError(f"ingest item {index} caused_by must be a list of strings")
+            validated.append(
+                {
+                    "event_type": event_type,
+                    "actor": actor,
+                    "payload": payload,
+                    "producer_ref": producer_ref,
+                    "parent_event_id": parent_event_id,
+                    "id": event_id,
+                    "caused_by": caused_by,
+                }
+            )
+
+        # Dedup by producer_ref against this session's log and within the batch.
+        existing_refs = _existing_producer_refs(eventlog)
+        seen: set[str] = set()
+        append_items: list[dict[str, Any]] = []
+        for item in validated:
+            ref = item["producer_ref"]
+            if isinstance(ref, str):
+                if ref in existing_refs or ref in seen:
+                    continue
+                seen.add(ref)
+                item["payload"][PRODUCER_REF_PAYLOAD_KEY] = ref
+            append_items.append(
+                {
+                    "event_type": item["event_type"],
+                    "actor": item["actor"],
+                    "payload": item["payload"],
+                    "thread": sid,
+                    "id": item["id"],
+                    "parent_event_id": item["parent_event_id"],
+                    "caused_by": item["caused_by"],
+                }
+            )
+
+        if not append_items:
+            return []
+
+        events = eventlog.append_many(append_items)
+        for event in events:
+            await self._project_event(event, session_id=sid)
+        self._invalidate_query_page_cache(sid)
+        return events
 
     async def _project_event(self, event: Any, *, session_id: str) -> None:
         """Extract, project, trace, and record metrics for one sealed event."""

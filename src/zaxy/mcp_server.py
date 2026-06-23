@@ -512,6 +512,29 @@ class ZaxyMCPServer:
 
         return [TextContent(type="text", text=json.dumps({"seq": event.seq, "hash": event.hash}))]
 
+    async def handle_memory_ingest(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_ingest tool call (external-producer batch ingest)."""
+        events_arg = arguments.get("events")
+        if not isinstance(events_arg, list):
+            raise ValueError("events must be a list of objects")
+        session_id = self._session_id_from_arguments(
+            arguments,
+            default=self._default_session_id,
+        )
+        appended = await self._fabric.append_batch(events_arg, session_id=session_id)
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "imported": len(appended),
+                        "deduped": len(events_arg) - len(appended),
+                        "events": [{"seq": event.seq, "hash": event.hash} for event in appended],
+                    }
+                ),
+            )
+        ]
+
     async def handle_memory_causal_successors(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Handle memory_causal_successors tool calls."""
         return await self._handle_memory_causal_neighbors(arguments, direction="successors")
@@ -2580,6 +2603,8 @@ async def _dispatch_tool_call(
 ) -> list[TextContent]:
     if name == "memory_append":
         return await active_server.handle_memory_append(arguments)
+    if name == "memory_ingest":
+        return await active_server.handle_memory_ingest(arguments)
     if name == "memory_query":
         return await active_server.handle_memory_query(arguments)
     if name == "memory_causal_successors":

@@ -4109,6 +4109,115 @@ def test_memory_append_failure_paths_exit_nonzero_without_success_json(
     assert '"citation"' not in result.output
 
 
+def test_memory_ingest_seals_batch_and_dedups(tmp_path: Path) -> None:
+    """memory ingest should durably seal a batch and dedup re-ingest by producer_ref."""
+    from zaxy.event import verify_event_chain
+
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    eventloom_path = workspace / ".eventloom"
+    (workspace / ".env.local").write_text("PROJECTION_BACKEND=null\n", encoding="utf-8")
+    batch = workspace / "batch.jsonl"
+    batch.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "event_type": "decision.made",
+                        "actor": "limina",
+                        "payload": {"title": "pick X"},
+                        "producer_ref": "limina:evt:1",
+                        "id": "lim-1",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "event_type": "task.created",
+                        "actor": "limina",
+                        "payload": {"title": "do Y"},
+                        "producer_ref": "limina:evt:2",
+                        "id": "lim-2",
+                        "parent_event_id": "lim-1",
+                        "caused_by": ["lim-1"],
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    first = runner.invoke(
+        app,
+        [
+            "memory",
+            "ingest",
+            "--file",
+            str(batch),
+            "--eventloom-path",
+            str(eventloom_path),
+            "--session-id",
+            "ext",
+            "--json",
+        ],
+    )
+    assert first.exit_code == 0, first.output
+    payload = json.loads(first.output)
+    assert payload["imported"] == 2
+    assert payload["deduped"] == 0
+    assert [e["seq"] for e in payload["events"]] == [1, 2]
+
+    events = EventLog(eventloom_path / "ext.jsonl").read_all()
+    assert verify_event_chain(events).ok
+    assert [e.type for e in events] == ["decision.made", "task.created"]
+    assert events[1].parent_event_id == "lim-1"
+    assert events[1].caused_by == ["lim-1"]
+
+    second = runner.invoke(
+        app,
+        [
+            "memory",
+            "ingest",
+            "--file",
+            str(batch),
+            "--eventloom-path",
+            str(eventloom_path),
+            "--session-id",
+            "ext",
+            "--json",
+        ],
+    )
+    assert second.exit_code == 0, second.output
+    payload2 = json.loads(second.output)
+    assert payload2["imported"] == 0
+    assert payload2["deduped"] == 2
+    assert len(EventLog(eventloom_path / "ext.jsonl").read_all()) == 2
+
+
+def test_memory_ingest_reads_items_from_stdin(tmp_path: Path) -> None:
+    """memory ingest reads JSONL items from stdin and prints a human summary."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    eventloom_path = workspace / ".eventloom"
+    (workspace / ".env.local").write_text("PROJECTION_BACKEND=null\n", encoding="utf-8")
+    stdin_text = "\n".join(
+        [
+            json.dumps({"event_type": "note.added", "actor": "limina", "payload": {"via": "stdin"}}),
+            json.dumps({"event_type": "note.added", "actor": "limina", "payload": {"via": "stdin-2"}}),
+        ]
+    )
+    result = CliRunner().invoke(
+        app,
+        ["memory", "ingest", "--eventloom-path", str(eventloom_path), "--session-id", "ext"],
+        input=stdin_text,
+    )
+    assert result.exit_code == 0, result.output
+    assert "imported=2" in result.output
+    assert "deduped=0" in result.output
+    events = EventLog(eventloom_path / "ext.jsonl").read_all()
+    assert [e.payload["via"] for e in events] == ["stdin", "stdin-2"]
+
 
 def test_packet_analyzer_cli_help_exposes_observe_only_gateway() -> None:
     """packet-analyzer should expose the low-latency observe-only gateway."""

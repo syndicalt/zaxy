@@ -203,13 +203,14 @@ class TestToolSchema:
 
     def test_tools_list_length(self) -> None:
         """Should expose the memory and context lifecycle tools."""
-        assert len(TOOLS) == 48
+        assert len(TOOLS) == 49
 
     def test_tool_names(self) -> None:
         """Tool names should match the expected contract."""
         names = {t.name for t in TOOLS}
         assert names == {
             "memory_append",
+            "memory_ingest",
             "memory_query",
             "memory_causal_successors",
             "memory_causal_predecessors",
@@ -694,6 +695,68 @@ class TestMemoryAppend:
         """memory_append should bound direct handler inputs as tightly as advertised schemas."""
         with pytest.raises(ValueError):
             await server.handle_memory_append(arguments)
+
+
+class TestMemoryIngest:
+    """Tests for the memory_ingest batch handler."""
+
+    async def test_ingests_batch_projects_each_and_dedups(self, tmp_path: Path) -> None:
+        """memory_ingest seals a batch, projects each event, and dedups on re-ingest."""
+        with (
+            patch("zaxy.mcp_server.build_projection_store") as mock_build_projection_store,
+            patch("zaxy.mcp_server.MemoryTracer") as mock_tracer_cls,
+        ):
+            mock_graph = AsyncMock()
+            mock_build_projection_store.return_value = mock_graph
+            mock_tracer = AsyncMock()
+            mock_tracer_cls.return_value = mock_tracer
+            server = ZaxyMCPServer(eventloom_path=str(tmp_path / ".eventloom"))
+            server.graph = mock_graph
+            server.tracer = mock_tracer
+
+        events = [
+            {
+                "event_type": "decision.made",
+                "actor": "limina",
+                "producer_ref": "limina:evt:1",
+                "id": "lim-1",
+            },
+            {
+                "event_type": "task.created",
+                "actor": "limina",
+                "producer_ref": "limina:evt:2",
+                "id": "lim-2",
+                "parent_event_id": "lim-1",
+                "caused_by": ["lim-1"],
+            },
+        ]
+        first = json.loads(
+            (await server.handle_memory_ingest({"events": events, "session_id": "agent-1"}))[0].text
+        )
+        assert first["imported"] == 2
+        assert first["deduped"] == 0
+        assert [e["seq"] for e in first["events"]] == [1, 2]
+        server.graph.upsert_extraction.assert_awaited()
+
+        # Re-ingest is idempotent.
+        second = json.loads(
+            (await server.handle_memory_ingest({"events": events, "session_id": "agent-1"}))[0].text
+        )
+        assert second["imported"] == 0
+        assert second["deduped"] == 2
+        assert second["events"] == []
+
+        eventlog = server.session_manager.get("agent-1").eventlog
+        replay = eventlog.replay()
+        assert replay.integrity.ok is True
+        assert [ev.type for ev in replay.events] == ["decision.made", "task.created"]
+        assert replay.events[1].parent_event_id == "lim-1"
+        assert replay.events[1].caused_by == ["lim-1"]
+
+    async def test_rejects_non_list_events(self, server: ZaxyMCPServer) -> None:
+        """memory_ingest should reject a non-list events argument."""
+        with pytest.raises(ValueError):
+            await server.handle_memory_ingest({"events": {"event_type": "x.y", "actor": "a"}})
 
 
 class TestCausalAndConsolidationTools:
