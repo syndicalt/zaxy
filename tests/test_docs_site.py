@@ -102,7 +102,7 @@ def test_public_site_has_product_positioning_and_required_sections() -> None:
     assert "Eventloom source of truth" in html
     assert "Pathlight" in html
     assert "embedded LadybugDB" in html
-    assert "PyPI 2.6.0" in html
+    assert "PyPI 2.6.3" in html
     assert "Harvey LAB 10/10 tasks" in html
     assert "Harvey LAB mean 0.788" in html
     assert "Headline 500 R@5 1.000" in html
@@ -213,7 +213,7 @@ def test_v26_release_article_and_header_are_published() -> None:
     assert "../../assets/zaxy-v2.6-header.png" in rendered
     assert 'docs/announcements/zaxy-v2.6-x-article.html' in homepage
     assert "What's new in 2.6" in homepage
-    assert "PyPI 2.6.0" in homepage
+    assert "PyPI 2.6.3" in homepage
 
 
 def test_mcp_docs_show_memory_checkout_consumption_contract() -> None:
