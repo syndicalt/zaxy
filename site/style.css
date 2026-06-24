@@ -431,8 +431,21 @@ article p {
   color: var(--copy);
 }
 
-.benchmark-metrics {
-  grid-template-columns: 1.1fr 0.95fr 0.95fr;
+@media (min-width: 1041px) {
+  /* Five evidence cards: a top row of three and a bottom row of two that fill
+     the full width (each half) instead of leaving an empty third column. */
+  .benchmark-metrics {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .benchmark-card {
+    grid-column: span 2;
+  }
+
+  .benchmark-card:nth-last-child(2),
+  .benchmark-card:last-child {
+    grid-column: span 3;
+  }
 }
 
 .benchmark-card {
@@ -715,6 +728,10 @@ footer a {
   .benchmark-links,
   .docs-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .benchmark-card:last-child {
+    grid-column: 1 / -1;
   }
 
   .flow {
