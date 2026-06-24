@@ -62,8 +62,8 @@
     </section>
 
     <section class="proof-strip" aria-label="Project status">
-      <span>PyPI 2.6.0</span>
-      <span>48 MCP tools, 8-tool core profile</span>
+      <span>PyPI 2.6.3</span>
+      <span>49 MCP tools, 8-tool core profile</span>
       <span>cognitive ranking default</span>
       <span>embedded local runtime</span>
       <span>Harvey LAB 10/10 tasks</span>
@@ -77,7 +77,7 @@
     <section id="memory" class="section">
       <div class="section-heading">
         <p class="eyebrow">Cognitive memory</p>
-        <h2>Memory that forgets like a human, with receipts.</h2>
+        <h2>Forgetting is a ranking policy, not data loss.</h2>
         <p>
           Zaxy 2.x implements the memory literature as boring, testable scoring
           over an immutable log: retrieval strengthens, disuse decays, surprise
@@ -91,7 +91,7 @@
         <article><code>salience ranking</code><p>Confirmed memories outrank stale ones; invalidated memories attenuate below a floor. Pinned and authority-reviewed memories are exempt. Cold-start ranking is byte-identical to plain retrieval &mdash; measured, not asserted.</p></article>
         <article><code>compaction recovery</code><p>After a context compaction, a <code>session-resumed</code> hook hands the agent back its open tasks, accepted findings, and known unknowns &mdash; every line citing the exact log events it came from.</p></article>
         <article><code>memory_checkout(..., max_tokens=N)</code><p>Token-budgeted packing with explicit elision reporting, and cache-stable packet ordering: consolidated content renders byte-identically across calls so provider prompt caching hits.</p></article>
-        <article><code>tool profiles</code><p>The default core profile lists 8 tools instead of 47 &mdash; an 83.5% smaller listing surface &mdash; while every tool stays callable by name. <code>--profile full</code> restores the complete listing.</p></article>
+        <article><code>tool profiles</code><p>The default core profile lists 8 tools instead of 49 &mdash; an 83.7% smaller listing surface &mdash; while every tool stays callable by name. <code>--profile full</code> restores the complete listing.</p></article>
         <article><code>memory_feeling_of_knowing</code><p>Experimental sub-millisecond metamemory pre-check: would checkout likely return something? Lets agents decide whether retrieval is worth the call before paying for it.</p></article>
         <article><code>zaxy memory mine-procedures</code><p>Recurring successful tool sequences become review-pending procedure candidates with trace citations. Nothing becomes authoritative without review &mdash; the same gate as every generated abstraction.</p></article>
       </div>
@@ -279,7 +279,7 @@ zaxy coordinate checkout --mission auth-main</code></pre>
         <h2>Start with Coordinate and purpose. Keep the rest as operator reference.</h2>
       </div>
       <div class="docs-grid docs-grid-featured">
-        <a href="docs/announcements/zaxy-v2.6-x-article.html">Zaxy 2.6.0 release</a>
+        <a href="docs/announcements/zaxy-v2.6-x-article.html">Zaxy 2.6 release</a>
         <a href="docs/announcements/zaxy-v2.1.html">Zaxy 2.1.0 release</a>
         <a href="docs/migration.html">Migration guide (2.0 to 2.6)</a>
         <a href="docs/coordinate-roadmap.html">Coordinate roadmap</a>
@@ -301,7 +301,7 @@ zaxy coordinate checkout --mission auth-main</code></pre>
       <details class="docs-more">
         <summary>Operator and internals reference</summary>
         <div class="docs-grid">
-          <a href="docs/announcements/zaxy-v2.6-x-article.html">Zaxy 2.6.0 X article</a>
+          <a href="docs/announcements/zaxy-v2.6-x-article.html">Zaxy 2.6 X article</a>
           <a href="docs/announcements/zaxy-v2.5-x-article.html">Zaxy 2.5.0 X article</a>
           <a href="docs/announcements/zaxy-v2.4-x-article.html">Zaxy 2.4.0 X article</a>
           <a href="docs/announcements/zaxy-v2.3-x-article.html">Zaxy 2.3.0 X article</a>
@@ -338,7 +338,7 @@ zaxy coordinate checkout --mission auth-main</code></pre>
   </main>
 
   <footer>
-    <span>Zaxy v2.6.0 - MIT</span>
+    <span>Zaxy v2.6.3 - MIT</span>
     <span><a href="README.html">README</a> <a href="docs/runbook.html">Runbook</a></span>
   </footer>
 </body>
