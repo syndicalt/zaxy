@@ -136,6 +136,21 @@ class Settings(BaseSettings):
     )
 
     # ------------------------------------------------------------------
+    # Memory evolution governance (Zaxy 3 / I4)
+    # ------------------------------------------------------------------
+    evolution_autonomy_default: str = Field(
+        default="propose_only",
+        description=(
+            "Default autonomy tier for governed memory evolution: "
+            "propose_only (never auto-promote; default), auto_with_rollback, or require_review"
+        ),
+    )
+    evolution_rollback_window_seconds: int = Field(
+        default=86400,
+        description="Rollback window (seconds) for auto-applied evolutions under auto_with_rollback",
+    )
+
+    # ------------------------------------------------------------------
     # Pathlight
     # ------------------------------------------------------------------
     pathlight_url: str = Field(

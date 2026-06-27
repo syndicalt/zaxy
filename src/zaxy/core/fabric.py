@@ -90,6 +90,12 @@ from zaxy.event import (  # noqa: F401 - ReplayResult re-export for existing tes
     ReplayResult,
     verify_event_chain,
 )
+from zaxy.evolution_policy import (
+    EvolutionGateDecision,
+    build_evolution_gate_event,
+    evaluate_evolution_gate,
+    resolve_evolution_policy,
+)
 from zaxy.extract import extract
 from zaxy.inference import build_inferred_edge_events
 from zaxy.lifecycle import build_subagent_completed_event
@@ -1246,6 +1252,41 @@ class MemoryFabric:
             await self._project_event(event, session_id=sid)
         self._invalidate_query_page_cache(sid)
         return events
+
+    async def evaluate_evolution_gate(
+        self,
+        op: str,
+        confidence: float,
+        *,
+        candidate_ref: dict[str, Any] | None = None,
+        actor: str = "zaxy-evolution",
+        session_id: str | None = None,
+    ) -> EvolutionGateDecision:
+        """Evaluate the governed memory-evolution policy for one op and record it.
+
+        Resolves the configured autonomy policy (default ``propose_only``),
+        decides whether ``op`` may auto-apply at ``confidence``, and appends a
+        non-authoritative, replayable ``evolution.gate.evaluated`` event so the
+        decision itself is auditable. Returns the :class:`EvolutionGateDecision`.
+        This is the single gate that I1/I2/I7 evolution producers route through;
+        under the default tier nothing auto-promotes. See ``ZAXY-3.md`` (I4).
+        """
+        sid = validate_session_id(session_id or "default")
+        policy = resolve_evolution_policy(self.settings)
+        decision = evaluate_evolution_gate(op, confidence, policy=policy)
+        spec = build_evolution_gate_event(
+            actor=actor,
+            session_id=sid,
+            decision=decision,
+            candidate_ref=candidate_ref,
+        )
+        await self.append(
+            spec["event_type"],
+            spec["actor"],
+            payload=spec["payload"],
+            session_id=sid,
+        )
+        return decision
 
     async def _project_event(self, event: Any, *, session_id: str) -> None:
         """Extract, project, trace, and record metrics for one sealed event."""
