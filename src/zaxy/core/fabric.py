@@ -1285,12 +1285,13 @@ class MemoryFabric:
     ) -> EvolutionGateDecision:
         """Evaluate the governed memory-evolution policy for one op and record it.
 
-        Resolves the configured autonomy policy (default ``propose_only``),
+        Resolves the configured autonomy policy (default ``auto_with_rollback``),
         decides whether ``op`` may auto-apply at ``confidence``, and appends a
         non-authoritative, replayable ``evolution.gate.evaluated`` event so the
         decision itself is auditable. Returns the :class:`EvolutionGateDecision`.
         This is the single gate that I1/I2/I7 evolution producers route through;
-        under the default tier nothing auto-promotes. See ``ZAXY-3.md`` (I4).
+        the default auto-applies above threshold (reversible within the rollback
+        window) while stricter tiers stay available. See ``ZAXY-3.md`` (I4).
         """
         sid = validate_session_id(session_id or "default")
         policy = resolve_evolution_policy(self.settings)

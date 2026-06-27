@@ -37,8 +37,10 @@ The single biggest strategic gap versus the competition is **fleet-scale
 cross-agent propagation** (memclaw's whole thesis). The draft plan under-weights
 it. We elevate it.
 
-**Decisions locked (2026-06-27):** (1) autonomy defaults to **propose-only**
-(auto-with-rollback is opt-in); (2) tagline line: **"Active memory you can
+**Decisions locked (2026-06-27; autonomy posture relaxed):** (1) autonomy
+defaults to **auto-with-rollback** (reversible auto-apply above threshold); the
+strict tiers (propose-only, require-review) are built and available as opt-in;
+(2) tagline line: **"Active memory you can
 prove."**; (3) **I7 Fleet Memory Plane pulled earlier** (Wave 2, design in Wave
 1); (4) **I6 external plugin API now**, not deferred (Wave 1 parallel track);
 (5) **I8 fleet/coordination benchmark is a Wave-1 deliverable.** Phasing in §8
@@ -279,12 +281,12 @@ graph LR
   Primary track: **I4 evolution policy first** (the gate every active feature
   routes through — building I1/I2 without it just rebuilds the competitors'
   ungoverned model), then **I1 outcome learning** on top, defaulting to
-  **propose-only**. Parallel decoupled track: **I6** external plugin API +
+  **auto-with-rollback** (reversible). Parallel decoupled track: **I6** external plugin API +
   code-intelligence as the reference plugin (no dependency on the loop, so it
   starts now). Deliverables also include the **I8 fleet/coordination benchmark
   scaffold** (so every later claim is defensible from day one) and the **I7
   fleet/trust-tier model design** (de-risks Wave 2). *Exit:* outcomes drive
-  reinforcement + governed (propose-only) rule candidates; autonomy tiers
+  reinforcement + governed (auto-with-rollback, reversible) rule candidates; autonomy tiers
   configurable + audited; plugin API loads an external code-intel plugin;
   benchmark harness runs.
 - **Wave 2 — active + fleet + long-horizon** *(indicative ~8–12 wk)*. **I2**
@@ -315,7 +317,7 @@ These are why Zaxy wins; every Zaxy 3 feature must hold them:
 3. **No destructive summarization.** Consolidation is additive + source-backed + audited (identity-recall, citation-coverage). We accept SSGM's warning about iterative-summarization drift as a hard constraint.
 4. **Forgetting is reversible by default; deletion is governed + verified.** Attenuation never zeroes; hard-delete is crypto-erasure + tombstone + audit.
 5. **Everything cites.** Every recalled, consolidated, or propagated item carries an `eventloom://…#hash` citation.
-6. **Autonomy is opt-in and visible.** "Active" never means "silently self-mutating." **Zaxy 3 ships propose-only by default** (auto-with-rollback is explicit opt-in); the autonomy tier is configured, logged, and replayable.
+6. **Autonomy is opt-in, reversible, and visible.** "Active" never means "silently irreversible." **Zaxy 3 defaults to auto-with-rollback** (auto-apply above threshold, reversible within the rollback window); the strict tiers (propose-only, require-review) are built and available; the active tier is configured, logged, and replayable.
 
 ---
 
@@ -330,8 +332,12 @@ These are why Zaxy wins; every Zaxy 3 feature must hold them:
 
 ## 11. Decisions (locked 2026-06-27)
 
-1. **Autonomy line → propose-only by default.** Auto-with-rollback-window is an
-   explicit opt-in. Maximizes the moat; encoded in §9 invariant 6 and I4.
+1. **Autonomy line → auto-with-rollback by default (posture relaxed 2026-06-27).**
+   Reversible auto-apply above threshold; the strict tiers (propose-only,
+   require-review) are built and available as opt-in. Rationale: the market is
+   moving fast and does not yet strongly demand extreme guardrails — we ship them
+   so they are ready when it does, but they are not the default. Encoded in §9
+   invariant 6 and I4.
 2. **Tagline → "Active memory you can prove."** "Receipts" retained as
    supporting copy; stays the live 2.x site voice until Zaxy 3 ships (§4).
 3. **I7 Fleet Memory Plane → pulled earlier.** Trust/propagation model designed

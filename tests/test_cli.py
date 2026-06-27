@@ -9080,8 +9080,8 @@ def test_top_level_help_renders_panel_titles_in_order() -> None:
     assert output.find("Benchmarks & evaluation") < output.find("Internal & experimental lanes")
 
 
-def test_memory_evolution_gate_default_holds_for_review(tmp_path: Path) -> None:
-    """Under the default propose_only tier the gate must hold every op for review."""
+def test_memory_evolution_gate_default_auto_applies(tmp_path: Path) -> None:
+    """Under the default auto_with_rollback tier a high-confidence op auto-applies."""
     workspace = tmp_path / "ws"
     workspace.mkdir()
     eventloom_path = workspace / ".eventloom"
@@ -9105,8 +9105,8 @@ def test_memory_evolution_gate_default_holds_for_review(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
-    assert payload["auto_apply"] is False
-    assert payload["decision"] == "requires_review"
+    assert payload["auto_apply"] is True
+    assert payload["decision"] == "auto_apply"
 
     events = EventLog(eventloom_path / "ext.jsonl").read_all()
     gate_events = [e for e in events if e.type == "evolution.gate.evaluated"]
@@ -9156,8 +9156,8 @@ def test_memory_evolution_gate_rejects_bad_confidence(tmp_path: Path) -> None:
     assert result.exit_code != 0
 
 
-def test_memory_evolution_policy_reports_propose_only_default(tmp_path: Path) -> None:
-    """memory evolution-policy should report the conservative propose_only default."""
+def test_memory_evolution_policy_reports_auto_with_rollback_default(tmp_path: Path) -> None:
+    """memory evolution-policy should report the auto_with_rollback default."""
     workspace = tmp_path / "ws"
     workspace.mkdir()
     eventloom_path = workspace / ".eventloom"
@@ -9174,4 +9174,4 @@ def test_memory_evolution_policy_reports_propose_only_default(tmp_path: Path) ->
     )
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
-    assert payload["default_tier"] == "propose_only"
+    assert payload["default_tier"] == "auto_with_rollback"

@@ -9,7 +9,6 @@ import pytest
 
 from zaxy.core.fabric import MemoryFabric
 from zaxy.evolution_policy import (
-    BEHAVIOR_PRESERVING_OP_TIERS,
     GATE_EVENT_TYPE,
     EvolutionGateDecision,
     MemoryEvolutionPolicy,
@@ -21,15 +20,15 @@ from zaxy.evolution_policy import (
 
 
 class TestPolicyResolution:
-    def test_default_policy_is_propose_only(self) -> None:
+    def test_default_policy_is_auto_with_rollback(self) -> None:
         policy = MemoryEvolutionPolicy()
-        assert policy.default_tier == "propose_only"
+        assert policy.default_tier == "auto_with_rollback"
         assert policy.threshold_for("consolidate") == 0.85
-        assert policy.tier_for("forget") == "propose_only"
+        assert policy.tier_for("forget") == "auto_with_rollback"
 
-    def test_resolve_from_settings_defaults_to_propose_only(self) -> None:
+    def test_resolve_from_settings_defaults_to_auto_with_rollback(self) -> None:
         policy = resolve_evolution_policy(SimpleNamespace())
-        assert policy.default_tier == "propose_only"
+        assert policy.default_tier == "auto_with_rollback"
         assert policy.rollback_window_seconds == 86400
 
     def test_resolve_honors_settings_overrides(self) -> None:
@@ -123,7 +122,7 @@ class TestGateEvent:
         payload = spec["payload"]
         assert payload["authority_status"] == "non_authoritative"
         assert payload["op"] == "consolidate"
-        assert payload["tier"] == "propose_only"
+        assert payload["tier"] == "auto_with_rollback"
         assert payload["decision"] == "requires_review"
         assert payload["auto_apply"] is False
 
@@ -149,10 +148,10 @@ class TestGateEvent:
 
 
 class TestFabricEvolutionGate:
-    async def test_gate_records_auditable_event_and_defaults_to_propose_only(
+    async def test_gate_records_auditable_event_and_defaults_to_auto_with_rollback(
         self, tmp_path: Path
     ) -> None:
-        """The default policy holds for review and records a replayable gate event."""
+        """The default policy auto-applies above threshold and records a replayable gate event."""
         fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
         await fabric.connect()
         try:
@@ -162,9 +161,9 @@ class TestFabricEvolutionGate:
         finally:
             await fabric.close()
 
-        # propose_only default: nothing auto-promotes, even at high confidence.
-        assert decision.auto_apply is False
-        assert decision.requires_review is True
+        # auto_with_rollback default: high-confidence ops auto-apply (reversibly).
+        assert decision.auto_apply is True
+        assert decision.requires_review is False
 
         log = fabric.session_manager.get("ext").eventlog
         events = log.read_all()
@@ -173,7 +172,7 @@ class TestFabricEvolutionGate:
         assert len(gate_events) == 1
         assert gate_events[0].payload["authority_status"] == "non_authoritative"
         assert gate_events[0].payload["op"] == "rule_generate"
-        assert gate_events[0].payload["auto_apply"] is False
+        assert gate_events[0].payload["auto_apply"] is True
 
     async def test_auto_with_rollback_tier_auto_applies(self, tmp_path: Path) -> None:
         fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
@@ -194,13 +193,10 @@ class TestFabricEvolutionGate:
 
 
 class TestPerOpAutonomyConfig:
-    def test_resolve_bakes_behavior_preserving_update_tier(self) -> None:
+    def test_resolve_defaults_all_ops_to_auto_with_rollback(self) -> None:
         policy = resolve_evolution_policy(SimpleNamespace())
-        # inferred-edge generation (op "update") keeps auto-applying by default...
-        assert policy.tier_for("update") == "auto_with_rollback"
-        # ...while everything else stays conservative.
-        assert policy.tier_for("consolidate") == "propose_only"
-        assert policy.tier_for("forget") == "propose_only"
+        for op in ("update", "consolidate", "forget", "rule_generate", "promote"):
+            assert policy.tier_for(op) == "auto_with_rollback"
 
     def test_settings_override_can_tighten_update(self) -> None:
         settings = SimpleNamespace(evolution_op_autonomy="update=propose_only")
@@ -219,9 +215,6 @@ class TestPerOpAutonomyConfig:
         for bad in ("update", "teleport=propose_only", "update=yolo", 5):
             with pytest.raises(ValueError):
                 parse_op_autonomy(bad)  # type: ignore[arg-type]
-
-    def test_behavior_preserving_constant_only_relaxes_update(self) -> None:
-        assert BEHAVIOR_PRESERVING_OP_TIERS == {"update": "auto_with_rollback"}
 
 
 class TestInferredEdgeGate:
