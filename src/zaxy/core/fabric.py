@@ -107,6 +107,12 @@ from zaxy.metacognition import (
     summarize_metacognition_events,
 )
 from zaxy.metrics import get_metrics
+from zaxy.outcome_learning import (
+    build_outcome_event,
+    build_rule_event,
+    preventive_rule_confidence,
+    validate_outcome,
+)
 from zaxy.pagination import encode_query_cursor, validate_query_cursor
 from zaxy.procedural_planning import classify_procedure_contexts
 from zaxy.projection_backends import ProjectionBackendConfig, build_projection_store
@@ -1309,6 +1315,89 @@ class MemoryFabric:
             session_id=sid,
         )
         return decision
+
+    async def record_outcome(
+        self,
+        *,
+        outcome: str,
+        summary: str,
+        target_seq: int | None = None,
+        target_hash: str | None = None,
+        lesson: str | None = None,
+        trigger: str | None = None,
+        confidence: float | None = None,
+        task_id: str | None = None,
+        actor: str = "zaxy-agent",
+        session_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Record an outcome on recalled memory and run the governed learning loop.
+
+        Appends a cited ``memory.outcome.recorded`` event; reinforces the cited
+        target memory (success → confirmed, failure → invalidated salience); and,
+        on failure/partial with a ``lesson``, proposes a **preventive rule** routed
+        through the evolution gate (op ``rule_generate``) — auto-applied
+        (``memory.rule.generated``) above threshold under the default
+        auto_with_rollback tier, otherwise held as ``memory.rule.proposed``. All
+        events are non-authoritative, cited, and replayable. See ``ZAXY-3.md`` (I1).
+        """
+        sid = validate_session_id(session_id or "default")
+        outcome = validate_outcome(outcome)
+        target = target_ref(target_seq, target_hash)
+
+        outcome_spec = build_outcome_event(
+            actor=actor,
+            session_id=sid,
+            outcome=outcome,
+            summary=summary,
+            target=target,
+            task_id=task_id,
+        )
+        outcome_event = await self.append(
+            outcome_spec["event_type"], outcome_spec["actor"], payload=outcome_spec["payload"], session_id=sid
+        )
+        outcome_ref = {"seq": outcome_event.seq, "hash": outcome_event.hash}
+        result: dict[str, Any] = {"outcome": outcome, "outcome_event": outcome_ref}
+
+        if target is not None and outcome in ("success", "failure"):
+            citation = f"eventloom://{sid}/events/{outcome_event.seq}#{outcome_event.hash}"
+            if outcome == "success":
+                reinforce_spec = build_confirmed_reinforcement_event(
+                    actor=actor, session_id=sid, feedback_id=citation, targets=[target]
+                )
+            else:
+                reinforce_spec = build_invalidated_reinforcement_event(
+                    actor=actor, session_id=sid, invalidation_id=citation, targets=[target]
+                )
+            await self.append(
+                reinforce_spec["event_type"], reinforce_spec["actor"], payload=reinforce_spec["payload"], session_id=sid
+            )
+            result["reinforced"] = "confirmed" if outcome == "success" else "invalidated"
+
+        if outcome in ("failure", "partial") and lesson:
+            rule_confidence = preventive_rule_confidence(outcome, confidence)
+            decision = await self.evaluate_evolution_gate(
+                "rule_generate", rule_confidence, candidate_ref=outcome_ref, actor=actor, session_id=sid
+            )
+            rule_spec = build_rule_event(
+                actor=actor,
+                session_id=sid,
+                auto_applied=decision.auto_apply,
+                rule=lesson,
+                trigger=trigger or summary,
+                confidence=rule_confidence,
+                outcome=outcome,
+                source_events=[outcome_ref],
+            )
+            rule_event = await self.append(
+                rule_spec["event_type"], rule_spec["actor"], payload=rule_spec["payload"], session_id=sid
+            )
+            result["rule"] = {
+                "event_type": rule_spec["event_type"],
+                "seq": rule_event.seq,
+                "auto_applied": decision.auto_apply,
+                "review_status": rule_spec["payload"]["review_status"],
+            }
+        return result
 
     async def _project_event(self, event: Any, *, session_id: str) -> None:
         """Extract, project, trace, and record metrics for one sealed event."""
