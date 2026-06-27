@@ -355,6 +355,33 @@ TOOLS = [
         },
     ),
     Tool(
+        name="memory_outcome",
+        description=(
+            "Agent reports an outcome on recalled memory; reinforces the cited memory and, on "
+            "failure/partial with a lesson, proposes a governed preventive rule through the "
+            "evolution gate (cited, reversible, audited)."
+        ),
+        inputSchema={
+            "type": "object",
+            "required": ["outcome", "summary"],
+            "properties": {
+                "outcome": {
+                    "type": "string",
+                    "description": "Outcome of using the recalled memory: success, failure, or partial",
+                },
+                "summary": {"type": "string", "description": "Short summary of what happened"},
+                "target_seq": {"type": "integer", "description": "Seq of the recalled target memory event"},
+                "target_hash": {"type": "string", "description": "Hash of the recalled target memory event"},
+                "lesson": {"type": "string", "description": "Lesson learned; on failure/partial proposes a preventive rule"},
+                "trigger": {"type": "string", "description": "Trigger condition for the preventive rule"},
+                "confidence": {"type": "number", "description": "Explicit confidence for the preventive rule (0.0-1.0)"},
+                "task_id": {"type": "string", "description": "Task identifier this outcome belongs to"},
+                "session_id": {"type": "string", "description": "Session ID for multi-agent sharding"},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
         name="memory_causal_successors",
         description="Read directed causal effects of an entity from graph-backed memory.",
         inputSchema={

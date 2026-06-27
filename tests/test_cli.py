@@ -9156,6 +9156,129 @@ def test_memory_evolution_gate_rejects_bad_confidence(tmp_path: Path) -> None:
     assert result.exit_code != 0
 
 
+def test_memory_outcome_failure_with_lesson_auto_generates_rule(tmp_path: Path) -> None:
+    """A failure outcome with a lesson should auto-apply a preventive rule and record it."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    eventloom_path = workspace / ".eventloom"
+    (workspace / ".env.local").write_text("PROJECTION_BACKEND=null\n", encoding="utf-8")
+    runner = CliRunner()
+
+    append_result = runner.invoke(
+        app,
+        [
+            "memory",
+            "append",
+            "decision.made",
+            "--actor",
+            "zaxy-agent",
+            "--session-id",
+            "ext",
+            "--payload-json",
+            '{"summary": "deploy without migrations"}',
+            "--eventloom-path",
+            str(eventloom_path),
+            "--json",
+        ],
+    )
+    assert append_result.exit_code == 0, append_result.output
+    seeded = json.loads(append_result.output)
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "outcome",
+            "--outcome",
+            "failure",
+            "--summary",
+            "deploy broke production",
+            "--target-seq",
+            str(seeded["seq"]),
+            "--target-hash",
+            seeded["hash"],
+            "--lesson",
+            "always run migrations before deploy",
+            "--eventloom-path",
+            str(eventloom_path),
+            "--session-id",
+            "ext",
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["outcome"] == "failure"
+    assert payload["reinforced"] == "invalidated"
+    assert payload["rule"]["auto_applied"] is True
+    assert payload["rule"]["event_type"] == "memory.rule.generated"
+
+    events = EventLog(eventloom_path / "ext.jsonl").read_all()
+    rule_events = [e for e in events if e.type == "memory.rule.generated"]
+    assert len(rule_events) == 1
+    assert rule_events[0].payload["authority_status"] == "non_authoritative"
+
+
+def test_memory_outcome_success_reinforces_target(tmp_path: Path) -> None:
+    """A success outcome should confirm the cited target and propose no rule."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    eventloom_path = workspace / ".eventloom"
+    (workspace / ".env.local").write_text("PROJECTION_BACKEND=null\n", encoding="utf-8")
+    runner = CliRunner()
+
+    append_result = runner.invoke(
+        app,
+        [
+            "memory",
+            "append",
+            "decision.made",
+            "--actor",
+            "zaxy-agent",
+            "--session-id",
+            "ext",
+            "--payload-json",
+            '{"summary": "ship the release"}',
+            "--eventloom-path",
+            str(eventloom_path),
+            "--json",
+        ],
+    )
+    assert append_result.exit_code == 0, append_result.output
+    seeded = json.loads(append_result.output)
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "outcome",
+            "--outcome",
+            "success",
+            "--summary",
+            "the release shipped cleanly",
+            "--target-seq",
+            str(seeded["seq"]),
+            "--target-hash",
+            seeded["hash"],
+            "--eventloom-path",
+            str(eventloom_path),
+            "--session-id",
+            "ext",
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["outcome"] == "success"
+    assert payload["reinforced"] == "confirmed"
+    assert "rule" not in payload
+
+    events = EventLog(eventloom_path / "ext.jsonl").read_all()
+    types = [e.type for e in events]
+    assert "memory.outcome.recorded" in types
+    assert "memory.reinforcement" in types
+
+
 def test_memory_evolution_policy_reports_auto_with_rollback_default(tmp_path: Path) -> None:
     """memory evolution-policy should report the auto_with_rollback default."""
     workspace = tmp_path / "ws"

@@ -767,6 +767,101 @@ def memory_evolution_gate(
         )
 
 
+@memory_app.command("outcome")
+def memory_outcome(
+    outcome: str = typer.Option(..., "--outcome", help="Outcome label: success, failure, or partial"),
+    summary: str = typer.Option(..., "--summary", help="Short summary of what happened"),
+    target_seq: int | None = typer.Option(None, "--target-seq", help="Seq of the recalled target memory event"),
+    target_hash: str | None = typer.Option(None, "--target-hash", help="Hash of the recalled target memory event"),
+    lesson: str | None = typer.Option(None, "--lesson", help="Lesson learned; on failure/partial proposes a preventive rule"),
+    trigger: str | None = typer.Option(None, "--trigger", help="Trigger condition for the preventive rule"),
+    confidence: float | None = typer.Option(None, "--confidence", help="Explicit confidence for the preventive rule 0.0-1.0"),
+    task_id: str | None = typer.Option(None, "--task-id", help="Task identifier this outcome belongs to"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    session_id: str = typer.Option("default", help="Session ID to record the outcome into"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Record an outcome on recalled memory and run the governed learning loop (CLI twin of MCP memory_outcome)."""
+    import asyncio
+
+    from zaxy.outcome_learning import validate_outcome
+    from zaxy.security import validate_session_id
+
+    try:
+        safe_outcome = validate_outcome(outcome)
+        if confidence is not None and not 0.0 <= confidence <= 1.0:
+            raise typer.BadParameter("confidence must be between 0.0 and 1.0")
+        safe_session_id = validate_session_id(session_id)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    async def _outcome_with_path(
+        embedded_graph_path: Path, *, projection_backend_override: str | None = None
+    ) -> Any:
+        settings = _status_settings(_profile_root_for_eventloom_path(eventloom_path))
+        projection_backend = projection_backend_override or _resolve_cli_projection_backend(
+            None, settings
+        )
+        fabric = _runtime._memory_fabric(
+            eventloom_path=str(eventloom_path),
+            projection_backend=projection_backend,
+            pggraph_dsn=settings.pggraph_dsn,
+            embedded_graph_path=embedded_graph_path,
+            latticedb_path=Path(settings.latticedb_path),
+        )
+        try:
+            await fabric.connect()
+            return await fabric.record_outcome(
+                outcome=safe_outcome,
+                summary=summary,
+                target_seq=target_seq,
+                target_hash=target_hash,
+                lesson=lesson,
+                trigger=trigger,
+                confidence=confidence,
+                task_id=task_id,
+                session_id=safe_session_id,
+            )
+        finally:
+            with suppress(Exception):
+                await fabric.close()
+
+    async def _outcome() -> Any:
+        settings = _status_settings(_profile_root_for_eventloom_path(eventloom_path))
+        embedded_graph_path = Path(settings.embedded_graph_path)
+        try:
+            return await _outcome_with_path(embedded_graph_path)
+        except RuntimeError as exc:
+            if not _is_embedded_projection_lock_error(exc):
+                raise
+            # A server holds the embedded projection's single-owner lock; keep the
+            # outcome events durable by recording them with the graph lane degraded
+            # (null backend), mirroring `memory evolution-gate`.
+            return await _outcome_with_path(
+                embedded_graph_path, projection_backend_override="null"
+            )
+
+    try:
+        result = asyncio.run(_outcome())
+    except (RuntimeError, OSError) as exc:
+        typer.echo(f"zaxy memory outcome failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    if json_output:
+        typer.echo(json.dumps(result, sort_keys=True))
+    else:
+        line = f"{result['outcome']}: seq={result['outcome_event']['seq']}"
+        if result.get("reinforced"):
+            line += f" reinforced={result['reinforced']}"
+        rule = result.get("rule")
+        if rule:
+            line += (
+                f" rule={rule['event_type']} "
+                f"(auto_applied={rule['auto_applied']}, review_status={rule['review_status']})"
+            )
+        typer.echo(line)
+
+
 @memory_app.command("evolution-policy")
 def memory_evolution_policy(
     eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008

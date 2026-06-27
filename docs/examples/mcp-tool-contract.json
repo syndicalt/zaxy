@@ -1,5 +1,5 @@
 {
-  "tool_count": 50,
+  "tool_count": 51,
   "tools": [
     {
       "description": "The front door to Zaxy memory: call this first, before substantial work, to checkout current, cited, prompt-ready memory state for a session. Start here; every other memory tool is plumbing or power use, discoverable through memory_capabilities.",
@@ -424,6 +424,56 @@
         "type": "object"
       },
       "name": "memory_evolution_gate"
+    },
+    {
+      "description": "Agent reports an outcome on recalled memory; reinforces the cited memory and, on failure/partial with a lesson, proposes a governed preventive rule through the evolution gate (cited, reversible, audited).",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "description": "Explicit confidence for the preventive rule (0.0-1.0)",
+            "type": "number"
+          },
+          "lesson": {
+            "description": "Lesson learned; on failure/partial proposes a preventive rule",
+            "type": "string"
+          },
+          "outcome": {
+            "description": "Outcome of using the recalled memory: success, failure, or partial",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Session ID for multi-agent sharding",
+            "type": "string"
+          },
+          "summary": {
+            "description": "Short summary of what happened",
+            "type": "string"
+          },
+          "target_hash": {
+            "description": "Hash of the recalled target memory event",
+            "type": "string"
+          },
+          "target_seq": {
+            "description": "Seq of the recalled target memory event",
+            "type": "integer"
+          },
+          "task_id": {
+            "description": "Task identifier this outcome belongs to",
+            "type": "string"
+          },
+          "trigger": {
+            "description": "Trigger condition for the preventive rule",
+            "type": "string"
+          }
+        },
+        "required": [
+          "outcome",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "name": "memory_outcome"
     },
     {
       "description": "Read directed causal effects of an entity from graph-backed memory.",
