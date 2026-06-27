@@ -37,6 +37,13 @@ DEFAULT_ROLLBACK_WINDOW_SECONDS = 86_400
 DECISION_AUTO_APPLY = "auto_apply"
 DECISION_REQUIRES_REVIEW = "requires_review"
 
+#: Per-op default tiers that preserve Zaxy's pre-I4 behavior. Inferred-edge
+#: generation (the only autonomous-apply producer) maps to the ``update`` op and
+#: keeps auto-applying so migrating it onto the gate is non-breaking; operators
+#: opt into stricter via ``evolution_op_autonomy``. Every other op inherits the
+#: conservative global default (``propose_only``).
+BEHAVIOR_PRESERVING_OP_TIERS: dict[str, str] = {"update": "auto_with_rollback"}
+
 
 @dataclass(frozen=True)
 class MemoryEvolutionPolicy:
@@ -117,9 +124,12 @@ class EvolutionGateDecision:
 def resolve_evolution_policy(settings: Any) -> MemoryEvolutionPolicy:
     """Build a policy from Settings, defaulting to propose_only.
 
-    Reads ``evolution_autonomy_default`` and ``evolution_rollback_window_seconds``
-    defensively (missing attributes fall back to the conservative defaults), so a
-    minimal or mocked settings object still yields a valid policy.
+    Reads ``evolution_autonomy_default``, ``evolution_rollback_window_seconds``,
+    and the optional per-op ``evolution_op_autonomy`` override string defensively
+    (missing attributes fall back to the conservative defaults), so a minimal or
+    mocked settings object still yields a valid policy. Per-op tiers start from
+    ``BEHAVIOR_PRESERVING_OP_TIERS`` (so inferred-edge generation keeps
+    auto-applying) and are then overridden by ``evolution_op_autonomy``.
     """
     default_tier = getattr(settings, "evolution_autonomy_default", None) or DEFAULT_AUTONOMY_TIER
     rollback = getattr(settings, "evolution_rollback_window_seconds", None)
@@ -128,10 +138,42 @@ def resolve_evolution_policy(settings: Any) -> MemoryEvolutionPolicy:
         if isinstance(rollback, int) and not isinstance(rollback, bool)
         else DEFAULT_ROLLBACK_WINDOW_SECONDS
     )
+    op_tiers = {
+        **BEHAVIOR_PRESERVING_OP_TIERS,
+        **parse_op_autonomy(getattr(settings, "evolution_op_autonomy", None)),
+    }
     return MemoryEvolutionPolicy(
         default_tier=str(default_tier),
+        op_tiers=op_tiers,
         rollback_window_seconds=rollback_seconds,
     )
+
+
+def parse_op_autonomy(spec: object) -> dict[str, str]:
+    """Parse a per-op autonomy override string into a validated tier map.
+
+    Format: ``"op=tier,op=tier"`` (e.g. ``"update=propose_only,forget=require_review"``).
+    Empty/None yields an empty map. Raises ``ValueError`` on an unknown op/tier or
+    malformed entry, so misconfiguration fails fast at policy resolution.
+    """
+    if spec is None:
+        return {}
+    if not isinstance(spec, str):
+        raise ValueError("evolution_op_autonomy must be a string")
+    overrides: dict[str, str] = {}
+    for raw_entry in spec.split(","):
+        entry = raw_entry.strip()
+        if not entry:
+            continue
+        if "=" not in entry:
+            raise ValueError(f"evolution_op_autonomy entry must be 'op=tier': {entry!r}")
+        op, _, tier = entry.partition("=")
+        op = op.strip()
+        tier = tier.strip()
+        _validate_op(op)
+        _validate_tier(tier, field_name=f"evolution_op_autonomy[{op}]")
+        overrides[op] = tier
+    return overrides
 
 
 def evaluate_evolution_gate(

@@ -149,6 +149,13 @@ class Settings(BaseSettings):
         default=86400,
         description="Rollback window (seconds) for auto-applied evolutions under auto_with_rollback",
     )
+    evolution_op_autonomy: str | None = Field(
+        default=None,
+        description=(
+            "Optional per-op autonomy overrides as 'op=tier,op=tier' "
+            "(e.g. 'update=propose_only'); overrides the behavior-preserving defaults"
+        ),
+    )
 
     # ------------------------------------------------------------------
     # Pathlight

@@ -9,11 +9,13 @@ import pytest
 
 from zaxy.core.fabric import MemoryFabric
 from zaxy.evolution_policy import (
+    BEHAVIOR_PRESERVING_OP_TIERS,
     GATE_EVENT_TYPE,
     EvolutionGateDecision,
     MemoryEvolutionPolicy,
     build_evolution_gate_event,
     evaluate_evolution_gate,
+    parse_op_autonomy,
     resolve_evolution_policy,
 )
 
@@ -189,3 +191,80 @@ class TestFabricEvolutionGate:
         log = fabric.session_manager.get("ext").eventlog
         gate_events = [e for e in log.read_all() if e.type == GATE_EVENT_TYPE]
         assert gate_events[0].payload["auto_apply"] is True
+
+
+class TestPerOpAutonomyConfig:
+    def test_resolve_bakes_behavior_preserving_update_tier(self) -> None:
+        policy = resolve_evolution_policy(SimpleNamespace())
+        # inferred-edge generation (op "update") keeps auto-applying by default...
+        assert policy.tier_for("update") == "auto_with_rollback"
+        # ...while everything else stays conservative.
+        assert policy.tier_for("consolidate") == "propose_only"
+        assert policy.tier_for("forget") == "propose_only"
+
+    def test_settings_override_can_tighten_update(self) -> None:
+        settings = SimpleNamespace(evolution_op_autonomy="update=propose_only")
+        policy = resolve_evolution_policy(settings)
+        assert policy.tier_for("update") == "propose_only"
+
+    def test_parse_op_autonomy(self) -> None:
+        assert parse_op_autonomy(None) == {}
+        assert parse_op_autonomy("") == {}
+        assert parse_op_autonomy("update=propose_only, forget=require_review") == {
+            "update": "propose_only",
+            "forget": "require_review",
+        }
+
+    def test_parse_op_autonomy_rejects_malformed(self) -> None:
+        for bad in ("update", "teleport=propose_only", "update=yolo", 5):
+            with pytest.raises(ValueError):
+                parse_op_autonomy(bad)  # type: ignore[arg-type]
+
+    def test_behavior_preserving_constant_only_relaxes_update(self) -> None:
+        assert BEHAVIOR_PRESERVING_OP_TIERS == {"update": "auto_with_rollback"}
+
+
+class TestInferredEdgeGate:
+    """The inferred-edge producer routes through the gate (I4.3, option A)."""
+
+    _TASK_PAYLOAD = {
+        "taskId": "task-7",
+        "summary": "Implemented Memory Checkout.",
+        "decision": "Use Memory Checkout as the contract",
+        "decision_event_seq": 5,
+        "decision_event_hash": "a" * 64,
+    }
+
+    async def test_default_auto_applies_inferred_edge_without_gate_event(
+        self, tmp_path: Path
+    ) -> None:
+        """Default policy preserves behavior: the edge is generated, no gate event."""
+        fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
+        await fabric.connect()
+        try:
+            await fabric.append("task.completed", actor="codex", payload=dict(self._TASK_PAYLOAD), session_id="agent-1")
+        finally:
+            await fabric.close()
+
+        types = [e.type for e in fabric.session_manager.get("agent-1").eventlog.read_all()]
+        assert "inference.edge.generated" in types
+        assert GATE_EVENT_TYPE not in types
+
+    async def test_tightened_policy_withholds_edge_and_records_gate(self, tmp_path: Path) -> None:
+        """update=propose_only withholds the autonomous edge and records the decision."""
+        fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
+        fabric.settings.evolution_op_autonomy = "update=propose_only"
+        await fabric.connect()
+        try:
+            await fabric.append("task.completed", actor="codex", payload=dict(self._TASK_PAYLOAD), session_id="agent-1")
+        finally:
+            await fabric.close()
+
+        events = fabric.session_manager.get("agent-1").eventlog.read_all()
+        types = [e.type for e in events]
+        assert "inference.edge.generated" not in types
+        gate_events = [e for e in events if e.type == GATE_EVENT_TYPE]
+        assert len(gate_events) == 1
+        assert gate_events[0].payload["op"] == "update"
+        assert gate_events[0].payload["auto_apply"] is False
+        assert gate_events[0].payload["authority_status"] == "non_authoritative"
