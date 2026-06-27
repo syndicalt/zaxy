@@ -676,6 +676,131 @@ def memory_ingest(
         typer.echo(f"imported={imported} deduped={deduped} seq={seq_range}")
 
 
+@memory_app.command("evolution-gate")
+def memory_evolution_gate(
+    op: str = typer.Argument(..., help="Evolution op: consolidate, update, forget, rule_generate, promote"),  # noqa: B008
+    confidence: float = typer.Option(..., "--confidence", help="Evidence confidence 0.0-1.0"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    session_id: str = typer.Option("default", help="Session ID to evaluate the gate for"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Evaluate the governed memory-evolution policy gate for one op (CLI twin of MCP evolution_gate)."""
+    import asyncio
+
+    from zaxy.evolution_policy import EVOLUTION_OPS
+    from zaxy.security import validate_session_id
+
+    try:
+        if op not in EVOLUTION_OPS:
+            valid = ", ".join(EVOLUTION_OPS)
+            raise typer.BadParameter(f"op must be one of: {valid}")
+        if not 0.0 <= confidence <= 1.0:
+            raise typer.BadParameter("confidence must be between 0.0 and 1.0")
+        safe_session_id = validate_session_id(session_id)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    async def _gate_with_path(
+        embedded_graph_path: Path, *, projection_backend_override: str | None = None
+    ) -> Any:
+        settings = _status_settings(_profile_root_for_eventloom_path(eventloom_path))
+        projection_backend = projection_backend_override or _resolve_cli_projection_backend(
+            None, settings
+        )
+        fabric = _runtime._memory_fabric(
+            eventloom_path=str(eventloom_path),
+            projection_backend=projection_backend,
+            pggraph_dsn=settings.pggraph_dsn,
+            embedded_graph_path=embedded_graph_path,
+            latticedb_path=Path(settings.latticedb_path),
+        )
+        try:
+            await fabric.connect()
+            return await fabric.evaluate_evolution_gate(
+                op, confidence, session_id=safe_session_id
+            )
+        finally:
+            with suppress(Exception):
+                await fabric.close()
+
+    async def _gate() -> Any:
+        settings = _status_settings(_profile_root_for_eventloom_path(eventloom_path))
+        embedded_graph_path = Path(settings.embedded_graph_path)
+        try:
+            return await _gate_with_path(embedded_graph_path)
+        except RuntimeError as exc:
+            if not _is_embedded_projection_lock_error(exc):
+                raise
+            # A server holds the embedded projection's single-owner lock; keep the
+            # gate decision durable by recording it with the graph lane degraded
+            # (null backend), mirroring `memory ingest`.
+            return await _gate_with_path(
+                embedded_graph_path, projection_backend_override="null"
+            )
+
+    try:
+        decision = asyncio.run(_gate())
+    except (RuntimeError, OSError) as exc:
+        typer.echo(f"zaxy memory evolution-gate failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    if json_output:
+        typer.echo(
+            json.dumps(
+                {
+                    "op": decision.op,
+                    "tier": decision.tier,
+                    "decision": decision.decision,
+                    "auto_apply": decision.auto_apply,
+                    "requires_review": decision.requires_review,
+                    "confidence": decision.confidence,
+                    "threshold": decision.threshold,
+                    "rollback_window_seconds": decision.rollback_window_seconds,
+                    "reason": decision.reason,
+                },
+                sort_keys=True,
+            )
+        )
+    else:
+        typer.echo(
+            f"{op}: {decision.decision} (tier={decision.tier}, auto_apply={decision.auto_apply})"
+        )
+
+
+@memory_app.command("evolution-policy")
+def memory_evolution_policy(
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Show the active governed memory-evolution policy (read-only; writes no event)."""
+    from zaxy.evolution_policy import EVOLUTION_OPS, resolve_evolution_policy
+
+    policy = resolve_evolution_policy(
+        _status_settings(_profile_root_for_eventloom_path(eventloom_path))
+    )
+
+    if json_output:
+        typer.echo(
+            json.dumps(
+                {
+                    "default_tier": policy.default_tier,
+                    "default_threshold": policy.default_threshold,
+                    "rollback_window_seconds": policy.rollback_window_seconds,
+                    "op_tiers": {op: policy.tier_for(op) for op in EVOLUTION_OPS},
+                    "op_thresholds": {op: policy.threshold_for(op) for op in EVOLUTION_OPS},
+                },
+                sort_keys=True,
+            )
+        )
+    else:
+        typer.echo(f"default_tier={policy.default_tier}")
+        typer.echo(f"rollback_window_seconds={policy.rollback_window_seconds}")
+        for op in EVOLUTION_OPS:
+            typer.echo(
+                f"  {op}: tier={policy.tier_for(op)} threshold={policy.threshold_for(op)}"
+            )
+
+
 async def _run_reasoning_primitive(
     *,
     method_name: str,

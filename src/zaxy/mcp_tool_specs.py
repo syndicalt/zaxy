@@ -320,6 +320,40 @@ TOOLS = [
         },
     ),
     Tool(
+        name="memory_evolution_gate",
+        description=(
+            "Consult the governed memory-evolution policy before applying an autonomous "
+            "memory change (consolidate, update, forget, rule_generate, promote). Returns "
+            "whether the change may auto-apply or must be held for review under the "
+            "configured autonomy tier, and records a non-authoritative, replayable "
+            "evolution.gate.evaluated event so the decision is auditable. Zaxy defaults to "
+            "propose_only: nothing auto-promotes without review."
+        ),
+        inputSchema={
+            "type": "object",
+            "required": ["op", "confidence"],
+            "properties": {
+                "op": {
+                    "type": "string",
+                    "enum": ["consolidate", "update", "forget", "rule_generate", "promote"],
+                    "description": "The memory-evolution operation being gated",
+                },
+                "confidence": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 1.0,
+                    "description": "Evidence confidence for the proposed change (0.0-1.0)",
+                },
+                "candidate_ref": {
+                    "type": "object",
+                    "description": "Optional reference to the candidate (candidate_id/seq/hash/name)",
+                },
+                "session_id": {"type": "string", "description": "Session ID for multi-agent sharding"},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
         name="memory_causal_successors",
         description="Read directed causal effects of an entity from graph-backed memory.",
         inputSchema={

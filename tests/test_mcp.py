@@ -203,7 +203,7 @@ class TestToolSchema:
 
     def test_tools_list_length(self) -> None:
         """Should expose the memory and context lifecycle tools."""
-        assert len(TOOLS) == 49
+        assert len(TOOLS) == 50
 
     def test_tool_names(self) -> None:
         """Tool names should match the expected contract."""
@@ -211,6 +211,7 @@ class TestToolSchema:
         assert names == {
             "memory_append",
             "memory_ingest",
+            "memory_evolution_gate",
             "memory_query",
             "memory_causal_successors",
             "memory_causal_predecessors",
@@ -758,6 +759,58 @@ class TestMemoryIngest:
         with pytest.raises(ValueError):
             await server.handle_memory_ingest({"events": {"event_type": "x.y", "actor": "a"}})
 
+
+class TestMemoryEvolutionGate:
+    """Tests for the memory_evolution_gate governed-autonomy tool."""
+
+    def test_tool_schema_requires_op_and_confidence(self) -> None:
+        tool = next(t for t in TOOLS if t.name == "memory_evolution_gate")
+        assert tool.inputSchema["required"] == ["op", "confidence"]
+        assert tool.inputSchema["properties"]["op"]["enum"] == [
+            "consolidate",
+            "update",
+            "forget",
+            "rule_generate",
+            "promote",
+        ]
+        assert tool.inputSchema["additionalProperties"] is False
+
+    async def test_gate_default_holds_for_review_and_records_event(self, tmp_path: Path) -> None:
+        """The default propose_only policy holds for review and records an auditable event."""
+        with (
+            patch("zaxy.mcp_server.build_projection_store") as mock_build_projection_store,
+            patch("zaxy.mcp_server.MemoryTracer") as mock_tracer_cls,
+        ):
+            mock_graph = AsyncMock()
+            mock_build_projection_store.return_value = mock_graph
+            mock_tracer = AsyncMock()
+            mock_tracer_cls.return_value = mock_tracer
+            server = ZaxyMCPServer(eventloom_path=str(tmp_path / ".eventloom"))
+            server.graph = mock_graph
+            server.tracer = mock_tracer
+
+        result = await server.handle_memory_evolution_gate(
+            {"op": "rule_generate", "confidence": 0.99, "session_id": "agent-1"}
+        )
+        payload = json.loads(result[0].text)
+        assert payload["op"] == "rule_generate"
+        assert payload["tier"] == "propose_only"
+        assert payload["auto_apply"] is False
+        assert payload["requires_review"] is True
+        assert payload["decision"] == "requires_review"
+
+        eventlog = server.session_manager.get("agent-1").eventlog
+        gate_events = [e for e in eventlog.read_all() if e.type == "evolution.gate.evaluated"]
+        assert len(gate_events) == 1
+        assert gate_events[0].payload["authority_status"] == "non_authoritative"
+
+    async def test_rejects_invalid_op(self, server: ZaxyMCPServer) -> None:
+        with pytest.raises(ValueError):
+            await server.handle_memory_evolution_gate({"op": "teleport", "confidence": 0.5})
+
+    async def test_rejects_non_numeric_confidence(self, server: ZaxyMCPServer) -> None:
+        with pytest.raises(ValueError):
+            await server.handle_memory_evolution_gate({"op": "consolidate", "confidence": "high"})
 
 class TestCausalAndConsolidationTools:
     """Tests for causal reads and consolidation MCP handlers."""

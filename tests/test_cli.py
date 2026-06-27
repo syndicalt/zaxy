@@ -9078,3 +9078,100 @@ def test_top_level_help_renders_panel_titles_in_order() -> None:
     # Benchmark/internal panels render below the Essentials panel.
     assert output.find("Essentials") < output.find("Benchmarks & evaluation")
     assert output.find("Benchmarks & evaluation") < output.find("Internal & experimental lanes")
+
+
+def test_memory_evolution_gate_default_holds_for_review(tmp_path: Path) -> None:
+    """Under the default propose_only tier the gate must hold every op for review."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    eventloom_path = workspace / ".eventloom"
+    (workspace / ".env.local").write_text("PROJECTION_BACKEND=null\n", encoding="utf-8")
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "evolution-gate",
+            "rule_generate",
+            "--confidence",
+            "0.99",
+            "--eventloom-path",
+            str(eventloom_path),
+            "--session-id",
+            "ext",
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["auto_apply"] is False
+    assert payload["decision"] == "requires_review"
+
+    events = EventLog(eventloom_path / "ext.jsonl").read_all()
+    gate_events = [e for e in events if e.type == "evolution.gate.evaluated"]
+    assert len(gate_events) == 1
+    assert gate_events[0].payload["authority_status"] == "non_authoritative"
+
+
+def test_memory_evolution_gate_rejects_bad_op(tmp_path: Path) -> None:
+    """An op outside the governed taxonomy must be rejected at the CLI boundary."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    eventloom_path = workspace / ".eventloom"
+    (workspace / ".env.local").write_text("PROJECTION_BACKEND=null\n", encoding="utf-8")
+    result = CliRunner().invoke(
+        app,
+        [
+            "memory",
+            "evolution-gate",
+            "teleport",
+            "--confidence",
+            "0.9",
+            "--eventloom-path",
+            str(eventloom_path),
+        ],
+    )
+    assert result.exit_code != 0
+
+
+def test_memory_evolution_gate_rejects_bad_confidence(tmp_path: Path) -> None:
+    """Confidence outside 0.0-1.0 must be rejected before any fabric work."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    eventloom_path = workspace / ".eventloom"
+    (workspace / ".env.local").write_text("PROJECTION_BACKEND=null\n", encoding="utf-8")
+    result = CliRunner().invoke(
+        app,
+        [
+            "memory",
+            "evolution-gate",
+            "consolidate",
+            "--confidence",
+            "1.5",
+            "--eventloom-path",
+            str(eventloom_path),
+        ],
+    )
+    assert result.exit_code != 0
+
+
+def test_memory_evolution_policy_reports_propose_only_default(tmp_path: Path) -> None:
+    """memory evolution-policy should report the conservative propose_only default."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    eventloom_path = workspace / ".eventloom"
+    (workspace / ".env.local").write_text("PROJECTION_BACKEND=null\n", encoding="utf-8")
+    result = CliRunner().invoke(
+        app,
+        [
+            "memory",
+            "evolution-policy",
+            "--eventloom-path",
+            str(eventloom_path),
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["default_tier"] == "propose_only"
