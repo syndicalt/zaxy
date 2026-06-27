@@ -139,10 +139,11 @@ class Settings(BaseSettings):
     # Memory evolution governance (Zaxy 3 / I4)
     # ------------------------------------------------------------------
     evolution_autonomy_default: str = Field(
-        default="propose_only",
+        default="auto_with_rollback",
         description=(
-            "Default autonomy tier for governed memory evolution: "
-            "propose_only (never auto-promote; default), auto_with_rollback, or require_review"
+            "Default autonomy tier for governed memory evolution: auto_with_rollback "
+            "(auto-apply above threshold, reversible within the rollback window; default), "
+            "propose_only (never auto-promote), or require_review"
         ),
     )
     evolution_rollback_window_seconds: int = Field(
@@ -153,7 +154,7 @@ class Settings(BaseSettings):
         default=None,
         description=(
             "Optional per-op autonomy overrides as 'op=tier,op=tier' "
-            "(e.g. 'update=propose_only'); overrides the behavior-preserving defaults"
+            "(e.g. 'forget=propose_only') to tighten guardrails for specific ops"
         ),
     )
 

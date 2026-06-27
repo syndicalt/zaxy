@@ -326,8 +326,9 @@ TOOLS = [
             "memory change (consolidate, update, forget, rule_generate, promote). Returns "
             "whether the change may auto-apply or must be held for review under the "
             "configured autonomy tier, and records a non-authoritative, replayable "
-            "evolution.gate.evaluated event so the decision is auditable. Zaxy defaults to "
-            "propose_only: nothing auto-promotes without review."
+            "evolution.gate.evaluated event so the decision is auditable. The default tier "
+            "is auto_with_rollback (auto-apply above threshold, reversible within the rollback "
+            "window); stricter tiers (propose_only, require_review) are available."
         ),
         inputSchema={
             "type": "object",

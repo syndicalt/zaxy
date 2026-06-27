@@ -775,8 +775,8 @@ class TestMemoryEvolutionGate:
         ]
         assert tool.inputSchema["additionalProperties"] is False
 
-    async def test_gate_default_holds_for_review_and_records_event(self, tmp_path: Path) -> None:
-        """The default propose_only policy holds for review and records an auditable event."""
+    async def test_gate_default_auto_applies_and_records_event(self, tmp_path: Path) -> None:
+        """The default auto_with_rollback policy auto-applies above threshold and records it."""
         with (
             patch("zaxy.mcp_server.build_projection_store") as mock_build_projection_store,
             patch("zaxy.mcp_server.MemoryTracer") as mock_tracer_cls,
@@ -794,10 +794,10 @@ class TestMemoryEvolutionGate:
         )
         payload = json.loads(result[0].text)
         assert payload["op"] == "rule_generate"
-        assert payload["tier"] == "propose_only"
-        assert payload["auto_apply"] is False
-        assert payload["requires_review"] is True
-        assert payload["decision"] == "requires_review"
+        assert payload["tier"] == "auto_with_rollback"
+        assert payload["auto_apply"] is True
+        assert payload["requires_review"] is False
+        assert payload["decision"] == "auto_apply"
 
         eventlog = server.session_manager.get("agent-1").eventlog
         gate_events = [e for e in eventlog.read_all() if e.type == "evolution.gate.evaluated"]

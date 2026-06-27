@@ -26,7 +26,7 @@ GATE_EVENT_TYPE = "evolution.gate.evaluated"
 
 #: Autonomy tiers, conservative-first.
 AUTONOMY_TIERS: tuple[str, ...] = ("propose_only", "auto_with_rollback", "require_review")
-DEFAULT_AUTONOMY_TIER = "propose_only"
+DEFAULT_AUTONOMY_TIER = "auto_with_rollback"
 
 #: Governed evolution operations.
 EVOLUTION_OPS: tuple[str, ...] = ("consolidate", "update", "forget", "rule_generate", "promote")
@@ -36,13 +36,6 @@ DEFAULT_ROLLBACK_WINDOW_SECONDS = 86_400
 
 DECISION_AUTO_APPLY = "auto_apply"
 DECISION_REQUIRES_REVIEW = "requires_review"
-
-#: Per-op default tiers that preserve Zaxy's pre-I4 behavior. Inferred-edge
-#: generation (the only autonomous-apply producer) maps to the ``update`` op and
-#: keeps auto-applying so migrating it onto the gate is non-breaking; operators
-#: opt into stricter via ``evolution_op_autonomy``. Every other op inherits the
-#: conservative global default (``propose_only``).
-BEHAVIOR_PRESERVING_OP_TIERS: dict[str, str] = {"update": "auto_with_rollback"}
 
 
 @dataclass(frozen=True)
@@ -122,14 +115,15 @@ class EvolutionGateDecision:
 
 
 def resolve_evolution_policy(settings: Any) -> MemoryEvolutionPolicy:
-    """Build a policy from Settings, defaulting to propose_only.
+    """Build a policy from Settings.
 
-    Reads ``evolution_autonomy_default``, ``evolution_rollback_window_seconds``,
+    Reads ``evolution_autonomy_default`` (default ``auto_with_rollback`` — auto-apply
+    above threshold, reversible within the rollback window), ``evolution_rollback_window_seconds``,
     and the optional per-op ``evolution_op_autonomy`` override string defensively
-    (missing attributes fall back to the conservative defaults), so a minimal or
-    mocked settings object still yields a valid policy. Per-op tiers start from
-    ``BEHAVIOR_PRESERVING_OP_TIERS`` (so inferred-edge generation keeps
-    auto-applying) and are then overridden by ``evolution_op_autonomy``.
+    (missing attributes fall back to the defaults), so a minimal or mocked settings
+    object still yields a valid policy. The stricter tiers (``propose_only``,
+    ``require_review``) are available per-op or globally for deployments that want
+    tighter guardrails.
     """
     default_tier = getattr(settings, "evolution_autonomy_default", None) or DEFAULT_AUTONOMY_TIER
     rollback = getattr(settings, "evolution_rollback_window_seconds", None)
@@ -138,10 +132,7 @@ def resolve_evolution_policy(settings: Any) -> MemoryEvolutionPolicy:
         if isinstance(rollback, int) and not isinstance(rollback, bool)
         else DEFAULT_ROLLBACK_WINDOW_SECONDS
     )
-    op_tiers = {
-        **BEHAVIOR_PRESERVING_OP_TIERS,
-        **parse_op_autonomy(getattr(settings, "evolution_op_autonomy", None)),
-    }
+    op_tiers = parse_op_autonomy(getattr(settings, "evolution_op_autonomy", None))
     return MemoryEvolutionPolicy(
         default_tier=str(default_tier),
         op_tiers=op_tiers,
