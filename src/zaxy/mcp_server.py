@@ -535,6 +535,46 @@ class ZaxyMCPServer:
             )
         ]
 
+    async def handle_memory_evolution_gate(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_evolution_gate tool call (governed-autonomy gate)."""
+        op = arguments.get("op")
+        if not isinstance(op, str) or not op:
+            raise ValueError("op must be a non-empty string")
+        confidence = arguments.get("confidence")
+        if isinstance(confidence, bool) or not isinstance(confidence, int | float):
+            raise ValueError("confidence must be a number between 0.0 and 1.0")
+        candidate_ref = arguments.get("candidate_ref")
+        if candidate_ref is not None and not isinstance(candidate_ref, dict):
+            raise ValueError("candidate_ref must be an object")
+        session_id = self._session_id_from_arguments(
+            arguments,
+            default=self._default_session_id,
+        )
+        decision = await self._fabric.evaluate_evolution_gate(
+            op,
+            float(confidence),
+            candidate_ref=candidate_ref,
+            session_id=session_id,
+        )
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "op": decision.op,
+                        "tier": decision.tier,
+                        "decision": decision.decision,
+                        "auto_apply": decision.auto_apply,
+                        "requires_review": decision.requires_review,
+                        "confidence": decision.confidence,
+                        "threshold": decision.threshold,
+                        "rollback_window_seconds": decision.rollback_window_seconds,
+                        "reason": decision.reason,
+                    }
+                ),
+            )
+        ]
+
     async def handle_memory_causal_successors(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Handle memory_causal_successors tool calls."""
         return await self._handle_memory_causal_neighbors(arguments, direction="successors")
@@ -2605,6 +2645,8 @@ async def _dispatch_tool_call(
         return await active_server.handle_memory_append(arguments)
     if name == "memory_ingest":
         return await active_server.handle_memory_ingest(arguments)
+    if name == "memory_evolution_gate":
+        return await active_server.handle_memory_evolution_gate(arguments)
     if name == "memory_query":
         return await active_server.handle_memory_query(arguments)
     if name == "memory_causal_successors":
