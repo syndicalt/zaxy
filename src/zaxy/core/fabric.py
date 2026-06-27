@@ -203,6 +203,27 @@ def _existing_producer_refs(eventlog: EventLog) -> set[str]:
     return refs
 
 
+def _inferred_edge_candidate_ref(payload: dict[str, Any]) -> dict[str, Any]:
+    """Build a candidate reference for a withheld inferred-edge gate decision."""
+    ref: dict[str, Any] = {}
+    for key in ("target", "source"):
+        node = payload.get(key)
+        if isinstance(node, dict) and isinstance(node.get("name"), str):
+            ref["name"] = node["name"]
+            break
+    evidence = payload.get("evidence")
+    if isinstance(evidence, dict):
+        seq = evidence.get("source_event_seq")
+        if isinstance(seq, int) and not isinstance(seq, bool):
+            ref["seq"] = seq
+        event_hash = evidence.get("source_event_hash")
+        if isinstance(event_hash, str):
+            ref["hash"] = event_hash
+    if not ref:
+        ref["name"] = "inferred_edge"
+    return ref
+
+
 class MemoryFabric:
     """Framework-agnostic persistent memory for AI agents.
 
@@ -1316,10 +1337,44 @@ class MemoryFabric:
         source_event: Any,
         session_id: str,
     ) -> None:
-        """Append and project inferred-edge events generated from cited evidence."""
+        """Append and project inferred-edge events generated from cited evidence.
+
+        Autonomous edge *generation* (``inference.edge.generated``) routes through
+        the governed evolution gate (op ``update``), which defaults to auto-applying
+        so this migration is non-breaking (I4 option A). An operator can set
+        ``evolution_op_autonomy=update=propose_only`` (or require_review) to withhold
+        autonomous edges; a withheld edge is recorded as an auditable
+        ``evolution.gate.evaluated`` event instead of being applied. Deterministic
+        safety corrections (retractions, ``causal.edge.generated``) are not gated.
+        """
         if source_event.type == "inference.edge.generated":
             return
+        policy = resolve_evolution_policy(self.settings)
         for generated in build_inferred_edge_events(source_event):
+            if generated["event_type"] == "inference.edge.generated":
+                payload = generated["payload"]
+                raw_confidence = payload.get("confidence")
+                confidence = (
+                    float(raw_confidence)
+                    if isinstance(raw_confidence, int | float) and not isinstance(raw_confidence, bool)
+                    else 0.0
+                )
+                decision = evaluate_evolution_gate("update", confidence, policy=policy)
+                if not decision.auto_apply:
+                    gate_spec = build_evolution_gate_event(
+                        actor="zaxy-inference",
+                        session_id=session_id,
+                        decision=decision,
+                        candidate_ref=_inferred_edge_candidate_ref(payload),
+                    )
+                    gate_event = eventlog.append(
+                        gate_spec["event_type"],
+                        actor=gate_spec["actor"],
+                        payload=validate_payload(gate_spec["payload"]),
+                        thread=session_id,
+                    )
+                    await self._project_event(gate_event, session_id=session_id)
+                    continue
             event = eventlog.append(
                 generated["event_type"],
                 actor=generated["actor"],
