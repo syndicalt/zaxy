@@ -4,10 +4,9 @@ on:
   push:
     branches: [master]
     paths:
-      - "site/**"
+      - "web/**"
       - "docs/**"
       - "reports/**"
-      - "README.md"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -31,17 +30,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
       - uses: actions/configure-pages@v5
-      - name: Validate rendered docs
-        run: python scripts/build-site-docs.py --check
-      - name: Stage static site
-        run: |
-          rm -rf _site
-          mkdir -p _site
-          cp -R site/. _site/
-          cp -R reports _site/reports
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+      - name: Build docs site (docs sync + astro build + link gate)
+        working-directory: web
+        run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: _site
+          path: web/dist
       - id: deployment
         uses: actions/deploy-pages@v4

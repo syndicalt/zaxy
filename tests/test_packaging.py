@@ -357,7 +357,7 @@ def test_release_gate_surface_coverage_requires_all_public_gate_commands(
         "LANGGRAPH_SMOKE_CMD='pytest test_langgraph_example_runs_without_langgraph_dependency'\n"
         "COORDINATE_SMOKE_CMD='pytest test_coordinate_three_worker_example_runs'\n"
         "BACKEND_SHOOTOUT_CMD='python scripts/check-backend-shootout.py'\n"
-        "DOCS_CMD='python scripts/build-site-docs.py --check'\n"
+        "DOCS_CMD='scripts/validate-docs.sh'\n"
         "BETA_UAT_CMD='scripts/beta-uat.sh'\n"
         "EXTERNAL_VALIDATION_CMD='SKIP: outside validation collected after release'\n",
         encoding="utf-8",
@@ -1050,7 +1050,7 @@ def test_beta_readiness_reports_missing_clean_repo_uat(tmp_path: Path) -> None:
         'MCP_SMOKE_CMD="python scripts/mcp_smoke_test.py"\n'
         'LANGGRAPH_SMOKE_CMD="pytest tests/test_examples_v05.py::test_langgraph_example_runs_without_langgraph_dependency --no-cov -q"\n'
         'COORDINATE_SMOKE_CMD="pytest tests/test_examples_v05.py::test_coordinate_three_worker_example_runs --no-cov -q"\n'
-        'DOCS_CMD="python scripts/build-site-docs.py --check && scripts/validate-docs.sh"\n'
+        'DOCS_CMD="scripts/validate-docs.sh"\n'
         'BETA_UAT_CMD="scripts/beta-uat.sh"\n'
         'EXTERNAL_VALIDATION_CMD="SKIP:external validation is optional for v1.0 release"\n'
         "run_gate() { [[ \"$2\" == SKIP:* ]] && echo \"Skipping $1: ${2#SKIP:}\" || bash -c \"$2\"; }\n"
@@ -1059,7 +1059,6 @@ def test_beta_readiness_reports_missing_clean_repo_uat(tmp_path: Path) -> None:
         "tests/test_packet_memory_e2e.py\n"
         "scripts/build-dist.sh\n"
         "scripts/validate-docs.sh\n"
-        "python scripts/build-site-docs.py --check\n"
         "scripts/validate-deployment.sh\n"
         "PYTHONPATH=src python -m zaxy hook-status\n"
         "--eventloom-path reports/activation-release\n"
@@ -5834,7 +5833,7 @@ def _write_minimal_beta_ready_project(root: Path) -> None:
         'MCP_SMOKE_CMD="python scripts/mcp_smoke_test.py"\n'
         'LANGGRAPH_SMOKE_CMD="pytest tests/test_examples_v05.py::test_langgraph_example_runs_without_langgraph_dependency --no-cov -q"\n'
         'COORDINATE_SMOKE_CMD="pytest tests/test_examples_v05.py::test_coordinate_three_worker_example_runs --no-cov -q"\n'
-        'DOCS_CMD="python scripts/build-site-docs.py --check && scripts/validate-docs.sh"\n'
+        'DOCS_CMD="scripts/validate-docs.sh"\n'
         'BETA_UAT_CMD="scripts/beta-uat.sh"\n'
         'EXTERNAL_VALIDATION_CMD="SKIP:external validation is optional for v1.0 release"\n'
         "run_gate() { [[ \"$2\" == SKIP:* ]] && echo \"Skipping $1: ${2#SKIP:}\" || bash -c \"$2\"; }\n"
@@ -5843,7 +5842,6 @@ def _write_minimal_beta_ready_project(root: Path) -> None:
         "tests/test_packet_memory_e2e.py\n"
         "scripts/build-dist.sh\n"
         "scripts/validate-docs.sh\n"
-        "python scripts/build-site-docs.py --check\n"
         "scripts/validate-deployment.sh\n"
         "PYTHONPATH=src python -m zaxy hook-status\n"
         "--eventloom-path reports/activation-release\n"

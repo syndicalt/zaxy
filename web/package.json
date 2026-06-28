@@ -1,0 +1,21 @@
+{
+  "name": "zaxy-web",
+  "version": "0.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "prebuild": "node scripts/sync-content.mjs",
+    "build": "astro build",
+    "postbuild": "node scripts/check-build.mjs",
+    "dev": "node scripts/sync-content.mjs && astro dev",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@astrojs/mdx": "^4.2.0",
+    "@astrojs/sitemap": "^3.2.1",
+    "astro": "^5.6.1",
+    "rehype-katex": "^7.0.1",
+    "remark-math": "^6.0.0",
+    "unist-util-visit": "^5.0.0"
+  }
+}

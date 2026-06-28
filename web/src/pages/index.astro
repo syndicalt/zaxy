@@ -1,0 +1,298 @@
+---
+import Base from "../layouts/Base.astro";
+import ChainFigure from "../components/ChainFigure.astro";
+import CapabilityGrid from "../components/CapabilityGrid.astro";
+import ProofDemo from "../components/ProofDemo.astro";
+import EvidencePanel from "../components/EvidencePanel.astro";
+import InstallTabs from "../components/InstallTabs.astro";
+---
+
+<Base title="Zaxy 3 — Governed Active Memory for agent fleets">
+  <!-- ============ HERO ============ -->
+  <section class="hero">
+    <div class="wrap hero__grid">
+      <div class="hero__lede">
+        <p class="kicker">RELEASE · <b>v3.0.0</b> · 2026</p>
+        <h1>Governed,<br /><em>active</em> memory<br />for agent fleets.</h1>
+        <p class="lede">
+          An append-only event log is the source of truth. Every recall is a
+          cited <strong>Memory Checkout</strong>; every change is gated,
+          replayable, and reversible — including verified forgetting.
+        </p>
+        <div class="hero__cta">
+          <a class="btn btn--solid" href="/install.html">Install</a>
+          <a class="tlink" href="/#system">How it works →</a>
+        </div>
+        <div class="cmd">
+          <span><span class="dollar">$</span>uvx zaxy-memory@3.0.0</span>
+          <button class="copy" type="button" data-copy="uvx zaxy-memory@3.0.0"
+            >COPY</button
+          >
+        </div>
+      </div>
+
+      <figure class="hero__fig figure">
+        <ChainFigure />
+        <figcaption class="figcap">fig.1 — the append-only log</figcaption>
+      </figure>
+    </div>
+
+    <div class="wrap">
+      <ul class="ticker">
+        <li>PyPI <b>3.0.0</b></li>
+        <li>49 MCP tools</li>
+        <li>FleetBench governance <b class="tl">1.00</b></li>
+        <li>
+          LongMemEval R@5 <b>0.972</b>
+          <span class="muted">— hash provider</span>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <hr class="rule wrap-rule" />
+
+  <!-- ============ CAPABILITIES ============ -->
+  <section class="section" id="system">
+    <div class="wrap">
+      <header class="sec-head">
+        <p class="kicker">THE&nbsp;SYSTEM</p>
+        <h2>Ten capabilities,<br />one substrate.</h2>
+        <p class="sec-intro">
+          Everything below is a projection of the same hash-chained log. Delete
+          the projection and replay rebuilds it — nothing authoritative lives
+          anywhere else.
+        </p>
+      </header>
+      <CapabilityGrid />
+    </div>
+  </section>
+
+  <hr class="rule wrap-rule" />
+
+  <!-- ============ PROOF ============ -->
+  <section class="section" id="proof">
+    <div class="wrap">
+      <header class="sec-head">
+        <p class="kicker">PROOF</p>
+        <h2>Evolve. Replay.<br /><em>Roll back.</em> Forget.</h2>
+        <p class="sec-intro">
+          A scripted walk through one memory's life. Every step is a real,
+          hash-sealed event with its citation — step through it.
+        </p>
+      </header>
+      <ProofDemo />
+    </div>
+  </section>
+
+  <hr class="rule wrap-rule" />
+
+  <!-- ============ EVIDENCE ============ -->
+  <section class="section" id="evidence">
+    <div class="wrap">
+      <header class="sec-head">
+        <p class="kicker">EVIDENCE</p>
+        <h2>Numbers, with the<br />boundary kept honest.</h2>
+        <p class="sec-intro">
+          We publish what's measured and name what isn't. The headline figures
+          run on a non-semantic provider — that's stated, not hidden.
+        </p>
+      </header>
+      <EvidencePanel />
+      <p class="linkrow">
+        <a class="tlink" href="/docs/benchmarks.html">Benchmark methodology →</a>
+        <a class="tlink" href="/docs/external-validation.html"
+          >External validation →</a
+        >
+      </p>
+    </div>
+  </section>
+
+  <hr class="rule wrap-rule" />
+
+  <!-- ============ INSTALL ============ -->
+  <section class="section">
+    <div class="wrap install-grid">
+      <header class="sec-head sec-head--left">
+        <p class="kicker">INSTALL</p>
+        <h2>Local-first.<br />MCP-native.</h2>
+        <p class="sec-intro">
+          Runs in-process on an embedded store — no external service required.
+          Point any MCP client at it and the memory loop is the default.
+        </p>
+        <p class="install-note muted">
+          Optional Neo4j / pgGraph / LatticeDB backends via
+          <code>PROJECTION_BACKEND</code>.
+        </p>
+      </header>
+      <InstallTabs />
+    </div>
+  </section>
+
+  <hr class="rule wrap-rule" />
+
+  <!-- ============ CLOSING ============ -->
+  <section class="section section--tight closing">
+    <div class="wrap">
+      <h2 class="closing__line">
+        Active memory you can <em>prove</em>.
+      </h2>
+      <div class="closing__cta">
+        <a class="btn btn--solid" href="/install.html">Get started</a>
+        <a class="btn" href="/docs.html">Read the docs</a>
+        <a class="tlink" href="https://github.com/syndicalt/zaxy" rel="noopener"
+          >GitHub ↗</a
+        >
+      </div>
+    </div>
+  </section>
+</Base>
+
+<script>
+  // Shared copy-to-clipboard for every [data-copy] affordance on the page.
+  document.querySelectorAll<HTMLButtonElement>("[data-copy]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const text = btn.getAttribute("data-copy") ?? "";
+      try {
+        await navigator.clipboard.writeText(text);
+        const prev = btn.textContent;
+        btn.textContent = "COPIED";
+        setTimeout(() => (btn.textContent = prev), 1400);
+      } catch {
+        /* clipboard unavailable; no-op */
+      }
+    });
+  });
+</script>
+
+<style>
+  /* ---- hero ---- */
+  .hero {
+    padding-top: clamp(40px, 7vw, 84px);
+    padding-bottom: clamp(28px, 4vw, 48px);
+  }
+  .hero__grid {
+    display: grid;
+    grid-template-columns: 1.02fr 0.98fr;
+    gap: clamp(28px, 5vw, 72px);
+    align-items: center;
+  }
+  .hero__lede h1 {
+    margin: 0.4em 0 0.5em;
+  }
+  .hero__cta {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    margin: 1.6em 0 1.4em;
+    flex-wrap: wrap;
+  }
+  .cmd {
+    max-width: 24em;
+  }
+  .hero__fig {
+    position: relative;
+    padding: 26px 26px 38px;
+  }
+  .hero__fig .figcap {
+    position: absolute;
+    left: 26px;
+    bottom: 14px;
+  }
+  @media (min-width: 921px) {
+    .hero__fig {
+      border-left: 1px solid var(--line);
+      padding-left: clamp(28px, 4vw, 56px);
+    }
+  }
+  .ticker {
+    list-style: none;
+    margin: clamp(24px, 4vw, 48px) 0 0;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+    display: flex;
+    flex-wrap: wrap;
+    gap: clamp(16px, 3vw, 40px);
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    color: var(--gray);
+  }
+  .ticker b {
+    color: var(--white);
+    font-weight: 500;
+  }
+  .ticker b.tl {
+    color: var(--teal);
+  }
+  @media (max-width: 920px) {
+    .hero__grid {
+      grid-template-columns: 1fr;
+    }
+    .hero__fig {
+      order: -1;
+    }
+  }
+
+  /* ---- section headers ---- */
+  .wrap-rule {
+    max-width: var(--maxw);
+    margin-inline: auto;
+  }
+  .sec-head {
+    max-width: 60ch;
+    margin-bottom: clamp(28px, 4vw, 48px);
+  }
+  .sec-head h2 {
+    margin: 0.45em 0 0.5em;
+  }
+  .sec-intro {
+    color: var(--gray);
+    font-size: 1.02rem;
+    max-width: 54ch;
+    margin: 0;
+  }
+  .linkrow {
+    display: flex;
+    gap: 28px;
+    flex-wrap: wrap;
+    margin: 26px 0 0;
+  }
+
+  /* ---- install ---- */
+  .install-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: clamp(28px, 5vw, 64px);
+    align-items: center;
+  }
+  .sec-head--left {
+    margin-bottom: 0;
+  }
+  .install-note {
+    margin-top: 18px;
+    font-size: 0.86rem;
+  }
+  .install-note code {
+    font-family: var(--mono);
+    font-size: 0.82em;
+    color: var(--teal-lt);
+  }
+  @media (max-width: 860px) {
+    .install-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* ---- closing ---- */
+  .closing__line {
+    font-size: clamp(2rem, 5vw, 3.4rem);
+  }
+  .closing__cta {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    margin-top: 1.6em;
+    flex-wrap: wrap;
+  }
+</style>

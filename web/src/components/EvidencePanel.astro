@@ -1,0 +1,155 @@
+---
+// Benchmark evidence with the honest boundary kept inline. Numbers are cited
+// to committed artifacts; caveats are not buried.
+const cards = [
+  {
+    label: "FleetBench · internal",
+    primary: true,
+    rows: [
+      { k: "governance correctness", v: "1.00" },
+      { k: "coordination quality", v: "0.907" },
+    ],
+    note: "Within-mission proxy on the coordination scaffold. Fleet-wide transfer is not yet measured at scale.",
+  },
+  {
+    label: "LongMemEval · 500q",
+    rows: [
+      { k: "Recall@5", v: "0.972" },
+      { k: "Answer@5", v: "0.628" },
+      { k: "checkout mean", v: "0.724" },
+      { k: "citation coverage", v: "1.000" },
+    ],
+    note: "Run with the hash (non-semantic) embedding provider — this shows plumbing and recall parity, not semantic quality.",
+  },
+  {
+    label: "Current evidence boundary",
+    boundary: true,
+    items: [
+      "No head-to-head, same-harness comparison vs. memclaw / Letta yet.",
+      "Semantic-quality at fleet scale is unproven; numbers above use a hash provider.",
+      "Crypto-erasure (verified forgetting) is experimental and unaudited.",
+    ],
+    note: "We state what we can prove — and what we can't.",
+  },
+];
+---
+
+<div class="ev">
+  {
+    cards.map((c) => (
+      <article class={`evc${c.primary ? " evc--p" : ""}${c.boundary ? " evc--b" : ""}`}>
+        <p class="evc__label mono">{c.label}</p>
+        {c.rows && (
+          <dl class="evc__rows">
+            {c.rows.map((r) => (
+              <div class="evc__row">
+                <dt>{r.k}</dt>
+                <dd class="mono">{r.v}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+        {c.items && (
+          <ul class="evc__items">
+            {c.items.map((it) => (
+              <li>{it}</li>
+            ))}
+          </ul>
+        )}
+        <p class="evc__note">{c.note}</p>
+      </article>
+    ))
+  }
+</div>
+
+<style>
+  .ev {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .evc {
+    background: var(--ink);
+    padding: 24px 22px;
+    display: flex;
+    flex-direction: column;
+  }
+  .evc--p {
+    background: #0c161a;
+  }
+  .evc__label {
+    font-size: 0.68rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--faint);
+    margin: 0 0 18px;
+  }
+  .evc--p .evc__label {
+    color: var(--teal);
+  }
+  .evc__rows {
+    margin: 0 0 16px;
+    display: grid;
+    gap: 12px;
+  }
+  .evc__row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 14px;
+    border-bottom: 1px dotted var(--line-2);
+    padding-bottom: 8px;
+  }
+  .evc__row dt {
+    font-size: 0.86rem;
+    color: var(--gray);
+  }
+  .evc__row dd {
+    margin: 0;
+    font-size: 1.18rem;
+    color: var(--white);
+  }
+  .evc--p .evc__row dd {
+    color: var(--teal-lt);
+  }
+  .evc__items {
+    margin: 0 0 16px;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 11px;
+  }
+  .evc__items li {
+    font-size: 0.85rem;
+    line-height: 1.45;
+    color: var(--gray);
+    padding-left: 16px;
+    position: relative;
+  }
+  .evc__items li::before {
+    content: "—";
+    position: absolute;
+    left: 0;
+    color: var(--gold);
+  }
+  .evc__note {
+    margin: auto 0 0;
+    font-size: 0.78rem;
+    line-height: 1.5;
+    color: var(--faint);
+    border-top: 1px solid var(--line);
+    padding-top: 14px;
+  }
+  .evc--b .evc__note {
+    color: var(--gray);
+  }
+  @media (max-width: 880px) {
+    .ev {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

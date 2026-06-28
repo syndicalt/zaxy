@@ -14,7 +14,7 @@ MCP_SMOKE_CMD="python scripts/mcp_smoke_test.py"
 LANGGRAPH_SMOKE_CMD="pytest tests/test_examples_v05.py::test_langgraph_example_runs_without_langgraph_dependency --no-cov -q"
 COORDINATE_SMOKE_CMD="pytest tests/test_examples_v05.py::test_coordinate_three_worker_example_runs --no-cov -q"
 PACKAGE_CMD="scripts/build-dist.sh"
-DOCS_CMD="python scripts/build-site-docs.py --check && scripts/validate-docs.sh"
+DOCS_CMD="scripts/validate-docs.sh"
 VALIDATE_CMD="scripts/validate-deployment.sh"
 BETA_UAT_CMD="scripts/beta-uat.sh"
 STATE_RECOVERY_CMD='python scripts/check-state-recovery-benchmark.py reports/benchmarks/state-recovery-v1/state-recovery-benchmark.json --workload reports/benchmarks/state-recovery-v1/state-recovery-workload.json --require-git-tracked-inputs && tmpdir=$(mktemp -d) && python -m zaxy state-recovery-benchmark --output-dir "${tmpdir}" --workload reports/benchmarks/state-recovery-v1/state-recovery-workload.json --json >/dev/null && python scripts/check-state-recovery-benchmark.py "${tmpdir}/state-recovery-benchmark.json" --workload "${tmpdir}/state-recovery-workload.json" && rm -rf "${tmpdir}"'
