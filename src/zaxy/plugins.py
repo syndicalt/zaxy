@@ -54,7 +54,7 @@ _PROJECTION_BACKENDS: dict[str, Callable[..., ProjectionStore]] = {}
 _LOADED_PLUGINS: set[str] = set()
 
 
-class ZaxyPlugin(Protocol):
+class ZaxyPlugin(Protocol):  # pragma: no cover
     """The contract an external Zaxy plugin object must satisfy."""
 
     name: str

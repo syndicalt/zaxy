@@ -445,3 +445,16 @@ def test_malformed_and_duplicate_config_references(monkeypatch: pytest.MonkeyPat
     assert by_name["noversion-plugin"].version == ""
     # The loaded-report property reflects only the successfully registered plugins.
     assert {r.name for r in report.loaded} == {"good-plugin", "noversion-plugin"}
+
+
+def test_entry_point_specs_are_deduplicated_by_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    dup_specs = [
+        plugins.PluginSpec(name="dup", source="entry_point", reference="m:a", load=lambda: _GOOD_PLUGIN),
+        plugins.PluginSpec(name="dup", source="entry_point", reference="m:b", load=lambda: _GOOD_PLUGIN),
+    ]
+    monkeypatch.setattr(plugins, "_entry_point_specs", lambda: dup_specs)
+
+    specs = discover_plugin_specs(Settings(plugins=[]))
+
+    # Two entry points sharing a name collapse to the first (the dedup branch).
+    assert [s.name for s in specs].count("dup") == 1
