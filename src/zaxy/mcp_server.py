@@ -575,6 +575,31 @@ class ZaxyMCPServer:
             )
         ]
 
+    async def handle_memory_outcome(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_outcome tool call (outcome-driven learning loop)."""
+        session_id = self._session_id_from_arguments(
+            arguments,
+            default=self._default_session_id,
+        )
+        outcome = arguments.get("outcome")
+        if not isinstance(outcome, str) or not outcome:
+            raise ValueError("outcome must be a non-empty string")
+        summary = arguments.get("summary")
+        if not isinstance(summary, str) or not summary:
+            raise ValueError("summary must be a non-empty string")
+        result = await self._fabric.record_outcome(
+            outcome=outcome,
+            summary=summary,
+            target_seq=arguments.get("target_seq"),
+            target_hash=arguments.get("target_hash"),
+            lesson=arguments.get("lesson"),
+            trigger=arguments.get("trigger"),
+            confidence=arguments.get("confidence"),
+            task_id=arguments.get("task_id"),
+            session_id=session_id,
+        )
+        return [TextContent(type="text", text=json.dumps(result))]
+
     async def handle_memory_causal_successors(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Handle memory_causal_successors tool calls."""
         return await self._handle_memory_causal_neighbors(arguments, direction="successors")
@@ -2647,6 +2672,8 @@ async def _dispatch_tool_call(
         return await active_server.handle_memory_ingest(arguments)
     if name == "memory_evolution_gate":
         return await active_server.handle_memory_evolution_gate(arguments)
+    if name == "memory_outcome":
+        return await active_server.handle_memory_outcome(arguments)
     if name == "memory_query":
         return await active_server.handle_memory_query(arguments)
     if name == "memory_causal_successors":

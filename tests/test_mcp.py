@@ -203,7 +203,7 @@ class TestToolSchema:
 
     def test_tools_list_length(self) -> None:
         """Should expose the memory and context lifecycle tools."""
-        assert len(TOOLS) == 50
+        assert len(TOOLS) == 51
 
     def test_tool_names(self) -> None:
         """Tool names should match the expected contract."""
@@ -212,6 +212,7 @@ class TestToolSchema:
             "memory_append",
             "memory_ingest",
             "memory_evolution_gate",
+            "memory_outcome",
             "memory_query",
             "memory_causal_successors",
             "memory_causal_predecessors",
@@ -811,6 +812,129 @@ class TestMemoryEvolutionGate:
     async def test_rejects_non_numeric_confidence(self, server: ZaxyMCPServer) -> None:
         with pytest.raises(ValueError):
             await server.handle_memory_evolution_gate({"op": "consolidate", "confidence": "high"})
+
+
+class TestMemoryOutcome:
+    """Tests for the memory_outcome outcome-driven learning tool."""
+
+    def test_tool_schema_requires_outcome_and_summary(self) -> None:
+        tool = next(t for t in TOOLS if t.name == "memory_outcome")
+        assert tool.inputSchema["required"] == ["outcome", "summary"]
+        assert tool.inputSchema["additionalProperties"] is False
+        assert "success, failure, or partial" in tool.inputSchema["properties"]["outcome"]["description"]
+
+    async def test_success_reinforces_target_without_rule(self, tmp_path: Path) -> None:
+        """A success outcome on a seeded target confirms it and proposes no rule."""
+        with (
+            patch("zaxy.mcp_server.build_projection_store") as mock_build_projection_store,
+            patch("zaxy.mcp_server.MemoryTracer") as mock_tracer_cls,
+        ):
+            mock_graph = AsyncMock()
+            mock_build_projection_store.return_value = mock_graph
+            mock_tracer = AsyncMock()
+            mock_tracer_cls.return_value = mock_tracer
+            server = ZaxyMCPServer(eventloom_path=str(tmp_path / ".eventloom"))
+            server.graph = mock_graph
+            server.tracer = mock_tracer
+
+        seeded = json.loads(
+            (
+                await server.handle_memory_append(
+                    {
+                        "event_type": "decision.made",
+                        "actor": "zaxy-agent",
+                        "payload": {"text": "ship the release"},
+                        "session_id": "agent-1",
+                    }
+                )
+            )[0].text
+        )
+
+        result = json.loads(
+            (
+                await server.handle_memory_outcome(
+                    {
+                        "outcome": "success",
+                        "summary": "the release shipped cleanly",
+                        "target_seq": seeded["seq"],
+                        "target_hash": seeded["hash"],
+                        "session_id": "agent-1",
+                    }
+                )
+            )[0].text
+        )
+        assert result["outcome"] == "success"
+        assert result["reinforced"] == "confirmed"
+        assert "rule" not in result
+
+        eventlog = server.session_manager.get("agent-1").eventlog
+        types = [e.type for e in eventlog.read_all()]
+        assert "memory.outcome.recorded" in types
+        assert "memory.reinforcement" in types
+
+    async def test_failure_with_lesson_auto_generates_rule(self, tmp_path: Path) -> None:
+        """A failure with a lesson auto-applies a preventive rule and records it."""
+        with (
+            patch("zaxy.mcp_server.build_projection_store") as mock_build_projection_store,
+            patch("zaxy.mcp_server.MemoryTracer") as mock_tracer_cls,
+        ):
+            mock_graph = AsyncMock()
+            mock_build_projection_store.return_value = mock_graph
+            mock_tracer = AsyncMock()
+            mock_tracer_cls.return_value = mock_tracer
+            server = ZaxyMCPServer(eventloom_path=str(tmp_path / ".eventloom"))
+            server.graph = mock_graph
+            server.tracer = mock_tracer
+
+        seeded = json.loads(
+            (
+                await server.handle_memory_append(
+                    {
+                        "event_type": "decision.made",
+                        "actor": "zaxy-agent",
+                        "payload": {"text": "deploy without migrations"},
+                        "session_id": "agent-1",
+                    }
+                )
+            )[0].text
+        )
+
+        result = json.loads(
+            (
+                await server.handle_memory_outcome(
+                    {
+                        "outcome": "failure",
+                        "summary": "deploy broke production",
+                        "target_seq": seeded["seq"],
+                        "target_hash": seeded["hash"],
+                        "lesson": "always run migrations before deploy",
+                        "session_id": "agent-1",
+                    }
+                )
+            )[0].text
+        )
+        assert result["outcome"] == "failure"
+        assert result["reinforced"] == "invalidated"
+        assert result["rule"]["auto_applied"] is True
+        assert result["rule"]["event_type"] == "memory.rule.generated"
+
+        eventlog = server.session_manager.get("agent-1").eventlog
+        rule_events = [e for e in eventlog.read_all() if e.type == "memory.rule.generated"]
+        assert len(rule_events) == 1
+        assert rule_events[0].payload["authority_status"] == "non_authoritative"
+
+    async def test_rejects_invalid_outcome(self, server: ZaxyMCPServer) -> None:
+        with pytest.raises(ValueError):
+            await server.handle_memory_outcome({"outcome": "exploded", "summary": "x"})
+
+    async def test_rejects_non_string_outcome(self, server: ZaxyMCPServer) -> None:
+        with pytest.raises(ValueError):
+            await server.handle_memory_outcome({"outcome": 123, "summary": "x"})
+
+    async def test_rejects_missing_summary(self, server: ZaxyMCPServer) -> None:
+        with pytest.raises(ValueError):
+            await server.handle_memory_outcome({"outcome": "success"})
+
 
 class TestCausalAndConsolidationTools:
     """Tests for causal reads and consolidation MCP handlers."""
