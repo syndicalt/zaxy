@@ -374,3 +374,74 @@ def test_no_plugins_extract_and_backends_unchanged(
     # load_plugins with empty config registers nothing from config.
     report = load_plugins(settings)
     assert all(r.source != "config" for r in report.results)
+
+
+class _NoVersionPlugin:
+    name = "noversion-plugin"
+    # No ``version`` attribute -> _plugin_str_attr returns the default.
+
+    def register(self, api: PluginAPI) -> None:
+        api.register_extractor("noversion.event", _good_extractor)
+
+
+_NO_VERSION_PLUGIN = _NoVersionPlugin()
+
+
+def test_cli_plugin_list_human_no_plugins(monkeypatch: pytest.MonkeyPatch) -> None:
+    from typer.testing import CliRunner
+
+    from zaxy.__main__ import app
+
+    monkeypatch.delenv("ZAXY_PLUGINS", raising=False)
+    monkeypatch.setattr(plugins, "_entry_point_specs", lambda: [])
+    get_settings.cache_clear()
+
+    result = CliRunner().invoke(app, ["plugin", "list"])
+
+    assert result.exit_code == 0, result.output
+    assert "No plugins discovered" in result.output
+
+
+def test_cli_plugin_list_human_reports_loaded_and_failed(monkeypatch: pytest.MonkeyPatch) -> None:
+    from typer.testing import CliRunner
+
+    from zaxy.__main__ import app
+
+    monkeypatch.setenv("ZAXY_PLUGINS", f"{__name__}:_GOOD_PLUGIN,{__name__}:_BOOM_PLUGIN")
+    monkeypatch.setattr(plugins, "_entry_point_specs", lambda: [])
+    get_settings.cache_clear()
+
+    result = CliRunner().invoke(app, ["plugin", "list"])
+
+    assert result.exit_code == 0, result.output
+    assert "good-plugin 1.0 [config] loaded" in result.output
+    assert "boom-plugin" in result.output
+    assert "failed: boom failed to register" in result.output
+
+
+def test_malformed_and_duplicate_config_references(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(plugins, "_entry_point_specs", lambda: [])
+    settings = Settings(
+        plugins=[
+            "no-colon-here",
+            "",
+            f"{__name__}:_GOOD_PLUGIN",
+            f"{__name__}:_GOOD_PLUGIN",
+            f"{__name__}:_NO_VERSION_PLUGIN",
+        ]
+    )
+
+    report = load_plugins(settings)
+
+    by_name = {r.name: r for r in report.results}
+    # Malformed 'module:attr' reference is reported failed, not raised.
+    assert by_name["no-colon-here"].status == "failed"
+    assert "module:attr" in (by_name["no-colon-here"].error or "")
+    # Empty + duplicate references are skipped; the good plugin registers once.
+    assert by_name["good-plugin"].status == "loaded"
+    assert _GOOD_PLUGIN.register_calls == 1
+    # A plugin with no version attribute renders the default empty version.
+    assert by_name["noversion-plugin"].status == "loaded"
+    assert by_name["noversion-plugin"].version == ""
+    # The loaded-report property reflects only the successfully registered plugins.
+    assert {r.name for r in report.loaded} == {"good-plugin", "noversion-plugin"}
