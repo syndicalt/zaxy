@@ -453,6 +453,40 @@ TOOLS = [
         },
     ),
     Tool(
+        name="memory_forget",
+        description=(
+            "Verified forgetting via cryptographic erasure: permanently forget a forgettable "
+            "memory by destroying its data-encryption key and appending a cited, "
+            "non-authoritative memory.forgotten tombstone. The target (target_seq/target_hash) "
+            "must be a forgettable memory sealed as ciphertext (a __zaxy_cipher cell); the "
+            "erasure routes through the I4 forget gate (auditable). The on-disk ciphertext and "
+            "its hash are never touched -- the hash chain stays verifiable -- while the plaintext "
+            "becomes permanently unrecoverable and readers see [FORGOTTEN]."
+        ),
+        inputSchema={
+            "type": "object",
+            "required": ["target_seq", "target_hash", "reason"],
+            "properties": {
+                "target_seq": {"type": "integer", "minimum": 1, "description": "Seq of the forgettable memory event to erase"},
+                "target_hash": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$",
+                    "description": "64-hex hash of the forgettable memory event to erase",
+                },
+                "reason": {"type": "string", "description": "Why the memory is being forgotten"},
+                "confidence": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 1.0,
+                    "description": "Evidence confidence for the forget gate (default 1.0)",
+                },
+                "actor": {"type": "string", "description": "Actor recording the erasure", "default": "zaxy-forgetter"},
+                "session_id": {"type": "string", "description": "Session ID for multi-agent sharding"},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
         name="memory_causal_successors",
         description="Read directed causal effects of an entity from graph-backed memory.",
         inputSchema={

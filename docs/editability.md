@@ -69,3 +69,37 @@ so the decision to apply a correction or reversal is itself part of the
 transparent, replayable history. Verified forgetting / cryptographic erasure is a
 separate concern (I5b) and is not what these events do — nothing here removes
 content from the log.
+
+## Verified forgetting (cryptographic erasure)
+
+Reversible attenuation (salience decay) is the default way memory fades — a faded
+memory leaves default ranking but stays one query away. When hard deletion is
+genuinely required (e.g. a GDPR erasure request), Zaxy supports **verified
+forgetting via cryptographic erasure** (I5b), which removes the plaintext
+*without* breaking the hash chain.
+
+Because a payload is sealed into the event hash, you cannot scrub a stored
+plaintext payload without failing `verify()`. So forgettable memories are
+**encrypted at append time**: with `FORGETTING_ENABLED=true`, an
+`append(..., forgettable=True)` seals the payload as **ciphertext** (a
+`__zaxy_cipher` cell). The data-encryption key (DEK) is wrapped under a
+key-encryption key (KEK) and stored **only in an out-of-log erasure vault** —
+never in the append-only log.
+
+Forgetting then **destroys the wrapped DEK** and appends a cited,
+non-authoritative `memory.forgotten` tombstone (audited, routed through the I4
+`forget` gate). The on-disk ciphertext and its hash are untouched, so
+`EventLog.verify()` stays green; the plaintext is permanently unrecoverable, and
+readers see a `[FORGOTTEN]` sentinel. `verify()` never decrypts — it validates
+the raw ciphertext chain.
+
+* Python: `await fabric.verified_forget(target_seq=..., target_hash=..., reason=...)`
+* MCP tool: `memory_forget`
+* CLI: `zaxy memory forget --target-seq N --target-hash H --reason "..."`
+
+The KEK defaults to `<eventloom_dir>/__erasure_kek__.key` (a dev key
+auto-generated `0600` on first use); in production point `FORGETTING_KEK_PATH` at
+a KMS- or secret-managed key. **Caveat:** the erasure crypto reuses Zaxy's
+portable-bundle envelope, which is **experimental and unaudited** — do not rely
+on it for high-value-secret or compliance guarantees without an independent
+cryptographic review.

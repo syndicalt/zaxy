@@ -20,8 +20,9 @@ from urllib.parse import urlsplit
 
 from zaxy.export_view import build_memory_export
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover - typing only
     from zaxy.export_view import ExportSelector
+    from zaxy.forgetting import PersistentErasureVault
     from zaxy.retrieval_cache import SessionRetrievalCache
 
 
@@ -30,7 +31,7 @@ class Sink(Protocol):
 
     def deliver(self, bundle: dict[str, Any]) -> None:
         """Deliver one bundle. Raises on failure."""
-        ...
+        ...  # pragma: no cover - protocol stub
 
 
 class FileSink:
@@ -77,15 +78,23 @@ def push_memory_export(
     *,
     retrieval_cache: SessionRetrievalCache,
     signing_key: dict[str, Any] | None = None,
+    vault: PersistentErasureVault | None = None,
     sink: Sink,
 ) -> dict[str, Any]:
     """Build an export bundle and deliver it to ``sink``; return the bundle.
 
     Goes through :func:`build_memory_export`, so a pushed bundle is byte-identical
-    to the same export pulled — one projection path, signed or unsigned.
+    to the same export pulled — one projection path, signed or unsigned. When
+    ``vault`` is supplied (forgetting enabled), forgettable cipher cells are
+    decrypted to plaintext (or ``[FORGOTTEN]`` once erased) so a push never leaks
+    raw ciphertext; when ``None`` the plaintext bundle is unchanged.
     """
     bundle = build_memory_export(
-        session_id, selector, retrieval_cache=retrieval_cache, signing_key=signing_key
+        session_id,
+        selector,
+        retrieval_cache=retrieval_cache,
+        signing_key=signing_key,
+        vault=vault,
     )
     sink.deliver(bundle)
     return bundle

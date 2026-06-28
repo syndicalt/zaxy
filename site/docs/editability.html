@@ -49,6 +49,16 @@ The corrected, human-edited memory content goes here.</code></pre>
       </ul>
       <h2 id="why-this-is-safe">Why this is safe</h2>
       <p>Because corrections and rollbacks are new sealed events, every one of these operations leaves <code>EventLog.verify().ok == True</code>: the hash chain is never rewritten. The effect of an edit or a rollback is purely a function applied during replay, exactly mirroring how reinforcement, consolidation review, and fleet rollback already work. Both operations pass through the governed evolution gate (op <code>update</code>), which records an auditable <code>evolution.gate.evaluated</code> event, so the decision to apply a correction or reversal is itself part of the transparent, replayable history. Verified forgetting / cryptographic erasure is a separate concern (I5b) and is not what these events do — nothing here removes content from the log.</p>
+      <h2 id="verified-forgetting-cryptographic-erasure">Verified forgetting (cryptographic erasure)</h2>
+      <p>Reversible attenuation (salience decay) is the default way memory fades — a faded memory leaves default ranking but stays one query away. When hard deletion is genuinely required (e.g. a GDPR erasure request), Zaxy supports <strong>verified forgetting via cryptographic erasure</strong> (I5b), which removes the plaintext <em>without</em> breaking the hash chain.</p>
+      <p>Because a payload is sealed into the event hash, you cannot scrub a stored plaintext payload without failing <code>verify()</code>. So forgettable memories are <strong>encrypted at append time</strong>: with <code>FORGETTING_ENABLED=true</code>, an <code>append(..., forgettable=True)</code> seals the payload as <strong>ciphertext</strong> (a <code>__zaxy_cipher</code> cell). The data-encryption key (DEK) is wrapped under a key-encryption key (KEK) and stored <strong>only in an out-of-log erasure vault</strong> — never in the append-only log.</p>
+      <p>Forgetting then <strong>destroys the wrapped DEK</strong> and appends a cited, non-authoritative <code>memory.forgotten</code> tombstone (audited, routed through the I4 <code>forget</code> gate). The on-disk ciphertext and its hash are untouched, so <code>EventLog.verify()</code> stays green; the plaintext is permanently unrecoverable, and readers see a <code>[FORGOTTEN]</code> sentinel. <code>verify()</code> never decrypts — it validates the raw ciphertext chain.</p>
+      <ul>
+        <li>Python: <code>await fabric.verified_forget(target_seq=..., target_hash=..., reason=...)</code></li>
+        <li>MCP tool: <code>memory_forget</code></li>
+        <li>CLI: <code>zaxy memory forget --target-seq N --target-hash H --reason &quot;...&quot;</code></li>
+      </ul>
+      <p>The KEK defaults to <code>&lt;eventloom_dir&gt;/__erasure_kek__.key</code> (a dev key auto-generated <code>0600</code> on first use); in production point <code>FORGETTING_KEK_PATH</code> at a KMS- or secret-managed key. <strong>Caveat:</strong> the erasure crypto reuses Zaxy&#x27;s portable-bundle envelope, which is <strong>experimental and unaudited</strong> — do not rely on it for high-value-secret or compliance guarantees without an independent cryptographic review.</p>
     </article>
   </main>
 </body>

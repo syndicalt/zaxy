@@ -23,13 +23,17 @@ import hashlib
 import json
 import os
 import re
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, TextIO
+from typing import TYPE_CHECKING, Any, TextIO
 
 from pydantic import BaseModel, Field, field_validator
 
 from zaxy.security import secure_payload, validate_event_text, validate_payload
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from zaxy.forgetting import PersistentErasureVault
 
 _EVENTLOOM_V1_TYPE_RE = re.compile(r"^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)+$")
 _EVENTLOOM_V1_HASH_RE = re.compile(r"^sha256:[a-f0-9]{64}$")
@@ -211,9 +215,33 @@ class EventLog:
     Thread-safe and cross-process-safe on Unix via fcntl advisory locking.
     """
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(
+        self,
+        path: str | Path,
+        *,
+        vault: PersistentErasureVault | None = None,
+        vault_factory: Callable[[], PersistentErasureVault] | None = None,
+    ) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        # The erasure vault holds wrapped DEKs for forgettable payloads. It is
+        # needed ONLY to seal a forgettable append and for the decrypted-read
+        # accessor; verify()/read_all() never touch it. Resolved lazily so the
+        # default plaintext path never constructs the (experimental) crypto stack.
+        self._vault = vault
+        self._vault_factory = vault_factory
+
+    @property
+    def vault(self) -> PersistentErasureVault:
+        """Return the erasure vault, building a directory-local one on demand."""
+        if self._vault is None:
+            if self._vault_factory is not None:
+                self._vault = self._vault_factory()
+            else:
+                from zaxy.forgetting import PersistentErasureVault
+
+                self._vault = PersistentErasureVault.for_eventloom_dir(self.path.parent)
+        return self._vault
 
     # ------------------------------------------------------------------
     # Core I/O
@@ -253,10 +281,15 @@ class EventLog:
         payload: dict[str, Any] | None = None,
         thread: str = "default",
         timestamp: datetime | None = None,
+        *,
+        forgettable: bool = False,
     ) -> Event:
         """Append a new event to the log.
 
-        The sequence number and hash chain are computed automatically.
+        The sequence number and hash chain are computed automatically. When
+        ``forgettable`` is set the payload is encrypted to a single cipher cell
+        BEFORE sealing, so the hash is computed over ciphertext and the plaintext
+        can later be cryptographically erased without breaking ``verify()``.
         """
         return self.append_many(
             [
@@ -266,9 +299,35 @@ class EventLog:
                     "payload": payload,
                     "thread": thread,
                     "timestamp": timestamp,
+                    "forgettable": forgettable,
                 }
             ]
         )[0]
+
+    def read_all_decrypted(self) -> list[Event]:
+        """Read every event with forgettable cipher cells decrypted.
+
+        The SEPARATE consumer accessor: each forgettable payload is decrypted
+        through the erasure vault (or replaced with the ``[FORGOTTEN]`` sentinel
+        once erased); plaintext events pass through unchanged. This NEVER feeds
+        :meth:`verify`/:meth:`read_all`, which must see the raw sealed ciphertext.
+        """
+        from zaxy.forgetting import CIPHER_PAYLOAD_KEY, decrypt_payload
+
+        events = self.read_all()
+        if not any(
+            isinstance(ev.payload, dict) and CIPHER_PAYLOAD_KEY in ev.payload for ev in events
+        ):
+            return events
+        decrypted: list[Event] = []
+        for ev in events:
+            if isinstance(ev.payload, dict) and CIPHER_PAYLOAD_KEY in ev.payload:
+                decrypted.append(
+                    ev.model_copy(update={"payload": decrypt_payload(ev.payload, vault=self.vault)})
+                )
+            else:
+                decrypted.append(ev)
+        return decrypted
 
     def append_many(self, items: list[dict[str, Any]]) -> list[Event]:
         """Append multiple events while holding the append lock.
@@ -309,6 +368,7 @@ class EventLog:
                             item.get("parent_event_id") if isinstance(item.get("parent_event_id"), str) else None
                         ),
                         caused_by=item.get("caused_by") if isinstance(item.get("caused_by"), list) else None,
+                        forgettable=bool(item.get("forgettable", False)),
                     )
                     batch.append(event)
                     seq = event.seq + 1
@@ -340,20 +400,32 @@ class EventLog:
         event_id: str | None = None,
         parent_event_id: str | None = None,
         caused_by: list[str] | None = None,
+        forgettable: bool = False,
     ) -> Event:
         ts = (timestamp or datetime.now(UTC)).isoformat().replace("+00:00", "Z")
-        secured = secure_payload(payload or {})
-        security = {
-            "sensitivity": secured.sensitivity,
-            "redacted_paths": secured.redacted_paths,
-        }
+        if forgettable:
+            # Encrypt the validated payload to a single cipher cell BEFORE sealing
+            # so the SEALED payload (and thus the hash) is ciphertext. The wrapped
+            # DEK is stashed in the out-of-log erasure vault; redaction is skipped
+            # because the plaintext never reaches disk in the clear.
+            from zaxy.forgetting import encrypt_forgettable_payload
+
+            sealed_payload = encrypt_forgettable_payload(payload or {}, vault=self.vault)
+            security = {"sensitivity": "restricted", "redacted_paths": []}
+        else:
+            secured = secure_payload(payload or {})
+            sealed_payload = secured.payload
+            security = {
+                "sensitivity": secured.sensitivity,
+                "redacted_paths": secured.redacted_paths,
+            }
         raw = {
             "seq": seq,
             "timestamp": ts,
             "type": event_type,
             "actor": actor,
             "thread": thread,
-            "payload": secured.payload,
+            "payload": sealed_payload,
             "security": security,
             "prev_hash": prev_hash,
             "hash": "0" * 64,

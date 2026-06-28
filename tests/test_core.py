@@ -496,7 +496,7 @@ class TestAppend:
         fabric.session_manager.get.assert_any_call("default")
         log = fabric.session_manager.get.return_value.eventlog
         log.append.assert_called_once_with(
-            "goal.created", actor="user", payload={"title": "T"}, thread="default"
+            "goal.created", actor="user", payload={"title": "T"}, thread="default", forgettable=False
         )
 
     async def test_appends_with_session_id(self, fabric: MemoryFabric) -> None:
@@ -505,7 +505,7 @@ class TestAppend:
         fabric.session_manager.get.assert_any_call("agent-1")
         log = fabric.session_manager.get.return_value.eventlog
         log.append.assert_called_once_with(
-            "goal.created", actor="user", payload={"title": "T"}, thread="agent-1"
+            "goal.created", actor="user", payload={"title": "T"}, thread="agent-1", forgettable=False
         )
 
     async def test_extracts_and_upserts(self, fabric: MemoryFabric) -> None:

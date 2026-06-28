@@ -35,7 +35,19 @@ from zaxy.extract import extract
 
 if TYPE_CHECKING:
     from zaxy.event import Event
+    from zaxy.forgetting import PersistentErasureVault
     from zaxy.retrieval_cache import SessionRetrievalCache
+
+
+def _decrypt_event(event: Event, vault: PersistentErasureVault) -> Event:
+    """Return an event with its forgettable cipher cell decrypted for export."""
+    from zaxy.forgetting import CIPHER_PAYLOAD_KEY, decrypt_payload
+
+    payload = event.payload
+    if not isinstance(payload, dict) or CIPHER_PAYLOAD_KEY not in payload:
+        return event
+    return event.model_copy(update={"payload": decrypt_payload(payload, vault=vault)})
+
 
 #: Versioned so consumers can pin the entry contract. Bump on any
 #: backward-incompatible change to an entry's shape or semantics.
@@ -219,6 +231,7 @@ def build_memory_export_view(
     selector: ExportSelector | None = None,
     *,
     retrieval_cache: SessionRetrievalCache,
+    vault: PersistentErasureVault | None = None,
 ) -> list[dict[str, Any]]:
     """Project a session's memory into canonical, cited export entries.
 
@@ -226,10 +239,14 @@ def build_memory_export_view(
     events (so every entry is integrity-backed), and the verbatim index backs the
     optional ``query`` pre-filter. The returned list is deterministically ordered
     (ascending ``seq``; within an event: the event entry, then entities, then
-    edges) and feeds :func:`zaxy.portable.build_export` unchanged.
+    edges) and feeds :func:`zaxy.portable.build_export` unchanged. When ``vault``
+    is supplied, forgettable cipher cells are decrypted to plaintext (or the
+    ``[FORGOTTEN]`` sentinel once erased) so exports never leak ciphertext.
     """
     selector = selector or ExportSelector()
     events = list(retrieval_cache.verified_replay(session_id).events)
+    if vault is not None:
+        events = [_decrypt_event(event, vault) for event in events]
     candidates = [event for event in events if _event_passes(event, selector)]
 
     if selector.query is not None:
@@ -286,6 +303,7 @@ def build_memory_export(
     signing_key: dict[str, Any] | None = None,
     created_at: str | None = None,
     nonce: str | None = None,
+    vault: PersistentErasureVault | None = None,
 ) -> dict[str, Any]:
     """Project a session's memory into a portable bundle (the shared export path).
 
@@ -295,7 +313,9 @@ def build_memory_export(
     (``created_at``/``nonce`` are generated if omitted); otherwise an unsigned
     canonical envelope carrying the same entries is returned.
     """
-    entries = build_memory_export_view(session_id, selector, retrieval_cache=retrieval_cache)
+    entries = build_memory_export_view(
+        session_id, selector, retrieval_cache=retrieval_cache, vault=vault
+    )
     if signing_key is None:
         return {
             "version": UNSIGNED_BUNDLE_VERSION,

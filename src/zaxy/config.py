@@ -177,6 +177,24 @@ class Settings(BaseSettings):
             "(operator/cron-triggered; off by default)"
         ),
     )
+    forgetting_enabled: bool = Field(
+        default=False,
+        description=(
+            "Enable verified forgetting via cryptographic erasure (I5b): forgettable "
+            "payloads are sealed as ciphertext and the data-encryption key lives in an "
+            "out-of-log erasure vault. Opt-in, off by default; when off the plaintext "
+            "append path is byte-identical."
+        ),
+    )
+    forgetting_kek_path: str | None = Field(
+        default=None,
+        description=(
+            "Path to the key-encryption key (KEK) that wraps forgettable DEKs. Defaults "
+            "to '<eventloom_dir>/__erasure_kek__.key' (a dev key auto-generated 0600 on "
+            "first use). In production point this at a KMS/secret-managed key file; the "
+            "KEK and wrapped DEKs are NEVER written to the append-only log."
+        ),
+    )
     fleet_enabled: bool = Field(
         default=False,
         description=(
