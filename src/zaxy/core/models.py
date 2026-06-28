@@ -33,6 +33,10 @@ class ContextAssembly:
     #: checkout can resolve citations to sealed event refs and replay salience
     #: without re-reading the log; never serialized into payloads.
     replay_events: list[Any] = field(default_factory=list)
+    #: Enrollment-gated, cited, non-authoritative fleet-memory lane contexts. Off
+    #: by default (``fleet_enabled``) and empty unless the agent is enrolled in a
+    #: requested fleet; surfaced as a distinct ``fleet`` checkout lane.
+    fleet_contexts: list[Context] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

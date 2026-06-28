@@ -1177,6 +1177,189 @@ def _extract_coordination_proof_packet_created(event: Event) -> ExtractionResult
     return ExtractionResult(entities=entities, edges=edges, source_event_seq=event.seq)
 
 
+# ---------------------------------------------------------------------------
+# Fleet memory plane (Zaxy 3 / I7): cited, non-authoritative promotions
+# ---------------------------------------------------------------------------
+
+_FLEET_AUTHORITY_STATUS = "non_authoritative"
+
+
+def _fleet_source_event_refs(source_events: list[dict[str, Any]]) -> list[str]:
+    """Return ``"<seq>:<hash>"`` citation strings for projected fleet sources."""
+    refs: list[str] = []
+    for source_event in source_events:
+        seq = source_event.get("seq")
+        event_hash = _optional_text(source_event.get("hash"))
+        if isinstance(seq, int) and not isinstance(seq, bool) and event_hash:
+            refs.append(f"{seq}:{event_hash}")
+    return refs
+
+
+def _fleet_promotion_result(
+    event: Event,
+    *,
+    kind: str,
+    summary: str | None,
+    extra_properties: dict[str, Any],
+) -> ExtractionResult:
+    """Project a cited, non-authoritative fleet promotion into the queryable index.
+
+    Every promotion entity carries ``visibility_scope`` + ``fleet_id`` +
+    ``non_authoritative`` and cites its source events; ``review_status`` is the
+    status recorded on the promotion event (``active``/``pending``) and is later
+    updated in place by the review / supersede / rollback extractors, exactly as
+    the consolidation-candidate lifecycle updates its candidate entity. Only
+    ``active`` promotions are surfaced by the checkout fleet lane (which resolves
+    live status from :class:`zaxy.fleet.FleetManager` replay).
+    """
+    payload = event.payload
+    promotion_id = _required_text(
+        payload.get("promotion_id"), field="promotion_id", event_seq=event.seq, event_type=event.type
+    )
+    fleet_id = _required_text(
+        payload.get("fleet_id"), field="fleet_id", event_seq=event.seq, event_type=event.type
+    )
+    source_events = _dict_list(payload.get("source_events"))
+    visibility_scope = _optional_text(payload.get("visibility_scope")) or "fleet"
+    review_status = _optional_text(payload.get("review_status")) or "pending"
+    authority_status = _optional_text(payload.get("authority_status")) or _FLEET_AUTHORITY_STATUS
+    gate_event = payload.get("gate_event")
+    properties = _compact_properties(
+        {
+            "promotion_id": promotion_id,
+            "fleet_id": fleet_id,
+            "kind": kind,
+            "review_status": review_status,
+            "visibility_scope": visibility_scope,
+            "authority_status": authority_status,
+            "non_authoritative": authority_status == _FLEET_AUTHORITY_STATUS,
+            "confidence": _bounded_float(payload.get("confidence")),
+            "origin_actor": _optional_text(payload.get("origin_actor")),
+            "origin_session": _optional_text(payload.get("origin_session")),
+            "keystone": bool(payload.get("keystone", False)),
+            "gate_event": dict(gate_event) if isinstance(gate_event, Mapping) else None,
+            "source_event_refs": _fleet_source_event_refs(source_events),
+            "source_events": source_events,
+            **extra_properties,
+        }
+    )
+    promotion = ExtractedEntity(
+        name=promotion_id,
+        entity_type="fleet_promotion",
+        observed_at=event.timestamp,
+        summary=summary,
+        properties=properties,
+    )
+    fleet = ExtractedEntity(
+        name=f"fleet:{fleet_id}",
+        entity_type="fleet",
+        observed_at=event.timestamp,
+        properties={"fleet_id": fleet_id},
+    )
+    edge = ExtractedEdge(
+        source=f"fleet:{fleet_id}",
+        target=promotion_id,
+        relation_type=f"fleet_promoted_{kind}",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(entities=[fleet, promotion], edges=[edge], source_event_seq=event.seq)
+
+
+@register("fleet.skill.promoted")
+def _extract_fleet_skill_promoted(event: Event) -> ExtractionResult:
+    """Project a fleet-promoted skill as cited, non-authoritative fleet memory."""
+    skill_id = _optional_text(event.payload.get("skill_id"))
+    skill_version = _optional_text(event.payload.get("skill_version"))
+    summary = f"skill {skill_id}@{skill_version}" if skill_id else _optional_text(event.payload.get("summary"))
+    return _fleet_promotion_result(
+        event,
+        kind="skill",
+        summary=summary,
+        extra_properties={"skill_id": skill_id, "skill_version": skill_version},
+    )
+
+
+@register("fleet.rule.propagated")
+def _extract_fleet_rule_propagated(event: Event) -> ExtractionResult:
+    """Project a fleet-propagated preventive rule as cited, non-authoritative memory."""
+    rule = _optional_text(event.payload.get("rule"))
+    trigger = _optional_text(event.payload.get("trigger"))
+    return _fleet_promotion_result(
+        event,
+        kind="rule",
+        summary=rule,
+        extra_properties={
+            "rule_id": _optional_text(event.payload.get("rule_id")),
+            "rule": rule,
+            "trigger": trigger,
+        },
+    )
+
+
+@register("fleet.outcome.propagated")
+def _extract_fleet_outcome_propagated(event: Event) -> ExtractionResult:
+    """Project a fleet-propagated outcome as cited, non-authoritative memory."""
+    return _fleet_promotion_result(
+        event,
+        kind="outcome",
+        summary=_optional_text(event.payload.get("summary")),
+        extra_properties={
+            "outcome": _optional_text(event.payload.get("outcome")),
+            "claim_key": _optional_text(event.payload.get("claim_key")),
+        },
+    )
+
+
+def _fleet_review_status_update(event: Event, *, promotion_id: str | None, review_status: str) -> ExtractionResult:
+    """Update a projected fleet promotion's ``review_status`` in place (additive)."""
+    if not promotion_id:
+        return ExtractionResult(entities=[], edges=[], source_event_seq=event.seq)
+    promotion = ExtractedEntity(
+        name=promotion_id,
+        entity_type="fleet_promotion",
+        observed_at=event.timestamp,
+        properties={
+            "review_status": review_status,
+            "authority_status": _FLEET_AUTHORITY_STATUS,
+        },
+    )
+    return ExtractionResult(entities=[promotion], edges=[], source_event_seq=event.seq)
+
+
+@register("fleet.promotion.reviewed")
+def _extract_fleet_promotion_reviewed(event: Event) -> ExtractionResult:
+    """Project a steward review outcome onto the promotion it cites (no new authority)."""
+    decision = _optional_text(event.payload.get("decision"))
+    review_status = {"accepted": "active", "rejected": "rejected", "deferred": "deferred"}.get(
+        decision or "", "pending"
+    )
+    return _fleet_review_status_update(
+        event,
+        promotion_id=_optional_text(event.payload.get("promotion_id")),
+        review_status=review_status,
+    )
+
+
+@register("fleet.memory.superseded")
+def _extract_fleet_memory_superseded(event: Event) -> ExtractionResult:
+    """Project additive supersession: the prior promotion is retained as superseded."""
+    return _fleet_review_status_update(
+        event,
+        promotion_id=_optional_text(event.payload.get("superseded_promotion_id")),
+        review_status="superseded",
+    )
+
+
+@register("fleet.promotion.rolled_back")
+def _extract_fleet_promotion_rolled_back(event: Event) -> ExtractionResult:
+    """Project a reversible un-share: the promotion is retained as rolled_back."""
+    return _fleet_review_status_update(
+        event,
+        promotion_id=_optional_text(event.payload.get("promotion_id")),
+        review_status="rolled_back",
+    )
+
+
 @register("user.preference_changed")
 def _extract_preference_changed(event: Event) -> ExtractionResult:
     """Extract user preference as a persistent entity property."""

@@ -1163,6 +1163,132 @@ class ZaxyMCPServer:
         await self.graph.upsert_extraction(extraction, session_id=session_id)
         await self.tracer.trace_append(event.type, event.actor, event.seq)
 
+    def _fleet_manager(self) -> Any:
+        """Return a FleetManager bound to this server's session manager.
+
+        Twin of :meth:`_coordination_manager`. Every ``fleet_*`` tool routes
+        through this manager, so the trust tier + I4 gate + steward-review
+        governance is enforced identically to the Python/CLI paths — there is no
+        surface that bypasses it.
+        """
+        from zaxy.fleet import FleetManager
+
+        manager = FleetManager(eventloom_path=self._eventloom_path, settings=self._settings)
+        manager.session_manager = self.session_manager
+        return manager
+
+    async def _project_fleet_event(self, event: Any) -> None:
+        """Project a fleet promotion/lifecycle event into the queryable graph index."""
+        if event is None:
+            return
+        from zaxy.fleet import fleet_thread
+
+        try:
+            extraction = extract(event)
+        except Exception:
+            return
+        fleet_id = str((getattr(event, "payload", None) or {}).get("fleet_id") or "")
+        session_id = fleet_thread(fleet_id) if fleet_id else event.thread
+        await self.graph.upsert_extraction(extraction, session_id=session_id)
+        await self.tracer.trace_append(event.type, event.actor, event.seq)
+
+    async def handle_fleet_create(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle fleet_create tool calls."""
+        fleet_id = validate_session_id(_required_text(arguments.get("fleet_id"), "fleet_id"))
+        summary = _required_text(arguments.get("summary"), "summary")
+        actor = _optional_text(arguments.get("actor")) or "coordinator"
+        result = self._fleet_manager().create_fleet(fleet_id, summary=summary, actor=actor)
+        return [TextContent(type="text", text=json.dumps(result.to_dict()))]
+
+    async def handle_fleet_enroll(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle fleet_enroll tool calls."""
+        fleet_id = validate_session_id(_required_text(arguments.get("fleet_id"), "fleet_id"))
+        agent_id = _required_text(arguments.get("agent_id"), "agent_id")
+        trust_tier = _optional_text(arguments.get("trust_tier")) or "member"
+        actor = _optional_text(arguments.get("actor")) or "coordinator"
+        result = self._fleet_manager().enroll_agent(
+            fleet_id, agent_id, trust_tier=trust_tier, actor=actor
+        )
+        return [TextContent(type="text", text=json.dumps(result.to_dict()))]
+
+    async def handle_fleet_assign_trust(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle fleet_assign_trust tool calls."""
+        fleet_id = validate_session_id(_required_text(arguments.get("fleet_id"), "fleet_id"))
+        agent_id = _required_text(arguments.get("agent_id"), "agent_id")
+        trust_tier = _required_text(arguments.get("trust_tier"), "trust_tier")
+        actor = _required_text(arguments.get("actor"), "actor")
+        rationale = _optional_text(arguments.get("rationale"))
+        result = self._fleet_manager().assign_trust(
+            fleet_id, agent_id, trust_tier=trust_tier, actor=actor, rationale=rationale
+        )
+        return [TextContent(type="text", text=json.dumps(result.to_dict()))]
+
+    async def handle_fleet_promote(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle fleet_promote tool calls (governed cross-boundary promotion)."""
+        fleet_id = validate_session_id(_required_text(arguments.get("fleet_id"), "fleet_id"))
+        kind = _required_text(arguments.get("kind"), "kind")
+        if kind not in ("skill", "outcome", "rule"):
+            raise ValueError("kind must be one of: skill, outcome, rule")
+        origin_session = _required_text(arguments.get("origin_session"), "origin_session")
+        actor = _required_text(arguments.get("actor"), "actor")
+        confidence = arguments.get("confidence")
+        if isinstance(confidence, bool) or not isinstance(confidence, int | float):
+            raise ValueError("confidence must be a number between 0.0 and 1.0")
+        source_events = _fleet_source_events(arguments.get("source_events"))
+        visibility_scope = _optional_text(arguments.get("visibility_scope")) or "fleet"
+        fields: dict[str, Any] = {
+            "origin_session": origin_session,
+            "source_events": source_events,
+            "confidence": float(confidence),
+            "actor": actor,
+            "visibility_scope": visibility_scope,
+        }
+        if origin_actor := _optional_text(arguments.get("origin_actor")):
+            fields["origin_actor"] = origin_actor
+        if kind == "skill":
+            fields["skill_id"] = _required_text(arguments.get("skill_id"), "skill_id")
+            fields["skill_version"] = _required_text(arguments.get("skill_version"), "skill_version")
+            fields["keystone"] = bool(arguments.get("keystone", False))
+        elif kind == "outcome":
+            fields["outcome"] = _required_text(arguments.get("outcome"), "outcome")
+            fields["summary"] = _required_text(arguments.get("summary"), "summary")
+            if claim_key := _optional_text(arguments.get("claim_key")):
+                fields["claim_key"] = claim_key
+        else:
+            fields["rule"] = _required_text(arguments.get("rule"), "rule")
+            fields["trigger"] = _required_text(arguments.get("trigger"), "trigger")
+            fields["keystone"] = bool(arguments.get("keystone", False))
+        result = self._fleet_manager().propose_promotion(fleet_id, kind, **fields)
+        await self._project_fleet_event(result.promotion_event)
+        for supersession in result.supersessions:
+            await self._project_fleet_event(supersession)
+        return [TextContent(type="text", text=json.dumps(result.to_dict()))]
+
+    async def handle_fleet_review(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle fleet_review tool calls (steward accept/reject a held promotion)."""
+        fleet_id = validate_session_id(_required_text(arguments.get("fleet_id"), "fleet_id"))
+        promotion_id = _required_text(arguments.get("promotion_id"), "promotion_id")
+        decision = _required_text(arguments.get("decision"), "decision")
+        actor = _required_text(arguments.get("actor"), "actor")
+        rationale = _optional_text(arguments.get("rationale"))
+        result = self._fleet_manager().review_promotion(
+            fleet_id, promotion_id, decision=decision, actor=actor, rationale=rationale
+        )
+        await self._project_fleet_event(result.event)
+        return [TextContent(type="text", text=json.dumps(result.to_dict()))]
+
+    async def handle_fleet_status(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle fleet_status tool calls (replay-backed fleet brief)."""
+        fleet_id = validate_session_id(_required_text(arguments.get("fleet_id"), "fleet_id"))
+        brief = self._fleet_manager().fleet_brief(fleet_id)
+        return [TextContent(type="text", text=json.dumps(brief.to_dict(), indent=2, sort_keys=True))]
+
+    async def handle_fleet_audit(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle fleet_audit tool calls (replay-only provenance)."""
+        fleet_id = validate_session_id(_required_text(arguments.get("fleet_id"), "fleet_id"))
+        report = self._fleet_manager().fleet_audit(fleet_id)
+        return [TextContent(type="text", text=json.dumps(report.to_dict(), indent=2, sort_keys=True))]
+
     async def handle_memory_query(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Handle memory_query tool call."""
         query = validate_query(arguments["query"])
@@ -2637,6 +2763,24 @@ def _approval_decisions(value: object) -> list[dict[str, Any]]:
     return decisions
 
 
+def _fleet_source_events(value: object) -> list[dict[str, Any]]:
+    """Validate fleet_promote source_events into cited ``{seq, hash}`` refs."""
+    if not isinstance(value, list) or not value:
+        raise ValueError("source_events must be a non-empty array of {seq, hash} objects")
+    refs: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise ValueError("each source_events entry must be an object")
+        seq = item.get("seq")
+        event_hash = item.get("hash")
+        if isinstance(seq, bool) or not isinstance(seq, int) or seq < 1:
+            raise ValueError("source_events entry seq must be a positive integer")
+        if not isinstance(event_hash, str) or not event_hash:
+            raise ValueError("source_events entry hash must be a non-empty string")
+        refs.append({"seq": seq, "hash": event_hash})
+    return refs
+
+
 def _coordination_result_payload(result: Any, event_type: str) -> dict[str, Any]:
     """Return stable JSON for coordination write results."""
     payload = {
@@ -2769,6 +2913,20 @@ async def _dispatch_tool_call(
         return await active_server.handle_coordination_record_synthesis_artifact(arguments)
     if name == "coordination_proof_trace":
         return await active_server.handle_coordination_proof_trace(arguments)
+    if name == "fleet_create":
+        return await active_server.handle_fleet_create(arguments)
+    if name == "fleet_enroll":
+        return await active_server.handle_fleet_enroll(arguments)
+    if name == "fleet_assign_trust":
+        return await active_server.handle_fleet_assign_trust(arguments)
+    if name == "fleet_promote":
+        return await active_server.handle_fleet_promote(arguments)
+    if name == "fleet_review":
+        return await active_server.handle_fleet_review(arguments)
+    if name == "fleet_status":
+        return await active_server.handle_fleet_status(arguments)
+    if name == "fleet_audit":
+        return await active_server.handle_fleet_audit(arguments)
     raise ValueError(f"Unknown tool: {name}")
 
 

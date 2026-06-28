@@ -203,7 +203,7 @@ class TestToolSchema:
 
     def test_tools_list_length(self) -> None:
         """Should expose the memory and context lifecycle tools."""
-        assert len(TOOLS) == 51
+        assert len(TOOLS) == 58
 
     def test_tool_names(self) -> None:
         """Tool names should match the expected contract."""
@@ -260,6 +260,13 @@ class TestToolSchema:
             "coordination_handoff",
             "coordination_record_synthesis_artifact",
             "coordination_proof_trace",
+            "fleet_create",
+            "fleet_enroll",
+            "fleet_assign_trust",
+            "fleet_promote",
+            "fleet_review",
+            "fleet_status",
+            "fleet_audit",
         }
 
     def test_budgeted_tools_expose_optional_max_tokens(self) -> None:

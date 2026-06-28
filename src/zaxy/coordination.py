@@ -14,7 +14,10 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
+
+if TYPE_CHECKING:  # pragma: no cover
+    from zaxy.fleet import FleetManager, FleetPromotionResult
 
 from zaxy.event import Event
 from zaxy.metrics import get_metrics
@@ -892,6 +895,79 @@ class CoordinationManager:
             )
         except Exception:
             get_metrics().record_degraded_operation("append", "salience_reinforcement_unavailable")
+
+    def escalate_finding_to_fleet(
+        self,
+        mission_id: str,
+        finding_id: str,
+        fleet_id: str,
+        *,
+        fleet_manager: FleetManager,
+        actor: str = "coordinator",
+        confidence: float | None = None,
+        visibility_scope: str = "fleet",
+        as_skill: bool = False,
+        skill_version: str = "1",
+        outcome: str = "success",
+    ) -> FleetPromotionResult:
+        """Propose an accepted mission finding fleet-wide via the I4 gate (thin bridge).
+
+        The mission's ``coordination.finding.promoted`` event is cited as the
+        fleet promotion's ``source_events``. Existing coordination promotion
+        behavior is unchanged: this only reads the already-promoted finding and
+        forwards it to :meth:`zaxy.fleet.FleetManager.propose_promotion`, which
+        enforces trust tier + the I4 gate + steward review — there is no
+        governance bypass. Defaults to a fleet outcome; ``as_skill=True``
+        proposes a fleet skill instead.
+        """
+        mission_sid = validate_session_id(mission_id)
+        promotion_event = self._find_promoted_finding_event(mission_sid, finding_id)
+        payload = promotion_event.payload
+        source_ref = {"seq": promotion_event.seq, "hash": promotion_event.hash}
+        origin_actor = str(payload.get("worker_id") or actor)
+        raw_confidence = confidence if confidence is not None else payload.get("confidence")
+        resolved_confidence = (
+            float(raw_confidence)
+            if isinstance(raw_confidence, int | float) and not isinstance(raw_confidence, bool)
+            else 1.0
+        )
+        if as_skill:
+            return fleet_manager.propose_promotion(
+                fleet_id,
+                "skill",
+                skill_id=f"finding:{finding_id}",
+                skill_version=skill_version,
+                origin_session=mission_sid,
+                origin_actor=origin_actor,
+                source_events=[source_ref],
+                confidence=resolved_confidence,
+                actor=actor,
+                visibility_scope=visibility_scope,
+            )
+        return fleet_manager.propose_promotion(
+            fleet_id,
+            "outcome",
+            outcome=outcome,
+            summary=str(payload.get("summary") or finding_id),
+            origin_session=mission_sid,
+            origin_actor=origin_actor,
+            source_events=[source_ref],
+            confidence=resolved_confidence,
+            actor=actor,
+            claim_key=_optional_str(payload.get("claim_key")),
+            visibility_scope=visibility_scope,
+        )
+
+    def _find_promoted_finding_event(self, mission_sid: str, finding_id: str) -> Event:
+        """Return the mission ``coordination.finding.promoted`` event for a finding."""
+        for event in self.session_manager.replay(mission_sid).events:
+            if event.type != "coordination.finding.promoted":
+                continue
+            if str(event.payload.get("finding_id") or "") == finding_id:
+                return cast(Event, event)
+        raise ValueError(
+            f"cannot escalate finding '{finding_id}': no accepted promotion in mission '{mission_sid}'"
+        )
 
     def brief(self, mission_id: str) -> CoordinationBrief:
         """Build a governed mission brief from parent and worker sessions."""
