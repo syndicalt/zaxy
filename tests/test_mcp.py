@@ -927,6 +927,14 @@ class TestMemoryOutcome:
         with pytest.raises(ValueError):
             await server.handle_memory_outcome({"outcome": "exploded", "summary": "x"})
 
+    async def test_rejects_non_string_outcome(self, server: ZaxyMCPServer) -> None:
+        with pytest.raises(ValueError):
+            await server.handle_memory_outcome({"outcome": 123, "summary": "x"})
+
+    async def test_rejects_missing_summary(self, server: ZaxyMCPServer) -> None:
+        with pytest.raises(ValueError):
+            await server.handle_memory_outcome({"outcome": "success"})
+
 
 class TestCausalAndConsolidationTools:
     """Tests for causal reads and consolidation MCP handlers."""

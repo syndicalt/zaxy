@@ -9279,6 +9279,75 @@ def test_memory_outcome_success_reinforces_target(tmp_path: Path) -> None:
     assert "memory.reinforcement" in types
 
 
+def test_memory_outcome_human_summary_includes_rule_line(tmp_path: Path) -> None:
+    """Without --json the CLI prints a human summary with reinforcement and rule info."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    eventloom_path = workspace / ".eventloom"
+    (workspace / ".env.local").write_text("PROJECTION_BACKEND=null\n", encoding="utf-8")
+    runner = CliRunner()
+
+    append_result = runner.invoke(
+        app,
+        [
+            "memory", "append", "decision.made",
+            "--actor", "zaxy-agent", "--session-id", "ext",
+            "--payload-json", '{"summary": "deploy without migrations"}',
+            "--eventloom-path", str(eventloom_path), "--json",
+        ],
+    )
+    assert append_result.exit_code == 0, append_result.output
+    seeded = json.loads(append_result.output)
+
+    result = runner.invoke(
+        app,
+        [
+            "memory", "outcome",
+            "--outcome", "failure",
+            "--summary", "deploy broke production",
+            "--target-seq", str(seeded["seq"]),
+            "--target-hash", seeded["hash"],
+            "--lesson", "always run migrations before deploy",
+            "--eventloom-path", str(eventloom_path),
+            "--session-id", "ext",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert result.output.startswith("failure: seq=")
+    assert "reinforced=invalidated" in result.output
+    assert "rule=memory.rule.generated" in result.output
+    assert "auto_applied=True" in result.output
+
+
+def test_memory_outcome_rejects_invalid_outcome(tmp_path: Path) -> None:
+    """An unknown outcome label fails validation before any append."""
+    result = CliRunner().invoke(
+        app,
+        [
+            "memory", "outcome",
+            "--outcome", "exploded",
+            "--summary", "x",
+            "--eventloom-path", str(tmp_path / ".eventloom"),
+        ],
+    )
+    assert result.exit_code != 0
+
+
+def test_memory_outcome_rejects_invalid_confidence(tmp_path: Path) -> None:
+    """A confidence outside [0, 1] fails validation before any append."""
+    result = CliRunner().invoke(
+        app,
+        [
+            "memory", "outcome",
+            "--outcome", "failure",
+            "--summary", "x",
+            "--confidence", "1.5",
+            "--eventloom-path", str(tmp_path / ".eventloom"),
+        ],
+    )
+    assert result.exit_code != 0
+
+
 def test_memory_evolution_policy_reports_auto_with_rollback_default(tmp_path: Path) -> None:
     """memory evolution-policy should report the auto_with_rollback default."""
     workspace = tmp_path / "ws"
