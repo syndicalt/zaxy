@@ -83,6 +83,12 @@ from zaxy.core.models import (
     QueryPage,
 )
 from zaxy.documents import collect_document_events
+from zaxy.editable import (
+    MEMORY_ROLLBACK_EVENT_TYPE,
+    ROLLBACKABLE_EVENT_TYPES,
+    build_memory_correction_event,
+    build_memory_rollback_event,
+)
 from zaxy.embedding import build_embedding_provider, embed_extraction
 from zaxy.event import (  # noqa: F401 - ReplayResult re-export for existing tests
     EventLog,
@@ -1432,6 +1438,198 @@ class MemoryFabric:
             }
         return result
 
+    async def edit_memory(
+        self,
+        *,
+        target_seq: int,
+        target_hash: str,
+        new_content: str,
+        reason: str,
+        actor: str = "zaxy-editor",
+        confidence: float = 1.0,
+        session_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Re-ingest a human edit as a cited, non-authoritative ``memory.corrected`` event.
+
+        Validates that the target ({``target_seq``, ``target_hash``}) is a sealed
+        event in the session log, routes the change through the I4 ``update``
+        evolution gate (recording an auditable ``evolution.gate.evaluated`` event),
+        then appends a ``memory.corrected`` event that cites the original and
+        carries the corrected content + reason. The original event is never
+        mutated; the correction is purely additive (the hash chain stays intact)
+        and surfaces alongside the retained original on retrieval. See
+        ``ZAXY-3.md`` (I5a). Returns the correction event ref, the cited target,
+        the deterministic ``correction_id``, and the gate decision.
+        """
+        sid = validate_session_id(session_id or "default")
+        target_event = self._require_target_event(target_seq, target_hash, session_id=sid)
+        target = {"seq": target_event.seq, "hash": target_event.hash}
+
+        decision = await self.evaluate_evolution_gate(
+            "update", confidence, candidate_ref=target, actor=actor, session_id=sid
+        )
+        spec = build_memory_correction_event(
+            actor=actor,
+            session_id=sid,
+            target=target,
+            new_content=new_content,
+            reason=reason,
+        )
+        event = await self.append(
+            spec["event_type"], spec["actor"], payload=spec["payload"], session_id=sid
+        )
+        return {
+            "correction_id": spec["payload"]["correction_id"],
+            "correction_event": {"seq": event.seq, "hash": event.hash},
+            "target": target,
+            "gate": decision.to_payload(candidate_ref=target),
+        }
+
+    async def rollback_memory(
+        self,
+        *,
+        target_seq: int,
+        target_hash: str,
+        reason: str,
+        actor: str = "zaxy-editor",
+        confidence: float = 1.0,
+        session_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Reverse a prior evolution with a cited, non-authoritative ``memory.rolled_back`` event.
+
+        Validates that the target is a sealed, *reversible* evolution event (a
+        consolidation acceptance, a generated/proposed preventive rule, a gate
+        decision, a fleet review, or an earlier correction), routes the reversal
+        through the I4 ``update`` gate, and appends a ``memory.rolled_back`` event
+        citing the target. On replay/projection the cited evolution is undone --
+        e.g. a rolled-back consolidation acceptance reverts the candidate to its
+        prior (pre-acceptance) review status -- additively and reversibly, without
+        ever mutating the sealed event. See ``ZAXY-3.md`` (I5a). Returns the
+        rollback event ref, the cited target, the ``reverts`` descriptor, the
+        deterministic ``rollback_id``, and the gate decision.
+        """
+        sid = validate_session_id(session_id or "default")
+        target_event = self._require_target_event(target_seq, target_hash, session_id=sid)
+        if target_event.type not in ROLLBACKABLE_EVENT_TYPES:
+            valid = ", ".join(sorted(ROLLBACKABLE_EVENT_TYPES))
+            raise ValueError(
+                f"event {target_event.type!r} is not a reversible evolution; "
+                f"rollback supports: {valid}"
+            )
+        if target_event.type == "consolidation.candidate.reviewed":
+            candidate_id = target_event.payload.get("candidate_id")
+            if (
+                isinstance(candidate_id, str)
+                and candidate_id
+                and self._has_later_consolidation_review(
+                    candidate_id, after_seq=target_event.seq, session_id=sid
+                )
+            ):
+                raise ValueError(
+                    "cannot roll back a superseded consolidation review at seq "
+                    f"{target_event.seq}; a later review exists for candidate "
+                    f"{candidate_id!r} -- only the current (latest) review is reversible"
+                )
+        target = {"seq": target_event.seq, "hash": target_event.hash}
+        reverts = self._reverts_descriptor(target_event, session_id=sid)
+
+        decision = await self.evaluate_evolution_gate(
+            "update", confidence, candidate_ref=target, actor=actor, session_id=sid
+        )
+        spec = build_memory_rollback_event(
+            actor=actor,
+            session_id=sid,
+            target=target,
+            reason=reason,
+            reverts=reverts,
+        )
+        event = await self.append(
+            spec["event_type"], spec["actor"], payload=spec["payload"], session_id=sid
+        )
+        return {
+            "rollback_id": spec["payload"]["rollback_id"],
+            "rollback_event": {"seq": event.seq, "hash": event.hash},
+            "target": target,
+            "reverts": reverts,
+            "gate": decision.to_payload(candidate_ref=target),
+        }
+
+    def _require_target_event(
+        self, target_seq: object, target_hash: object, *, session_id: str
+    ) -> Any:
+        """Return the sealed event identified by ``(seq, hash)`` or raise ValueError."""
+        if not isinstance(target_seq, int) or isinstance(target_seq, bool) or target_seq < 1:
+            raise ValueError("target_seq must be a positive integer")
+        if not isinstance(target_hash, str) or len(target_hash) != 64:
+            raise ValueError("target_hash must be a 64-character hex digest")
+        eventlog = self.session_manager.get(session_id).eventlog
+        for event in eventlog.read_all():
+            if event.seq == target_seq:
+                if event.hash != target_hash:
+                    raise ValueError(
+                        f"target_hash does not match the sealed event at seq {target_seq}"
+                    )
+                return event
+        raise ValueError(f"no event at seq {target_seq} in session {session_id!r}")
+
+    def _reverts_descriptor(self, target_event: Any, *, session_id: str) -> dict[str, Any]:
+        """Describe what a rollback of ``target_event`` restores, for replay/projection.
+
+        For a consolidation review the descriptor carries the candidate id and the
+        prior effective review status (the status before this review, or
+        ``pending``) so the projection can revert the candidate. Other reversible
+        events only need their type.
+        """
+        descriptor: dict[str, Any] = {"event_type": target_event.type}
+        if target_event.type == "consolidation.candidate.reviewed":
+            candidate_id = target_event.payload.get("candidate_id")
+            if isinstance(candidate_id, str) and candidate_id:
+                descriptor["candidate_id"] = candidate_id
+                descriptor["to_status"] = self._prior_consolidation_status(
+                    candidate_id, before_seq=target_event.seq, session_id=session_id
+                )
+        return descriptor
+
+    def _prior_consolidation_status(
+        self, candidate_id: str, *, before_seq: int, session_id: str
+    ) -> str:
+        """Return the effective consolidation review status before ``before_seq``."""
+        eventlog = self.session_manager.get(session_id).eventlog
+        status = "pending"
+        for event in eventlog.read_all():
+            if event.seq >= before_seq:
+                break
+            if (
+                event.type == "consolidation.candidate.reviewed"
+                and event.payload.get("candidate_id") == candidate_id
+            ):
+                candidate_status = event.payload.get("status")
+                if isinstance(candidate_status, str) and candidate_status:
+                    status = candidate_status
+        return status
+
+    def _has_later_consolidation_review(
+        self, candidate_id: str, *, after_seq: int, session_id: str
+    ) -> bool:
+        """True if a later (higher-seq) review exists for ``candidate_id``.
+
+        A rollback may only target a candidate's current (latest) review: rolling
+        back a historically-superseded review would project a stale review status
+        onto the graph entity (the projection reverts to the pre-target status,
+        ignoring the later surviving review) while the authoritative
+        ``consolidation_status`` replay stays correct -- a divergence we reject
+        outright instead of projecting.
+        """
+        eventlog = self.session_manager.get(session_id).eventlog
+        for event in eventlog.read_all():
+            if (
+                event.seq > after_seq
+                and event.type == "consolidation.candidate.reviewed"
+                and event.payload.get("candidate_id") == candidate_id
+            ):
+                return True
+        return False
+
     async def _project_event(self, event: Any, *, session_id: str) -> None:
         """Extract, project, trace, and record metrics for one sealed event."""
         extraction = extract(event)
@@ -2711,8 +2909,11 @@ class MemoryFabric:
         replay = await self.replay(session_id=sid)
 
         candidates: dict[str, dict[str, Any]] = {}
+        reviews_by_candidate: dict[str, list[dict[str, Any]]] = {}
+        rolled_back_targets: set[tuple[int, str]] = set()
         review_count = 0
         duplicate_candidate_count = 0
+        rollback_count = 0
         for event in replay.events:
             if event.type == "consolidation.candidate.created":
                 candidate_id = event.payload.get("candidate_id")
@@ -2740,13 +2941,39 @@ class MemoryFabric:
                 candidate_id = event.payload.get("candidate_id")
                 if isinstance(candidate_id, str) and candidate_id in candidates:
                     review_count += 1
-                    candidates[candidate_id]["review_status"] = event.payload.get(
-                        "status",
-                        candidates[candidate_id]["review_status"],
+                    reviews_by_candidate.setdefault(candidate_id, []).append(
+                        {
+                            "seq": event.seq,
+                            "hash": event.hash,
+                            "status": event.payload.get("status"),
+                        }
                     )
-                    candidates[candidate_id]["authority_status"] = "non_authoritative"
-                    candidates[candidate_id]["reviewed_seq"] = event.seq
-                    candidates[candidate_id]["reviewed_hash"] = event.hash
+            elif event.type == MEMORY_ROLLBACK_EVENT_TYPE:
+                target = event.payload.get("target")
+                if isinstance(target, dict):
+                    target_seq = target.get("seq")
+                    target_hash = target.get("hash")
+                    if isinstance(target_seq, int) and isinstance(target_hash, str):
+                        rolled_back_targets.add((target_seq, target_hash))
+                        rollback_count += 1
+
+        # Honor reversals: a memory.rolled_back citing a review event undoes that
+        # acceptance on replay, reverting the candidate to its prior effective
+        # review status (the latest surviving review, else the created default).
+        for candidate_id, candidate in candidates.items():
+            rolled_back_reviews = 0
+            for review in reviews_by_candidate.get(candidate_id, []):
+                if (review["seq"], review["hash"]) in rolled_back_targets:
+                    rolled_back_reviews += 1
+                    continue
+                status = review["status"]
+                if status is not None:
+                    candidate["review_status"] = status
+                candidate["authority_status"] = "non_authoritative"
+                candidate["reviewed_seq"] = review["seq"]
+                candidate["reviewed_hash"] = review["hash"]
+            if rolled_back_reviews:
+                candidate["rolled_back_review_count"] = rolled_back_reviews
 
         review_status_counts: dict[str, int] = {}
         authority_status_counts: dict[str, int] = {}
@@ -2773,6 +3000,7 @@ class MemoryFabric:
             "candidate_count": len(candidates),
             "review_count": review_count,
             "duplicate_candidate_count": duplicate_candidate_count,
+            "rollback_count": rollback_count,
             "pending_count": review_status_counts.get("pending", 0),
             "accepted_count": review_status_counts.get("accepted", 0),
             "rejected_count": review_status_counts.get("rejected", 0),

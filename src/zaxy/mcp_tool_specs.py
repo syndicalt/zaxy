@@ -387,6 +387,72 @@ TOOLS = [
         },
     ),
     Tool(
+        name="memory_edit",
+        description=(
+            "Re-ingest a human edit of a memory as a cited, non-authoritative memory.corrected "
+            "event. The original event (target_seq/target_hash) is never mutated or deleted; the "
+            "correction cites it and carries the edited content + reason, routed through the I4 "
+            "update evolution gate (auditable). Retrieval surfaces the correction alongside the "
+            "retained original; the hash-chain stays intact."
+        ),
+        inputSchema={
+            "type": "object",
+            "required": ["target_seq", "target_hash", "new_content", "reason"],
+            "properties": {
+                "target_seq": {"type": "integer", "minimum": 1, "description": "Seq of the memory event being corrected"},
+                "target_hash": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$",
+                    "description": "64-hex hash of the memory event being corrected",
+                },
+                "new_content": {"type": "string", "description": "The corrected (edited) memory content"},
+                "reason": {"type": "string", "description": "Why the memory was corrected"},
+                "confidence": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 1.0,
+                    "description": "Evidence confidence for the correction (gate input; default 1.0)",
+                },
+                "actor": {"type": "string", "description": "Actor recording the correction", "default": "zaxy-editor"},
+                "session_id": {"type": "string", "description": "Session ID for multi-agent sharding"},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="memory_rollback",
+        description=(
+            "Reverse a prior memory evolution with a cited, non-authoritative memory.rolled_back "
+            "event. The target (target_seq/target_hash) must be a reversible evolution event "
+            "(e.g. a consolidation acceptance, a generated preventive rule, a gate decision); the "
+            "reversal cites it, routes through the I4 update gate, and on replay undoes the "
+            "evolution's effect (a rolled-back consolidation acceptance reverts the candidate to "
+            "its prior review status). Additive and reversible; nothing is mutated or deleted."
+        ),
+        inputSchema={
+            "type": "object",
+            "required": ["target_seq", "target_hash", "reason"],
+            "properties": {
+                "target_seq": {"type": "integer", "minimum": 1, "description": "Seq of the evolution event being reversed"},
+                "target_hash": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$",
+                    "description": "64-hex hash of the evolution event being reversed",
+                },
+                "reason": {"type": "string", "description": "Why the evolution is being rolled back"},
+                "confidence": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 1.0,
+                    "description": "Evidence confidence for the rollback (gate input; default 1.0)",
+                },
+                "actor": {"type": "string", "description": "Actor recording the rollback", "default": "zaxy-editor"},
+                "session_id": {"type": "string", "description": "Session ID for multi-agent sharding"},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
         name="memory_causal_successors",
         description="Read directed causal effects of an entity from graph-backed memory.",
         inputSchema={
