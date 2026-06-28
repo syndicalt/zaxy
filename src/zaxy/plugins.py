@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from zaxy.log import get_logger
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from zaxy.config import Settings
     from zaxy.event import Event
     from zaxy.extract import ExtractionResult
