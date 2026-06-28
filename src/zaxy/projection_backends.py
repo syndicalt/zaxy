@@ -67,4 +67,12 @@ def build_projection_store(config: ProjectionBackendConfig) -> ProjectionStore:
         if config.latticedb_path is None:
             raise ValueError("LatticeDB backend requires latticedb_path")
         return LatticeDBStore(config.latticedb_path, vector_dimensions=config.embedding_dimension)
-    raise ValueError("projection backend must be one of: embedded, neo4j, pggraph, latticedb")
+    from zaxy.plugins import get_projection_backend_factory
+
+    factory = get_projection_backend_factory(backend)
+    if factory is not None:
+        return factory(config)
+    raise ValueError(
+        "projection backend must be one of: embedded, neo4j, pggraph, latticedb "
+        "(or a name registered by an installed Zaxy plugin)"
+    )

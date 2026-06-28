@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING, Any, cast
 import typer
 from typer.core import TyperGroup
 
+from zaxy.cli.plugins import plugin_app
+
 if TYPE_CHECKING:
     pass
 
@@ -164,6 +166,7 @@ _COMMAND_PANELS: tuple[tuple[str, tuple[str, ...]], ...] = (
             "local-profile",
             "init-session",
             "extractor-template",
+            "plugin",
         ),
     ),
     (
@@ -201,6 +204,7 @@ _COMMAND_PANELS: tuple[tuple[str, tuple[str, ...]], ...] = (
         "Benchmarks & evaluation",
         (
             "benchmark",
+            "fleet-benchmark",
             "benchmark-inventory",
             "benchmark-compare",
             "benchmark-freeze",
@@ -345,6 +349,9 @@ app.add_typer(trace_app, name="trace")
 
 
 app.add_typer(experimental_app, name="experimental")
+
+
+app.add_typer(plugin_app, name="plugin")
 
 
 coordinate_app.add_typer(coordinate_worker_app, name="worker")
@@ -859,6 +866,39 @@ def state_recovery_benchmark(
         json_output=json_output,
         fail_on_guardrail=not allow_failures,
     )
+
+
+@app.command("fleet-benchmark")
+def fleet_benchmark(
+    output_dir: Path = typer.Option(  # noqa: B008
+        Path("reports/benchmarks/fleet-v1"),
+        "--output-dir",
+        help="Directory for FleetBench reports and run artifacts",
+    ),
+    worker_counts: str = typer.Option(
+        "3,5,8", "--worker-counts", help="Comma-separated worker counts to scale across"
+    ),
+    missions: int = typer.Option(1, help="Missions per scale point"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Run the FleetBench scaling scaffold (fleet axes over real CoordinationBench runs)."""
+    try:
+        counts = tuple(int(part) for part in worker_counts.split(",") if part.strip())
+    except ValueError as exc:
+        raise typer.BadParameter("worker-counts must be comma-separated integers") from exc
+    if not counts:
+        raise typer.BadParameter("worker-counts must contain at least one integer")
+    fleet_benchmark_module = _benchmark_module("fleet_benchmark")
+    report = fleet_benchmark_module.run_fleet_benchmark(
+        output_dir, worker_counts=counts, missions=missions
+    )
+    payload = report.to_dict()
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+        return
+    typer.echo(f"FleetBench complete: fingerprint={payload['fingerprint']}")
+    typer.echo(f"scale_points={[r['worker_count'] for r in payload['results']]}")
+    typer.echo(f"cross_agent_transfer_scope={payload['cross_agent_transfer_scope']}")
 
 
 @coordinate_app.command("adapter-template")

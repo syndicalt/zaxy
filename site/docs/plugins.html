@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Plugin API - Zaxy Docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,600&family=Inter:wght@400;550;650;750;850&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../index.html">Overview</a>
+      <a href="../docs/coordinate-roadmap.html">Coordinate</a>
+      <a href="../docs/why-zaxy.html">Why Zaxy</a>
+      <a href="../docs/benchmarks.html">Benchmarks</a>
+      <a href="getting-started.html">Start</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="plugin-api">Plugin API</h1>
+      <p>Zaxy can be extended by separately-installed Python packages. A plugin registers <strong>rule-based extractors</strong> (new event types projected into the graph) and <strong>projection-store backends</strong> (alternative queryable indexes), without forking Zaxy. Plugins are loaded in-process and are fully optional: with no plugins configured, Zaxy behaves exactly as it does today.</p>
+      <h2 id="the-contract">The contract</h2>
+      <p>A plugin is any object that satisfies the <code>zaxy.plugins.ZaxyPlugin</code> protocol:</p>
+      <pre><code class="language-python">class ZaxyPlugin(Protocol):
+    name: str
+    version: str
+
+    def register(self, api: PluginAPI) -&gt; None: ...</code></pre>
+      <p>Zaxy calls <code>register(api)</code> once, passing a <code>PluginAPI</code>:</p>
+      <pre><code class="language-python">class PluginAPI:
+    def register_extractor(
+        self, event_type: str, fn: Callable[[Event], ExtractionResult]
+    ) -&gt; None: ...
+
+    def register_projection_backend(
+        self, name: str, factory: Callable[..., ProjectionStore]
+    ) -&gt; None: ...</code></pre>
+      <ul>
+        <li><code>register_extractor(event_type, fn)</code> installs a rule extractor for <code>event_type</code>. It is the imperative twin of the built-in <code>@zaxy.extract.register</code> decorator; the registered function is called by <code>zaxy.extract.extract</code> whenever an event of that type is seen. Last writer wins for a given event type.</li>
+        <li><code>register_projection_backend(name, factory)</code> records an external backend. When <code>PROJECTION_BACKEND</code> (or the <code>MemoryFabric(projection_backend=...)</code> argument) resolves to <code>name</code>, <code>zaxy.projection_backends.build_projection_store</code> calls <code>factory(config)</code> with the active <code>ProjectionBackendConfig</code> and uses the returned <code>ProjectionStore</code>.</li>
+      </ul>
+      <h2 id="discovery">Discovery</h2>
+      <p>Zaxy discovers plugins from two sources and de-duplicates them by name:</p>
+      <h3 id="1-entry-points-installed-packages">1. Entry points (installed packages)</h3>
+      <p>An installed distribution declares the <code>zaxy.plugins</code> entry-point group:</p>
+      <pre><code class="language-toml"># pyproject.toml of your plugin distribution
+[project.entry-points.&quot;zaxy.plugins&quot;]
+example = &quot;zaxy_example_plugin:PLUGIN&quot;</code></pre>
+      <p>After <code>pip install your-plugin</code>, Zaxy finds it automatically via <code>importlib.metadata</code>. The entry-point value is a <code>&quot;module:attr&quot;</code> string pointing at the plugin object.</p>
+      <h3 id="2-the-zaxyplugins-config">2. The <code>ZAXY_PLUGINS</code> config</h3>
+      <p>Without packaging, point Zaxy at a plugin object by import string. The <code>Settings.plugins</code> field (env <code>ZAXY_PLUGINS</code>) is a comma-separated list of <code>&quot;module:attr&quot;</code> specs:</p>
+      <pre><code class="language-bash">export ZAXY_PLUGINS=&quot;my_pkg:PLUGIN,other_pkg:PLUGIN&quot;</code></pre>
+      <p>Both sources produce the same result; an entry-point plugin and a <code>ZAXY_PLUGINS</code> entry that resolve to the same plugin object are registered at most once.</p>
+      <h2 id="when-plugins-load">When plugins load</h2>
+      <p>Plugins load when a <code>MemoryFabric</code> is constructed (after settings are resolved, before the projection store is built, so plugin backends are available). Loading is:</p>
+      <ul>
+        <li><strong>Idempotent</strong> — each plugin <code>name</code> is registered at most once per process; repeated loads do not re-run <code>register()</code>.</li>
+        <li><strong>Isolated</strong> — if a plugin fails to import or raises inside <code>register()</code>, the error is logged (<code>zaxy.plugins</code> logger) and recorded, and loading continues with the next plugin. A broken third-party plugin can never crash Zaxy.</li>
+      </ul>
+      <p>You can also load plugins explicitly and inspect the result:</p>
+      <pre><code class="language-python">from zaxy.config import get_settings
+from zaxy.plugins import load_plugins
+
+report = load_plugins(get_settings())
+for result in report.results:
+    print(result.name, result.version, result.source, result.status, result.error)</code></pre>
+      <p><code>PluginLoadReport.results</code> is a tuple of <code>PluginLoadResult(name, version, source, status, error)</code>, where <code>source</code> is <code>&quot;entry_point&quot;</code> or <code>&quot;config&quot;</code> and <code>status</code> is <code>&quot;loaded&quot;</code> or <code>&quot;failed&quot;</code>.</p>
+      <h2 id="cli">CLI</h2>
+      <p>List discovered plugins and their load status:</p>
+      <pre><code class="language-bash">zaxy plugin list
+zaxy plugin list --json</code></pre>
+      <p>The JSON form emits <code>{&quot;plugins&quot;: [{name, version, source, status, error}, ...]}</code>.</p>
+      <h2 id="example-plugin">Example plugin</h2>
+      <p>A complete, installable reference plugin lives at <code>examples/plugins/zaxy_example_plugin/</code>. It registers an extractor for the <code>example.note</code> event type:</p>
+      <pre><code class="language-python"># zaxy_example_plugin/__init__.py
+from zaxy.extract import ExtractedEntity, ExtractionResult
+
+def extract_example_note(event):
+    text = (event.payload or {}).get(&quot;text&quot;)
+    entity = ExtractedEntity(
+        name=f&quot;example-note:{event.seq}&quot;,
+        entity_type=&quot;example_note&quot;,
+        observed_at=event.timestamp,
+        summary=str(text) if text else None,
+    )
+    return ExtractionResult(entities=[entity], edges=[], source_event_seq=event.seq)
+
+class ExamplePlugin:
+    name = &quot;zaxy-example-plugin&quot;
+    version = &quot;0.1.0&quot;
+
+    def register(self, api):
+        api.register_extractor(&quot;example.note&quot;, extract_example_note)
+
+PLUGIN = ExamplePlugin()</code></pre>
+      <p>Load it without installing by setting <code>ZAXY_PLUGINS=zaxy_example_plugin:PLUGIN</code> (with the package directory on <code>sys.path</code>), or install it (<code>pip install .</code>) to expose the <code>zaxy.plugins</code> entry point.</p>
+      <h2 id="isolation-model-and-future-work">Isolation model and future work</h2>
+      <p>This is the standard Python plugin pattern: plugins are <strong>external installed packages loaded in-process</strong>. They run with the same privileges as Zaxy, so only install plugins you trust. Per-plugin error isolation prevents a faulty plugin from crashing Zaxy, but it does not sandbox a plugin&#x27;s side effects.</p>
+      <p>True out-of-process / subprocess isolation (running each plugin in a separate process with a constrained IPC surface) is a documented future extension; it is intentionally <strong>not</strong> part of this API today.</p>
+    </article>
+  </main>
+</body>
+</html>

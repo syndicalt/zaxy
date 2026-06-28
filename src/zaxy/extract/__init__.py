@@ -11,6 +11,14 @@ from zaxy.extract.core import (
     ExtractionResult,
     extract,
     register,
+    register_extractor,
 )
 
-__all__ = ["ExtractedEdge", "ExtractedEntity", "ExtractionResult", "extract", "register"]
+__all__ = [
+    "ExtractedEdge",
+    "ExtractedEntity",
+    "ExtractionResult",
+    "extract",
+    "register",
+    "register_extractor",
+]

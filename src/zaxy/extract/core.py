@@ -90,6 +90,17 @@ _CONSOLIDATION_EVENT_HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 _CONSOLIDATION_AUTHORITY_STATUS = "non_authoritative"
 
 
+def register_extractor(event_type: str, fn: Callable[[Event], ExtractionResult]) -> None:
+    """Register a rule-based extractor for an event type (non-decorator form).
+
+    The imperative twin of :func:`register`. External plugins call this through
+    :class:`zaxy.plugins.PluginAPI` to install extractors without decorator
+    sugar. Registering the same event type again replaces the prior extractor,
+    matching the decorator's last-writer-wins behavior.
+    """
+    _RULES[event_type] = fn
+
+
 def register(event_type: str) -> Callable[[Callable[[Event], ExtractionResult]], Callable[[Event], ExtractionResult]]:
     """Decorator to register a rule-based extractor for an event type.
 
@@ -101,7 +112,7 @@ def register(event_type: str) -> Callable[[Callable[[Event], ExtractionResult]],
     """
 
     def decorator(fn: Callable[[Event], ExtractionResult]) -> Callable[[Event], ExtractionResult]:
-        _RULES[event_type] = fn
+        register_extractor(event_type, fn)
         return fn
 
     return decorator

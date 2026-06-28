@@ -283,6 +283,16 @@ class MemoryFabric:
         self.retrieval_profile: RetrievalProfile = retrieval_profile
         self._owns_connections = owns_connections
 
+        # External plugins extend extractors / projection backends in-process
+        # (entry points + ZAXY_PLUGINS). Loading is isolated and idempotent; a
+        # failure here is logged inside load_plugins and is never fatal.
+        try:
+            from zaxy.plugins import load_plugins
+
+            load_plugins(resolved_settings)
+        except Exception:
+            get_metrics().record_degraded_operation("init", "plugin_load_unavailable")
+
         self.eventloom_path = Path(eventloom_path or resolved_settings.eventloom_path)
         self.session_manager = (
             session_manager
