@@ -28,6 +28,7 @@ from zaxy.event import (  # noqa: F401 - ReplayResult re-export for existing tes
     verify_event_chain,
 )
 from zaxy.evidence import select_checkout_evidence
+from zaxy.long_horizon import CONSOLIDATED_LANE
 from zaxy.purpose import PurposeProfile, purpose_profile
 from zaxy.refs import MemoryRef
 from zaxy.retrieval_plan import (
@@ -629,6 +630,17 @@ def build_memory_checkout(
             **diagnostics,
             "fleet": {"count": len(fleet), "items": fleet, "non_authoritative": True},
         }
+    if assembly.long_horizon is not None:
+        consolidated_items = _checkout_long_horizon(ranked_contexts)
+        diagnostics = {
+            **diagnostics,
+            "long_horizon": {
+                **assembly.long_horizon,
+                "consolidated_count": len(consolidated_items),
+                "items": consolidated_items,
+                "non_authoritative": True,
+            },
+        }
     skill_analytics = _checkout_skill_analytics(ranked_contexts)
     if skill_analytics["version_count"] or skill_analytics["outcome_count"]:
         diagnostics = {**diagnostics, "skill_analytics": skill_analytics}
@@ -909,6 +921,15 @@ def _checkout_contexts_with_synthesis(query: str, assembly: ContextAssembly) -> 
         checkout_contexts = [
             *checkout_contexts,
             *(context for context in assembly.fleet_contexts if id(context) not in present),
+        ]
+    # The consolidated remote tier is, like fleet, a distinct cited lane that must
+    # not be budget-competed away by recall; merge it so older-history knowledge
+    # always reaches the checkout (source_lanes + the dedicated long_horizon section).
+    if assembly.long_horizon_contexts:
+        present = {id(context) for context in checkout_contexts}
+        checkout_contexts = [
+            *checkout_contexts,
+            *(context for context in assembly.long_horizon_contexts if id(context) not in present),
         ]
     if any(
         (context.metadata or {}).get("source_kind") == "source_synthesis"
@@ -1284,6 +1305,48 @@ def _checkout_fleet(contexts: list[Context]) -> list[dict[str, Any]]:
                 "origin_actor": metadata.get("origin_actor"),
                 "origin_session": metadata.get("origin_session"),
                 "keystone": bool(metadata.get("keystone")),
+                "non_authoritative": True,
+                "authority_status": "non_authoritative",
+                "score": context.score,
+            }
+        )
+    return items
+
+
+def _checkout_long_horizon(contexts: list[Context]) -> list[dict[str, Any]]:
+    """Summarize the distinct, cited, non-authoritative consolidated remote tier.
+
+    Mirrors :func:`_checkout_fleet`: it reads the already-assembled contexts
+    rather than re-querying, surfacing only the consolidated-lane items
+    (``assembly_lane == "consolidated"``). Every item is non-authoritative and
+    carries the consolidation candidate's Eventloom citation plus the
+    ``eventloom://`` citations of its source events.
+    """
+    items: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for context in contexts:
+        metadata = context.metadata or {}
+        if metadata.get("assembly_lane") != CONSOLIDATED_LANE:
+            continue
+        candidate_id = metadata.get("candidate_id")
+        if not isinstance(candidate_id, str) or candidate_id in seen:
+            continue
+        seen.add(candidate_id)
+        source_event_citations = [
+            citation
+            for citation in (metadata.get("source_event_citations") or [])
+            if isinstance(citation, str) and citation
+        ]
+        items.append(
+            {
+                "candidate_id": candidate_id,
+                "candidate_type": metadata.get("candidate_type"),
+                "summary": context.content,
+                "citation": _context_citation(context),
+                "source_event_citations": source_event_citations,
+                "source_event_count": len(source_event_citations),
+                "review_status": metadata.get("review_status"),
+                "confidence": metadata.get("confidence"),
                 "non_authoritative": True,
                 "authority_status": "non_authoritative",
                 "score": context.score,

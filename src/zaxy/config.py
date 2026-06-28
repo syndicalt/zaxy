@@ -191,6 +191,24 @@ class Settings(BaseSettings):
             "member, trusted, or steward (validated against TRUST_TIERS at use site)"
         ),
     )
+    long_horizon_enabled: bool = Field(
+        default=False,
+        description=(
+            "Enable the two-tier (episodic recent + consolidated remote) Memory "
+            "Checkout assembly for very long sessions; opt-in, off by default. "
+            "When off, checkout is byte-identical to the single-tier contract."
+        ),
+    )
+    long_horizon_recent_window: int = Field(
+        default=50,
+        gt=0,
+        description=(
+            "Recent events kept at full detail in the episodic tier; older "
+            "history beyond this count is represented by the cited, "
+            "non-authoritative consolidated tier (accepted/active consolidation "
+            "candidates). Events-count window (the recall pipeline is seq-indexed)."
+        ),
+    )
 
     # ------------------------------------------------------------------
     # Pathlight

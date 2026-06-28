@@ -94,6 +94,32 @@
       <p>Projection artifacts named <code>*.compaction.json</code> under the configured Eventloom directory are auto-discovered by <code>MemoryFabric(eventloom_path=...)</code>. Artifacts stored elsewhere can still be loaded with <code>MemoryFabric(projection_paths=[...])</code>. Loaded projections participate as local routing candidates and return context with <code>source=&quot;projection&quot;</code>, <code>projection_id</code>, <code>event_ref</code>, and source citations. This keeps compacted routing useful while context assembly can still require source-level support.</p>
       <h2 id="assembly-warnings">Assembly Warnings</h2>
       <p>Context assembly now warns when retrieved context comes from a compacted or projection source but lacks a source-level citation. It also warns when recent Eventloom replay is truncated and no retrieved source context is available. These warnings are included in the prompt under <code># Context Warnings</code> and on the <code>ContextAssembly.warnings</code> field so agents and operators can distinguish source-backed context from degraded compacted context.</p>
+      <h2 id="long-horizon-two-tier-checkout-assembly">Long-Horizon Two-Tier Checkout Assembly</h2>
+      <p>Very long (&quot;never-ending thread&quot;) sessions cannot fit their whole history into a single bounded checkout. Memory Checkout therefore supports an explicit two-tier assembly that keeps recent detail while representing older history by the cited consolidation artifacts above — never by raw old events.</p>
+      <ul>
+        <li><strong>Episodic (recent) tier.</strong> The most recent <code>long_horizon_recent_window</code> events, kept at full detail exactly as the single-tier checkout produces them today.</li>
+        <li><strong>Consolidated (remote) tier.</strong> For older history that has scrolled out of the recent window, the checkout surfaces the session&#x27;s accepted/active consolidation candidates (the review-gated artifacts produced by <code>propose_consolidation_candidates</code> / the consolidation pipeline) as bounded, cited, non-authoritative context items. Nothing is summarized afresh: the tier only replays consolidation candidates that already exist and were accepted by a review event, so there is no destructive summarization. Each item is marked <code>non_authoritative</code>, tagged with a <code>consolidated</code> source lane, and carries both its candidate-event citation and the <code>eventloom://&lt;thread&gt;/events/&lt;seq&gt;#&lt;hash&gt;</code> citations of its source events. A candidate only joins the remote tier when its source events are entirely older than the horizon split, so it consolidates history the episodic tier no longer carries rather than duplicating it.</li>
+      </ul>
+      <h3 id="engaging-the-two-tiers">Engaging the two tiers</h3>
+      <p>The behavior is opt-in and off by default. Two configuration fields control it:</p>
+      <ul>
+        <li><code>long_horizon_enabled</code> (default <code>false</code>) — master switch for the two-tier assembly.</li>
+        <li><code>long_horizon_recent_window</code> (default <code>50</code>, <code>&gt; 0</code>) — the number of recent events kept in the episodic tier. The window is <strong>events-count</strong>, not a days window, because the recall/replay pipeline is seq-indexed end to end (<code>replay_from_seq</code>, <code>as_of_seq</code>, <code>max_recent_events</code>) and consolidation candidates cite source-event seqs, so a seq boundary aligns naturally with citation matching and needs no timestamp parsing.</li>
+      </ul>
+      <p><code>MemoryFabric.checkout_memory</code> and <code>MemoryFabric.assemble_context</code> also accept a per-call <code>long_horizon: bool | None = None</code>. <code>None</code> falls back to <code>long_horizon_enabled</code>; <code>True</code> forces the two-tier assembly on; <code>False</code> forces single-tier. The two tiers only do work when engaged <strong>and</strong> the session exceeds the recent window — a shorter session degrades gracefully to the episodic tier with an empty remote tier and no error.</p>
+      <h3 id="default-off-is-byte-identical">Default-off is byte-identical</h3>
+      <p>When the feature is not engaged, no two-tier work runs on the hot path: the consolidated lane is empty, no <code>long_horizon</code> diagnostics are emitted, and the checkout is byte-identical to the single-tier contract. The two-tier path adds content only; it never rewrites or weakens the recall result.</p>
+      <h3 id="diagnostics">Diagnostics</h3>
+      <p>When engaged, the checkout adds a <code>diagnostics[&quot;long_horizon&quot;]</code> section, mirroring the skill and fleet lane diagnostics:</p>
+      <ul>
+        <li><code>enabled</code> — whether the two-tier assembly ran;</li>
+        <li><code>recent_window</code> — the configured episodic window;</li>
+        <li><code>episodic_count</code> — events kept in the episodic tier;</li>
+        <li><code>horizon_split_seq</code> — the seq boundary between older and recent history (<code>null</code> when the session is within the window);</li>
+        <li><code>consolidated_count</code> — consolidated items surfaced into the packet;</li>
+        <li><code>items</code> — the cited, non-authoritative consolidation candidates, each with its <code>candidate_id</code>, <code>candidate_type</code>, candidate citation, and <code>source_event_citations</code>;</li>
+        <li><code>non_authoritative</code> — always <code>true</code> for this lane.</li>
+      </ul>
       <h2 id="roadmap">Roadmap</h2>
       <ol>
         <li>Expand the consolidation-collapse benchmark with mixed temporal validity and transcript/session identities.</li>

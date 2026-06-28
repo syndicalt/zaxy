@@ -99,6 +99,7 @@ from zaxy.evolution_policy import (
 from zaxy.extract import extract
 from zaxy.inference import build_inferred_edge_events
 from zaxy.lifecycle import build_subagent_completed_event
+from zaxy.long_horizon import build_long_horizon_plan
 from zaxy.metacognition import (
     build_confidence_assessment_event,
     build_conflict_cluster_event,
@@ -2885,11 +2886,18 @@ class MemoryFabric:
         cues: dict[str, str] | None = None,
         fleet_ids: list[str] | None = None,
         agent_id: str | None = None,
+        long_horizon: bool | None = None,
     ) -> ContextAssembly:
         """Assemble recent replay plus retrieval into prompt-ready context.
 
         ``cues`` is additive and only affects retrieval under the cognitive
         retrieval profile (see :meth:`query`).
+
+        ``long_horizon`` engages the two-tier (episodic recent + consolidated
+        remote) assembly. ``None`` falls back to ``long_horizon_enabled``;
+        ``False`` forces single-tier (byte-identical) assembly. When engaged and
+        the session exceeds ``long_horizon_recent_window``, older history is
+        surfaced as cited, non-authoritative consolidation candidates.
         """
         sid = validate_session_id(session_id)
         prompt_limit = validate_limit(limit)
@@ -2950,6 +2958,27 @@ class MemoryFabric:
         fleet_contexts = self._fleet_lane_contexts(fleet_ids, agent_id=agent_id or sid)
         if fleet_contexts:
             contexts = [*contexts, *fleet_contexts]
+        long_horizon_engaged = (
+            getattr(self.settings, "long_horizon_enabled", False)
+            if long_horizon is None
+            else long_horizon
+        )
+        long_horizon_contexts: list[Context] = []
+        long_horizon_summary: dict[str, Any] | None = None
+        if long_horizon_engaged:
+            plan = build_long_horizon_plan(
+                session_events,
+                session_id=sid,
+                recent_window=max(
+                    getattr(self.settings, "long_horizon_recent_window", 50),
+                    max_recent_events or 0,
+                ),
+                budget=prompt_limit,
+            )
+            long_horizon_summary = plan.to_diagnostics()
+            long_horizon_contexts = plan.consolidated_contexts
+            if long_horizon_contexts:
+                contexts = [*contexts, *long_horizon_contexts]
         compacted = False
         if max_recent_events is not None and len(replay_events) > max_recent_events:
             replay_events = replay_events[-max_recent_events:]
@@ -2993,6 +3022,8 @@ class MemoryFabric:
             recall=recall,
             replay_events=session_events,
             fleet_contexts=fleet_contexts,
+            long_horizon_contexts=long_horizon_contexts,
+            long_horizon=long_horizon_summary,
         )
 
     async def checkout_memory(
@@ -3009,6 +3040,7 @@ class MemoryFabric:
         cues: dict[str, str] | None = None,
         fleet_ids: list[str] | None = None,
         agent_id: str | None = None,
+        long_horizon: bool | None = None,
     ) -> MemoryCheckout:
         """Checkout the current cited memory state an agent should condition on.
 
@@ -3019,6 +3051,9 @@ class MemoryFabric:
         ``cues`` (optional, additive) carries the caller's
         encoding-specificity context; it only affects ranking under the
         cognitive retrieval profile.
+
+        ``long_horizon`` engages the two-tier (episodic + consolidated) assembly
+        (``None`` -> ``long_horizon_enabled``; ``False`` forces single-tier).
         """
         resolved_ref = self._resolve_checkout_ref(ref, session_id=session_id)
         checkout_session_id = resolved_ref.session_id if resolved_ref is not None else session_id
@@ -3035,6 +3070,7 @@ class MemoryFabric:
             cues=cues,
             fleet_ids=fleet_ids,
             agent_id=agent_id,
+            long_horizon=long_horizon,
         )
         checkout = build_memory_checkout(
             query=query,
