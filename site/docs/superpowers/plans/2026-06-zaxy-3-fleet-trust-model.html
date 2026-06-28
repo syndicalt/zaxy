@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Zaxy 3 — I7 Fleet Memory Plane: Trust &amp; Propagation Model (Design) - Zaxy Docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,600&family=Inter:wght@400;550;650;750;850&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../../../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../../../index.html">Overview</a>
+      <a href="../../../docs/coordinate-roadmap.html">Coordinate</a>
+      <a href="../../../docs/why-zaxy.html">Why Zaxy</a>
+      <a href="../../../docs/benchmarks.html">Benchmarks</a>
+      <a href="../../getting-started.html">Start</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="zaxy-3-i7-fleet-memory-plane-trust-propagation-model-design">Zaxy 3 — I7 Fleet Memory Plane: Trust &amp; Propagation Model (Design)</h1>
+      <blockquote><strong>For agentic workers:</strong> This is a <strong>design document</strong>, not yet an executable task-by-task plan. The orchestrator reviews and finalizes it before I7 is built. Sections 1–5 are the contract-level model; Section 6 is the incremental build plan an implementing agent can execute. Open design questions are flagged in Section 7 — do <strong>not</strong> silently resolve them. Grounded in <code>ZAXY-3.md</code> (I7, elevated to Wave 2; design is a Wave-1 deliverable) and the shipped I4 gate.</blockquote>
+      <p><strong>Goal:</strong> Define how an outcome, preventive rule, or skill learned by one agent becomes governed, cited, replayable knowledge for an entire fleet — where a memory crosses a trust boundary <strong>only</strong> through the shipped I4 evolution gate, promotion raises <em>visibility</em> but never <em>authority</em>, and &quot;which agent taught the fleet this, from what evidence&quot; is always answerable by replay.</p>
+      <p><strong>Architecture:</strong> Eventloom remains the single source of truth. I7 adds a <strong>fleet plane</strong>: a dedicated Eventloom thread per fleet (<code>fleet.&lt;fleet_id&gt;</code>) into which cross-boundary promotions are appended as <code>fleet.*</code> events. A fleet memory is never a copy or a mutation of the source; it is a new, non-authoritative event that <strong>cites</strong> the originating events (<code>eventloom://&lt;thread&gt;/events/&lt;seq&gt;#&lt;hash&gt;</code>) and is gated by I4 (op <code>promote</code>). Any enrolled agent&#x27;s fleet-scoped projection is a pure replay function of that thread plus member events whose <code>visibility_scope</code> reaches <code>fleet</code>. Nothing here mutates history or auto-promotes to authority. This mirrors the existing <code>coordination.py</code> worker→parent promotion, lifted from a single mission to a governed fleet.</p>
+      <p><strong>Tech Stack:</strong> Python 3.11+, Eventloom JSONL, <code>SessionManager</code>/<code>eventlog</code> append + replay (sync, as in <code>coordination.py</code>), the I4 policy primitives in <code>evolution_policy.py</code> (<code>resolve_evolution_policy</code>, <code>evaluate_evolution_gate</code>, <code>build_evolution_gate_event</code>), <code>config.py</code> Settings, Typer CLI, MCP Python SDK, pytest. Deterministic, embedded/Eventloom-only; no Neo4j required for the core contracts.</p>
+      <p>---</p>
+      <h2 id="inherited-invariants-constitution-non-negotiable">Inherited invariants (constitution — non-negotiable)</h2>
+      <p>Every artifact this design introduces obeys <code>ZAXY-3.md §9</code>:</p>
+      <ol>
+        <li><strong>Log is source of truth.</strong> Fleet state is a replay of <code>fleet.&lt;id&gt;</code> + cited member events; no fleet feature mutates history.</li>
+        <li><strong>Non-authoritative by default.</strong> Every <code>fleet.*</code> event carries <code>authority_status=&quot;non_authoritative&quot;</code>. Promotion raises <strong>visibility scope</strong>, never authority — there is no path in I7 that makes anything authoritative.</li>
+        <li><strong>No destructive summarization.</strong> Conflicting fleet skills/outcomes are handled by <strong>additive supersession</strong>, never overwrite or delete.</li>
+        <li><strong>Forgetting is reversible.</strong> Un-sharing is <code>fleet.promotion.rolled_back</code> (an additive event that lowers effective scope), never a delete; the superseded/rolled-back event stays replayable.</li>
+        <li><strong>Everything cites.</strong> Every <code>fleet.*</code> event carries <code>source_events</code> (the originating <code>{seq, hash}</code> snapshots) and <code>gate_event</code> (the <code>evolution.gate.evaluated</code> it routed through).</li>
+        <li><strong>Autonomy opt-in, reversible, visible.</strong> The fleet plane is config-gated off by default (<code>fleet_enabled</code>); auto-applied promotions are reversible within the I4 rollback window and every decision is an audited event.</li>
+      </ol>
+      <p>---</p>
+      <h2 id="1-trust-tiers-visibility-scopes">1. Trust tiers &amp; visibility scopes</h2>
+      <p>Zaxy splits two controls that caura-memclaw collapses into one numeric trust level on a mutable store. Keeping them orthogonal is the structural difference.</p>
+      <h3 id="1a-visibility-scope-how-far-a-memory-is-replayed">1a. Visibility scope — <em>how far a memory is replayed</em></h3>
+      <p>A conservative-first ladder, carried as event-payload metadata on every memory-bearing event that opts into the plane:</p>
+      <pre><code class="language-python">VISIBILITY_SCOPES: tuple[str, ...] = (&quot;private&quot;, &quot;session&quot;, &quot;mission&quot;, &quot;fleet&quot;, &quot;global&quot;)
+DEFAULT_VISIBILITY_SCOPE = &quot;session&quot;</code></pre>
+      <table>
+        <thead>
+          <tr>
+            <th>scope</th>
+            <th>replayed into</th>
+            <th>meaning</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>private</code></td>
+            <td>the authoring agent only</td>
+            <td>explicitly non-shareable</td>
+          </tr>
+          <tr>
+            <td><code>session</code></td>
+            <td>the originating Eventloom thread (today&#x27;s default)</td>
+            <td>worker/agent-local</td>
+          </tr>
+          <tr>
+            <td><code>mission</code></td>
+            <td>a Coordinate mission (parent + workers)</td>
+            <td><strong>already exists</strong> via <code>coordination.finding.promoted</code></td>
+          </tr>
+          <tr>
+            <td><code>fleet</code></td>
+            <td>a named fleet thread <code>fleet.&lt;fleet_id&gt;</code></td>
+            <td>the I7 cross-mission / cross-session plane</td>
+          </tr>
+          <tr>
+            <td><code>global</code></td>
+            <td>the reserved <code>fleet.global</code> thread</td>
+            <td>deployment-wide (single Eventloom root; cross-root federation is out of scope — see Q3)</td>
+          </tr>
+        </tbody>
+      </table>
+      <p><code>visibility_scope</code> is <strong>metadata, not authority</strong>: it controls which projection replays a memory, nothing more. Pre-I7 events without the field are treated as <code>session</code> (backward-compatible; see Q7). A memory is &quot;promoted&quot; by emitting a new <code>fleet.*</code> event at a higher scope that <strong>cites</strong> the lower-scope source — the source event is untouched.</p>
+      <h3 id="1b-agent-trust-tier-what-scope-an-agent-may-propose-into">1b. Agent trust tier — <em>what scope an agent may propose into</em></h3>
+      <pre><code class="language-python">TRUST_TIERS: tuple[str, ...] = (&quot;untrusted&quot;, &quot;member&quot;, &quot;trusted&quot;, &quot;steward&quot;)
+DEFAULT_TRUST_TIER = &quot;member&quot;   # see Q1</code></pre>
+      <table>
+        <thead>
+          <tr>
+            <th>tier</th>
+            <th>may author up to</th>
+            <th>may <strong>propose</strong> crossing to</th>
+            <th>governance powers</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>untrusted</code></td>
+            <td><code>session</code></td>
+            <td>— (no cross-boundary)</td>
+            <td>none — sandboxed/buggy agents cannot reach shared knowledge</td>
+          </tr>
+          <tr>
+            <td><code>member</code></td>
+            <td><code>mission</code></td>
+            <td><code>fleet</code> (gated, never global)</td>
+            <td>none</td>
+          </tr>
+          <tr>
+            <td><code>trusted</code></td>
+            <td><code>mission</code></td>
+            <td><code>fleet</code>, <code>global</code> (gated)</td>
+            <td>none</td>
+          </tr>
+          <tr>
+            <td><code>steward</code></td>
+            <td><code>mission</code></td>
+            <td><code>fleet</code>, <code>global</code> (gated)</td>
+            <td>review held promotions, assign trust tiers, set keystones</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>Trust tier is <strong>authorization</strong> (who may <em>propose</em> a crossing); it is assigned by an audited, reversible <code>fleet.trust.assigned</code> event (steward authority). It is <strong>not</strong> the I4 autonomy tier — the I4 gate independently decides whether a <em>valid</em> proposal auto-applies or is held. Three independent controls compose on every crossing:</p>
+      <pre><code class="language-mermaid">flowchart LR
+  A[&quot;agent learns outcome/rule/skill&lt;br/&gt;(scope: session/mission)&quot;] --&gt; B{trust tier&lt;br/&gt;permits this scope?}
+  B -- no --&gt; X[&quot;rejected: insufficient trust&lt;br/&gt;(audited, no event on fleet thread)&quot;]
+  B -- yes --&gt; C[&quot;I4 gate: evaluate_evolution_gate(op=promote, confidence)&quot;]
+  C -- auto_apply --&gt; D[&quot;fleet.* event&lt;br/&gt;review_status=active&quot;]
+  C -- requires_review --&gt; E[&quot;fleet.* event&lt;br/&gt;review_status=pending&quot;]
+  E --&gt; F[&quot;steward: fleet.promotion.reviewed&lt;br/&gt;(accepted -&gt; active)&quot;]
+  D --&gt; G[&quot;fleet projection (replay)&lt;br/&gt;cited, non_authoritative&quot;]
+  F --&gt; G</code></pre>
+      <p>---</p>
+      <h2 id="2-propagation-model">2. Propagation model</h2>
+      <p><strong>Propagation = appending a cited promotion event into a fleet thread and replaying it into the fleet projection.</strong> No copy, no mutation, no LLM merge. The source memory stays in its origin thread; the fleet learns by replay.</p>
+      <h3 id="2a-flow">2a. Flow</h3>
+      <ol>
+        <li>Agent A in session/mission learns via the existing I1 loop: <code>memory.outcome.recorded</code>, <code>memory.rule.generated</code> / <code>memory.rule.proposed</code>, or the skill lifecycle (<code>skill.validated</code>, <code>skill.outcome_recorded</code>). These are session/mission scope.</li>
+        <li>A (or a steward, per trust tier) <strong>proposes</strong> a cross-boundary promotion. The crossing is an evolution op routed through the shipped gate — <strong>this is the I4 integration point</strong>:</li>
+      </ol>
+      <pre><code class="language-python">   policy   = resolve_evolution_policy(settings)                       # evolution_policy.py
+   decision = evaluate_evolution_gate(&quot;promote&quot;, confidence, policy=policy)
+   gate_evt = build_evolution_gate_event(actor=actor, session_id=fleet_thread,
+                                         decision=decision, candidate_ref=source_ref)
+   # gate event appended to fleet thread, then cited by the fleet.* event</code></pre>
+      <p><code>op=&quot;promote&quot;</code> is already a member of <code>EVOLUTION_OPS</code>, so <strong>no change to <code>evolution_policy.py</code> is required</strong>. Under the default <code>auto_with_rollback</code> tier, confidence ≥ 0.85 auto-applies (reversible within the rollback window); below threshold it is held for review. Operators tighten this with the <strong>existing</strong> per-op override <code>evolution_op_autonomy=&quot;promote=require_review&quot;</code> — no new gate config (see Q4).</p>
+      <ol>
+        <li>Emit the fleet event citing the source events <strong>and</strong> the gate event:</li>
+      </ol>
+      <ul>
+        <li><code>auto_apply</code> → <code>review_status=&quot;active&quot;</code> (immediately in the fleet projection).</li>
+        <li><code>requires_review</code> → <code>review_status=&quot;pending&quot;</code> (recorded + auditable, but <strong>excluded</strong> from the fleet checkout lane until a steward accepts it).</li>
+      </ul>
+      <ol>
+        <li>Any enrolled agent B replays the fleet projection at checkout and receives the promoted skill/outcome/rule as a <strong>cited, non-authoritative</strong> context item. B can <code>skill.applied</code> / <code>record_outcome</code> against it; those new outcomes can themselves propagate back — the compounding loop, governed.</li>
+      </ol>
+      <h3 id="2b-proposed-event-types">2b. Proposed event types</h3>
+      <p>Namespace <code>fleet.&lt;noun&gt;.&lt;verb&gt;</code>, consistent with <code>coordination.&lt;noun&gt;.&lt;verb&gt;</code> and <code>memory.&lt;noun&gt;.&lt;verb&gt;</code>. Every payload includes <code>authority_status=&quot;non_authoritative&quot;</code> and <code>fleet_id</code>. Builders are pure functions in <code>fleet.py</code> returning <code>{&quot;event_type&quot;, &quot;actor&quot;, &quot;payload&quot;, &quot;thread&quot;}</code>, exactly mirroring <code>build_outcome_event</code> / <code>build_rule_event</code> in <code>outcome_learning.py</code> (validate non-empty strings; snapshot <code>{seq, hash}</code> refs; deterministic sha256 ids).</p>
+      <p><strong>Registration / governance:</strong></p>
+      <table>
+        <thead>
+          <tr>
+            <th>event_type</th>
+            <th>key payload fields</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>fleet.created</code></td>
+            <td><code>fleet_id</code>, <code>summary</code>, <code>actor</code>, <code>authority_status</code></td>
+          </tr>
+          <tr>
+            <td><code>fleet.agent.enrolled</code></td>
+            <td><code>fleet_id</code>, <code>agent_id</code>, <code>trust_tier</code>, <code>actor</code>, <code>authority_status</code></td>
+          </tr>
+          <tr>
+            <td><code>fleet.trust.assigned</code></td>
+            <td><code>fleet_id</code>, <code>agent_id</code>, <code>trust_tier</code>, <code>prior_tier</code>, <code>rationale</code>, <code>actor</code>, <code>authority_status</code></td>
+          </tr>
+        </tbody>
+      </table>
+      <p><strong>Propagation (the plane):</strong></p>
+      <table>
+        <thead>
+          <tr>
+            <th>event_type</th>
+            <th>key payload fields</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>fleet.skill.promoted</code></td>
+            <td><code>promotion_id</code>, <code>fleet_id</code>, <code>skill_id</code>, <code>skill_version</code>, <code>origin_session</code>, <code>origin_actor</code>, <code>visibility_scope</code> (<code>&quot;fleet&quot;</code>/<code>&quot;global&quot;</code>), <code>confidence</code>, <code>source_events: [{seq,hash}]</code>, <code>gate_event: {seq,hash}</code>, <code>review_status</code> (<code>active</code>/<code>pending</code>), <code>keystone: bool</code>, <code>authority_status</code></td>
+          </tr>
+          <tr>
+            <td><code>fleet.outcome.propagated</code></td>
+            <td><code>promotion_id</code>, <code>fleet_id</code>, <code>outcome</code> (<code>success</code>/<code>failure</code>/<code>partial</code>), <code>summary</code>, <code>claim_key?</code>, <code>origin_session</code>, <code>origin_actor</code>, <code>visibility_scope</code>, <code>confidence</code>, <code>source_events</code>, <code>gate_event</code>, <code>review_status</code>, <code>authority_status</code></td>
+          </tr>
+          <tr>
+            <td><code>fleet.rule.propagated</code></td>
+            <td><code>promotion_id</code>, <code>fleet_id</code>, <code>rule_id</code>, <code>rule</code>, <code>trigger</code>, <code>origin_session</code>, <code>origin_actor</code>, <code>visibility_scope</code>, <code>confidence</code>, <code>source_events</code>, <code>gate_event</code>, <code>review_status</code>, <code>keystone: bool</code>, <code>authority_status</code></td>
+          </tr>
+        </tbody>
+      </table>
+      <p><strong>Lifecycle (governance, conflict, reversal):</strong></p>
+      <table>
+        <thead>
+          <tr>
+            <th>event_type</th>
+            <th>key payload fields</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>fleet.promotion.reviewed</code></td>
+            <td><code>fleet_id</code>, <code>promotion_id</code> (cites the pending event), <code>decision</code> (<code>accepted</code>/<code>rejected</code>/<code>deferred</code>), <code>rationale</code>, <code>actor</code> (steward), <code>source_events</code>, <code>authority_status</code></td>
+          </tr>
+          <tr>
+            <td><code>fleet.promotion.rolled_back</code></td>
+            <td><code>fleet_id</code>, <code>promotion_id</code>, <code>reason</code>, <code>within_rollback_window: bool</code>, <code>actor</code>, <code>source_events</code>, <code>gate_event?</code>, <code>authority_status</code></td>
+          </tr>
+          <tr>
+            <td><code>fleet.memory.superseded</code></td>
+            <td><code>fleet_id</code>, <code>claim_key</code>/<code>skill_id</code>, <code>superseded_promotion_id</code>, <code>superseding_promotion_id</code>, <code>reason</code>, <code>source_events</code>, <code>authority_status</code></td>
+          </tr>
+        </tbody>
+      </table>
+      <p><code>review_status</code> domain: <code>pending | active | rejected | deferred | superseded | rolled_back</code>. <code>promotion_id</code> is deterministic: <code>fleetpromo:&lt;sha256(canonical{fleet_id, kind, origin_session, source_events})[:24]&gt;</code> (same construction as <code>_rule_id</code> in <code>outcome_learning.py</code>), so the same source promoted twice is idempotent.</p>
+      <p>---</p>
+      <h2 id="3-governance">3. Governance</h2>
+      <ul>
+        <li><strong>Every cross-boundary propagation is I4-gated.</strong> The <code>fleet.*</code> event is always preceded by an <code>evolution.gate.evaluated</code> (op <code>promote</code>) appended to the fleet thread and cited via <code>gate_event</code>. There is no ungated path to fleet scope.</li>
+        <li><strong>Nothing auto-promotes to authority.</strong> <code>authority_status</code> is permanently <code>non_authoritative</code>. &quot;Promotion&quot; only raises <code>visibility_scope</code>. Authority, if ever wanted, would require a separate explicit gate path that I7 does <strong>not</strong> add. This is the sharp line: <em>scope ≠ authority.</em></li>
+        <li><strong>Trust boundaries enforced by scope + gate, never by deletion.</strong> A memory below an agent&#x27;s reachable scope is simply <strong>not replayed</strong> into that agent&#x27;s projection — it is never deleted. Revoking a shared memory is <code>fleet.promotion.rolled_back</code> (additive, lowers effective scope); the original promotion remains in the log and replayable.</li>
+        <li><strong>Three composable controls</strong> (Section 1b): trust tier caps the <em>proposable</em> scope; the I4 gate decides <em>auto vs review</em>; a steward reviews <em>held</em> proposals. A breach of any one stops the crossing, and the stop is itself auditable.</li>
+        <li><strong>Keystones (mandatory fleet rules)</strong> are representable as <code>fleet.rule.propagated</code> with <code>keystone=true</code> + <code>review_status=&quot;active&quot;</code>, surfaced in checkout as <strong>mandatory cited guidance</strong>. Unlike memclaw&#x27;s keystones (rows that override prompts on a mutable store), a Zaxy keystone is still non-authoritative, cited, and reversible — it is <em>surfaced</em>, never silently enforced by mutation. (Scope of keystone work in I7 is Q2.)</li>
+      </ul>
+      <p>---</p>
+      <h2 id="4-conflict-provenance">4. Conflict &amp; provenance</h2>
+      <ul>
+        <li><strong>Additive supersession, never destructive.</strong> When a new <code>fleet.skill.promoted</code> / <code>fleet.outcome.propagated</code> conflicts with an active fleet memory on the same <code>skill_id</code> / <code>claim_key</code>, the manager emits <code>fleet.memory.superseded</code> citing</li>
+      </ul>
+      <p><strong>both</strong> the prior and the superseding <code>promotion_id</code>. The prior event is <strong>retained</strong> in the projection marked <code>review_status=&quot;superseded&quot;</code> (still cited, still replayable); a later <code>fleet.promotion.rolled_back</code> of the winner can re-activate it. No <code>fleet.*</code> event is ever deleted or overwritten.</p>
+      <ul>
+        <li><strong>Conflict detection reuses existing primitives.</strong> Lift <code>LocalSemanticConflictDetector</code>, <code>ConflictState</code>, <code>_detect_source_state_conflicts</code>, and the <code>claim_key</code> matching from <code>coordination.py</code> to fleet scope rather than inventing a second detector (a second convention beside an existing one is prohibited).</li>
+        <li><strong>Provenance is the substrate, not a side log.</strong> Every <code>fleet.*</code> event carries <code>origin_session</code> + <code>origin_actor</code> + <code>source_events</code> citations back to the exact sealed event and hash. &quot;Why does the fleet believe X / which agent taught this and from what evidence?&quot; is a deterministic replay query (<code>fleet_audit(fleet_id)</code>), not an audit-log lookup that can drift from the store it describes — because in Zaxy the store <em>is</em> the chain.</li>
+        <li><strong>Default conflict posture:</strong> auto-supersession of a non-keystone active memory is allowed only when the superseding promotion itself auto-applied (gate <code>auto_apply</code>); a conflict against an <strong>active keystone</strong> is always held <code>pending</code> for a steward (never auto-flip a live mandatory rule). See Q5.</li>
+      </ul>
+      <p>---</p>
+      <h2 id="5-differentiation-vs-caura-memclaw">5. Differentiation vs caura-memclaw</h2>
+      <p>caura-memclaw stores fleet memory in a <strong>mutable PostgreSQL + pgvector</strong> store governed by visibility scopes (<code>agent</code>/<code>team</code>/<code>org</code>), a numeric 4-tier agent trust level, and keystone policies, with an autonomous nightly &quot;Crystallizer&quot; that LLM-merges near-duplicates and retires stale data <em>without</em> review, and hash-chaining applied only to a <em>separate</em> audit log (<a href="https://memclaw.net/docs/tutorials/governance-keystones/">memclaw.net/docs/governance-keystones</a>, <a href="https://memclaw.net/docs/agents/">memclaw.net/docs/agents</a>, <a href="https://arxiv.org/html/2606.24535">arxiv.org/html/2606.24535</a>). Zaxy&#x27;s I7 plane is the <strong>same immutable, hash-chained, replayable Eventloom</strong>: a fleet memory is a cited event replayed into a fleet projection, it crosses a trust boundary <strong>only</strong> through the I4 gate, promotion raises visibility but never authority, conflicts are additive supersessions (never autonomous merges or retirement), forgetting is a reversible rollback event, and provenance is the chain itself — so &quot;which agent taught the fleet this, from which sealed event+hash&quot; is a replay, not a query against a log that can diverge from a mutable store. memclaw makes shared fleet memory <em>possible and autonomous</em>; Zaxy makes it <em>governed, reversible, and provable</em> — the same fleet thesis, but every shared skill is a receipt, not a row.</p>
+      <p>---</p>
+      <h2 id="6-incremental-build-plan">6. Incremental build plan</h2>
+      <h3 id="file-structure">File structure</h3>
+      <p>Create:</p>
+      <ul>
+        <li><code>src/zaxy/fleet.py</code> — fleet contracts: <code>VISIBILITY_SCOPES</code> / <code>TRUST_TIERS</code> constants + validators; deterministic <code>promotion_id</code>; pure <code>build_fleet_*_event</code> builders; <code>FleetManager</code> (sync, owns the fleet thread via <code>SessionManager</code>, routes promotions through the I4 gate); replay projections (<code>fleet_brief</code>, <code>resolve_fleet_skills</code>, <code>fleet_audit</code>). Mirrors <code>outcome_learning.py</code> (builders) and <code>coordination.py</code> (<code>CoordinationManager</code>).</li>
+        <li><code>tests/test_fleet.py</code> — builder/validator/replay/conflict unit tests (Eventloom-only).</li>
+        <li><code>tests/test_fleet_manager.py</code> — <code>FleetManager</code> gated-propagation, trust-tier, review/rollback/supersession tests.</li>
+      </ul>
+      <p>Modify:</p>
+      <ul>
+        <li><code>src/zaxy/coordination.py</code> — add the mission→fleet bridge (<code>escalate_finding_to_fleet</code>) so an accepted <code>coordination.finding.promoted</code> can be proposed fleet-wide; no change to existing promotion behavior.</li>
+        <li><code>src/zaxy/config.py</code> — add I7 Settings fields (opt-in + default trust tier).</li>
+        <li><code>src/zaxy/extract.py</code> — deterministic extractors for <code>fleet.skill.promoted</code> / <code>fleet.rule.propagated</code> / <code>fleet.outcome.propagated</code> so active fleet memories project for checkout retrieval (reuse the skill/rule extractor pattern).</li>
+        <li><code>src/zaxy/mcp_server.py</code> + <code>docs/examples/mcp-tool-contract.json</code> — <code>fleet_*</code> MCP tools + <code>_fleet_manager()</code> (twin of <code>_coordination_manager()</code>) + dispatch entries + contract snapshot.</li>
+        <li><code>src/zaxy/cli/runtime.py</code> + <code>src/zaxy/cli/serving.py</code> (+ <code>__init__.py</code> re-exports) — a <code>fleet_app</code> Typer group (twin of <code>coordinate_app</code>).</li>
+        <li><code>src/zaxy/core/...</code> (checkout) — a fleet-memory checkout lane (distinct, cited, non-authoritative), reusing the skill-lane pattern.</li>
+        <li><code>docs/agent-events.md</code>, <code>docs/mcp.md</code> — document the <code>fleet.*</code> taxonomy and surfaces.</li>
+      </ul>
+      <blockquote><strong>No <code>evolution_policy.py</code> change required</strong> — <code>promote</code> is already in <code>EVOLUTION_OPS</code>, and stricter governance uses the existing <code>evolution_op_autonomy=&quot;promote=…&quot;</code> override.</blockquote>
+      <h3 id="proposed-signatures">Proposed signatures</h3>
+      <pre><code class="language-python"># src/zaxy/fleet.py — constants
+VISIBILITY_SCOPES: tuple[str, ...] = (&quot;private&quot;, &quot;session&quot;, &quot;mission&quot;, &quot;fleet&quot;, &quot;global&quot;)
+DEFAULT_VISIBILITY_SCOPE = &quot;session&quot;
+TRUST_TIERS: tuple[str, ...] = (&quot;untrusted&quot;, &quot;member&quot;, &quot;trusted&quot;, &quot;steward&quot;)
+DEFAULT_TRUST_TIER = &quot;member&quot;
+PROMOTE_OP = &quot;promote&quot;  # the EVOLUTION_OPS member this plane routes through
+
+FLEET_SKILL_PROMOTED_EVENT_TYPE   = &quot;fleet.skill.promoted&quot;
+FLEET_OUTCOME_PROPAGATED_EVENT_TYPE = &quot;fleet.outcome.propagated&quot;
+FLEET_RULE_PROPAGATED_EVENT_TYPE  = &quot;fleet.rule.propagated&quot;
+# ... (created / enrolled / trust.assigned / promotion.reviewed / rolled_back / memory.superseded)
+
+def fleet_thread(fleet_id: str) -&gt; str: ...          # -&gt; f&quot;fleet.{validate_session_id(fleet_id)}&quot; (&#x27;:&#x27; is illegal in session ids)
+def validate_visibility_scope(scope: object) -&gt; str: ...
+def validate_trust_tier(tier: object) -&gt; str: ...
+def max_proposable_scope(trust_tier: str) -&gt; str: ... # untrusted-&gt;session, member-&gt;fleet, trusted/steward-&gt;global
+
+# pure builders (mirror outcome_learning.build_rule_event)
+def build_fleet_skill_promotion_event(*, actor: str, fleet_id: str, skill_id: str, skill_version: str,
+    origin_session: str, origin_actor: str, source_events: Sequence[Mapping[str, Any]],
+    gate_event: Mapping[str, Any], confidence: float, auto_applied: bool,
+    visibility_scope: str = &quot;fleet&quot;, keystone: bool = False) -&gt; dict[str, Any]: ...
+def build_fleet_outcome_propagation_event(*, ...) -&gt; dict[str, Any]: ...
+def build_fleet_rule_propagation_event(*, ...) -&gt; dict[str, Any]: ...
+def build_fleet_promotion_review_event(*, actor, fleet_id, promotion_id, decision, rationale=None, source_events) -&gt; dict[str, Any]: ...
+def build_fleet_promotion_rollback_event(*, actor, fleet_id, promotion_id, reason, within_rollback_window, source_events) -&gt; dict[str, Any]: ...
+def build_fleet_supersession_event(*, actor, fleet_id, claim_key, superseded_promotion_id, superseding_promotion_id, reason, source_events) -&gt; dict[str, Any]: ...
+def build_fleet_enrollment_event(*, actor, fleet_id, agent_id, trust_tier) -&gt; dict[str, Any]: ...
+def build_fleet_trust_event(*, actor, fleet_id, agent_id, trust_tier, prior_tier, rationale=None) -&gt; dict[str, Any]: ...
+
+# replay projections (pure functions over events)
+def summarize_fleet_events(events: Iterable[Mapping[str, Any]]) -&gt; dict[str, Any]: ...
+def resolve_fleet_skills(events: Iterable[Mapping[str, Any]]) -&gt; list[&quot;FleetSkillState&quot;]: ...  # active, honoring superseded/rolled_back
+
+
+class FleetManager:
+    def __init__(self, eventloom_path: str | Path = &quot;.eventloom&quot;, *, settings: Any | None = None,
+                 semantic_conflict_detector: SemanticConflictDetector | None = None) -&gt; None: ...
+
+    def create_fleet(self, fleet_id: str, *, summary: str, actor: str = &quot;coordinator&quot;) -&gt; FleetEventResult: ...
+    def enroll_agent(self, fleet_id: str, agent_id: str, *, trust_tier: str = DEFAULT_TRUST_TIER,
+                     actor: str = &quot;coordinator&quot;) -&gt; FleetEventResult: ...
+    def assign_trust(self, fleet_id: str, agent_id: str, *, trust_tier: str, actor: str,
+                     rationale: str | None = None) -&gt; FleetEventResult: ...
+
+    def promote_skill(self, fleet_id: str, *, skill_id: str, skill_version: str, origin_session: str,
+                      source_events: list[dict[str, Any]], confidence: float, actor: str,
+                      visibility_scope: str = &quot;fleet&quot;, keystone: bool = False) -&gt; FleetPromotionResult: ...
+    def propagate_outcome(self, fleet_id: str, *, outcome: str, summary: str, origin_session: str,
+                          source_events: list[dict[str, Any]], confidence: float, actor: str,
+                          claim_key: str | None = None, visibility_scope: str = &quot;fleet&quot;) -&gt; FleetPromotionResult: ...
+    def propagate_rule(self, fleet_id: str, *, rule: str, trigger: str, origin_session: str,
+                       source_events: list[dict[str, Any]], confidence: float, actor: str,
+                       visibility_scope: str = &quot;fleet&quot;, keystone: bool = False) -&gt; FleetPromotionResult: ...
+
+    def review_promotion(self, fleet_id: str, promotion_id: str, *, decision: str, actor: str,
+                         rationale: str | None = None) -&gt; FleetEventResult: ...
+    def rollback_promotion(self, fleet_id: str, promotion_id: str, *, reason: str, actor: str) -&gt; FleetEventResult: ...
+
+    def fleet_brief(self, fleet_id: str) -&gt; FleetBrief: ...
+    def fleet_audit(self, fleet_id: str) -&gt; FleetAuditReport: ...
+
+    # internal: enforce trust tier, route through the I4 gate, append gate + fleet event, run conflict/supersession
+    def _gate_promotion(self, *, candidate_ref: dict[str, Any], confidence: float, actor: str,
+                        thread: str) -&gt; EvolutionGateDecision: ...</code></pre>
+      <p><code>_gate_promotion</code> is the single I4 chokepoint (pure functions, sync append, as in the <code>inference</code> gate path):</p>
+      <pre><code class="language-python">policy   = resolve_evolution_policy(self._settings)
+decision = evaluate_evolution_gate(PROMOTE_OP, confidence, policy=policy)
+gate_spec = build_evolution_gate_event(actor=actor, session_id=thread, decision=decision, candidate_ref=candidate_ref)
+gate_evt = self.session_manager.get(thread).eventlog.append(
+    gate_spec[&quot;event_type&quot;], actor=gate_spec[&quot;actor&quot;], payload=validate_payload(gate_spec[&quot;payload&quot;]), thread=thread)
+# fleet.* event then cites {&quot;seq&quot;: gate_evt.seq, &quot;hash&quot;: gate_evt.hash}</code></pre>
+      <pre><code class="language-python"># src/zaxy/coordination.py — bridge (new method on CoordinationManager)
+def escalate_finding_to_fleet(self, mission_id: str, finding_id: str, fleet_id: str, *,
+    fleet_manager: &quot;FleetManager&quot;, as_skill: bool = False, actor: str = &quot;coordinator&quot;,
+) -&gt; &quot;FleetPromotionResult&quot;:
+    &quot;&quot;&quot;Propose an already-accepted mission finding as a fleet outcome/skill via the I4 gate.
+    Cites the mission `coordination.finding.promoted` event as source_events.&quot;&quot;&quot;</code></pre>
+      <pre><code class="language-python"># src/zaxy/config.py — I7 Settings fields (new section &quot;Fleet memory plane (Zaxy 3 / I7)&quot;)
+fleet_enabled: bool = Field(default=False, description=&quot;Enable the governed fleet memory plane (opt-in, off by default)&quot;)
+fleet_default_trust_tier: str = Field(default=&quot;member&quot;, description=&quot;Default trust tier for newly enrolled fleet agents: untrusted, member, trusted, or steward&quot;)
+# Stricter fleet governance reuses the EXISTING evolution_op_autonomy override, e.g. &quot;promote=require_review&quot;.</code></pre>
+      <h3 id="increment-split">Increment split</h3>
+      <ul>
+        <li><strong>I7.1 — Fleet contracts &amp; vocabulary.</strong> <code>fleet.py</code> constants, validators, deterministic <code>promotion_id</code>, all pure <code>build_fleet_*_event</code> builders, <code>summarize_fleet_events</code> / <code>resolve_fleet_skills</code>. Tests: builders set <code>authority_status=&quot;non_authoritative&quot;</code>, cite <code>source_events</code>+<code>gate_event</code>, reject invalid scope/tier/refs, ids are deterministic. <em>Exit:</em> <code>tests/test_fleet.py</code> green; no manager, no I/O.</li>
+        <li><strong>I7.2 — FleetManager + gated propagation + opt-in.</strong> <code>FleetManager</code> (<code>create_fleet</code>, <code>enroll_agent</code>, <code>assign_trust</code>, <code>promote_skill</code>, <code>propagate_outcome</code>, <code>propagate_rule</code>) routing every crossing through <code>_gate_promotion</code>; trust-tier eligibility enforced before the gate; <code>config.py</code> <code>fleet_enabled</code> + <code>fleet_default_trust_tier</code>. Tests: a crossing appends an <code>evolution.gate.evaluated</code> cited by the <code>fleet.*</code> event; auto-applies above threshold and holds <code>pending</code> below; <code>untrusted</code> proposal is refused; <code>evolution_op_autonomy=&quot;promote=require_review&quot;</code> forces <code>pending</code>. <em>Exit:</em> <code>tests/test_fleet_manager.py</code> green.</li>
+        <li><strong>I7.3 — Review, rollback, conflict &amp; supersession + projections.</strong> <code>review_promotion</code>, <code>rollback_promotion</code>, <code>fleet.memory.superseded</code> (reusing the <code>coordination.py</code> conflict detectors), <code>fleet_brief</code>, <code>fleet_audit</code>. Tests: pending→active on accept; rollback re-lowers scope additively and re-activates a superseded skill; superseding never deletes; conflict against an active keystone holds <code>pending</code>. <em>Exit:</em> lifecycle tests green.</li>
+        <li><strong>I7.4 — Surfaces &amp; retrieval.</strong> <code>extract.py</code> fleet extractors; <code>fleet_*</code> MCP tools + <code>_fleet_manager()</code> + dispatch + contract snapshot; <code>fleet_app</code> CLI group; fleet checkout lane; <code>docs/agent-events.md</code> + <code>docs/mcp.md</code>. Tests: MCP/CLI twins produce identical cited events; checkout surfaces active (not pending/superseded) fleet memories with citations.</li>
+        <li><strong>I7.5 — Coordination bridge + fleet-transfer proof hook.</strong> <code>escalate_finding_to_fleet</code>; an I8 CoordinationBench hook measuring cross-agent transfer (a failure learned by agent A prevents the same failure for agent B after propagation). Tests: bridge cites the mission promotion; transfer metric is computed from replay only.</li>
+      </ul>
+      <p>---</p>
+      <h2 id="7-open-questions-for-the-orchestrator">7. Open questions for the orchestrator</h2>
+      <ol>
+        <li><strong>Default trust tier &amp; first-steward bootstrap.</strong> Default new enrollee to <code>member</code> (can propose fleet, gated) or <code>untrusted</code> (read-only until promoted)? And who is the first steward — is the <code>fleet.created</code> actor implicitly a steward, or must an out-of-band operator seed the first <code>fleet.trust.assigned</code>?</li>
+      </ol>
+      <p><em>Recommendation:</em> default <code>member</code>; fleet creator is implicit steward, recorded explicitly in <code>fleet.created</code>.</p>
+      <ol>
+        <li><strong>Keystone scope in I7.</strong> Ship keystones now as <code>keystone=true</code> fleet rules surfaced as mandatory checkout guidance (non-authoritative + cited + reversible), or defer full keystone semantics to a later increment / I5? <em>Recommendation:</em> carry the <code>keystone</code> flag + checkout surfacing in I7.3–I7.4; defer any override-resolution semantics.</li>
+        <li><strong><code>global</code> scope semantics.</strong> Treat <code>global</code> as the reserved single-root <code>fleet.global</code> thread now, with cross-Eventloom-root federation explicitly out of scope? <em>Recommendation:</em> yes — reserve the scope, defer federation.</li>
+        <li><strong>Per-op threshold config.</strong> Rely solely on the existing <code>evolution_op_autonomy=&quot;promote=…&quot;</code> override for stricter fleet governance (no new gate config), or also add a configurable <code>promote</code> confidence threshold?</li>
+      </ol>
+      <p><em>Recommendation:</em> reuse the existing override; add a threshold knob only if a real deployment needs it.</p>
+      <ol>
+        <li><strong>Conflict posture.</strong> Allow auto-supersession of a non-keystone active fleet memory when the superseding promotion auto-applied, while always holding conflicts against an <strong>active keystone</strong> for steward review? <em>Recommendation:</em> yes (Section 4 default).</li>
+        <li><strong>Retrieval scoping.</strong> Should an enrolled agent&#x27;s checkout pull fleet memories automatically (enrollment-gated replay) or require explicit per-query opt-in?</li>
+      </ol>
+      <p><em>Recommendation:</em> enrollment-gated and visible (a checkout diagnostic names the fleet lane), respecting invariant 6 (visible autonomy).</p>
+      <ol>
+        <li><strong>Pre-I7 backfill.</strong> Confirm that pre-I7 events lacking <code>visibility_scope</code> are treated as <code>session</code> (no migration, fully backward-compatible). <em>Recommendation:</em> yes.</li>
+      </ol>
+    </article>
+  </main>
+</body>
+</html>

@@ -1,0 +1,73 @@
+{
+  "cross_agent_transfer_scope": "within_mission_proxy",
+  "fingerprint": "d4619d5737705c3ed67d62aaebbe68c9a22acfeac1efff072590407e536cfa30",
+  "mean_metrics": {
+    "coordination_quality": 0.907407,
+    "cross_agent_transfer": 1.0,
+    "cross_agent_transfer_scope": "within_mission_proxy",
+    "governance_correctness": 1.0,
+    "injected_tokens": 186,
+    "latency_ms": 13.144,
+    "mission_count": 1,
+    "returned_tokens": 458,
+    "scaffold": {
+      "cross_agent_transfer": "within_mission_proxy; fleet-wide pending I7"
+    },
+    "token_efficiency": 0.589127,
+    "worker_count": 5
+  },
+  "results": [
+    {
+      "coordination_quality": 0.907407,
+      "cross_agent_transfer": 1.0,
+      "cross_agent_transfer_scope": "within_mission_proxy",
+      "governance_correctness": 1.0,
+      "injected_tokens": 186,
+      "latency_ms": 19.967,
+      "mission_count": 1,
+      "returned_tokens": 400,
+      "scaffold": {
+        "cross_agent_transfer": "within_mission_proxy; fleet-wide pending I7"
+      },
+      "token_efficiency": 0.535,
+      "worker_count": 3
+    },
+    {
+      "coordination_quality": 0.907407,
+      "cross_agent_transfer": 1.0,
+      "cross_agent_transfer_scope": "within_mission_proxy",
+      "governance_correctness": 1.0,
+      "injected_tokens": 186,
+      "latency_ms": 9.146,
+      "mission_count": 1,
+      "returned_tokens": 450,
+      "scaffold": {
+        "cross_agent_transfer": "within_mission_proxy; fleet-wide pending I7"
+      },
+      "token_efficiency": 0.586667,
+      "worker_count": 5
+    },
+    {
+      "coordination_quality": 0.907407,
+      "cross_agent_transfer": 1.0,
+      "cross_agent_transfer_scope": "within_mission_proxy",
+      "governance_correctness": 1.0,
+      "injected_tokens": 186,
+      "latency_ms": 10.32,
+      "mission_count": 1,
+      "returned_tokens": 525,
+      "scaffold": {
+        "cross_agent_transfer": "within_mission_proxy; fleet-wide pending I7"
+      },
+      "token_efficiency": 0.645714,
+      "worker_count": 8
+    }
+  ],
+  "scaffold_notes": [
+    "cross_agent_transfer is a SCAFFOLD within-mission PROXY (scope=within_mission_proxy): it scores worker->parent promotion propagation inside a single mission, NOT fleet-wide cross-agent transfer. Fleet-wide cross-agent transfer is realized in I7.",
+    "latency_ms is REAL wall-clock and environment-dependent; it is EXCLUDED from the fingerprint and from equality/determinism checks.",
+    "returned_tokens and injected_tokens are _approx_tokens estimates (len//4), not tokenizer-exact counts.",
+    "coordination_quality and governance_correctness are REAL exact-scored, deterministic aggregates of CoordinationBench signals."
+  ],
+  "version": "fleet-v1"
+}

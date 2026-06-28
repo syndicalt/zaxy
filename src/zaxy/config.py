@@ -9,10 +9,10 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import Field, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import AliasChoices, Field, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from zaxy.security import eventlog_path
 
@@ -133,6 +133,19 @@ class Settings(BaseSettings):
     pggraph_repo: str | None = Field(
         default=None,
         description="Local pgGraph checkout containing scripts/quickstart.sh for extension bootstrap",
+    )
+
+    # ------------------------------------------------------------------
+    # External plugins (Zaxy 3 / I6)
+    # ------------------------------------------------------------------
+    plugins: Annotated[list[str], NoDecode] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("plugins", "ZAXY_PLUGINS"),
+        description=(
+            "External Zaxy plugin import specs as 'module:attr' strings, loaded in "
+            "addition to installed 'zaxy.plugins' entry points. Set ZAXY_PLUGINS to a "
+            "comma-separated list (e.g. 'pkg_a:PLUGIN,pkg_b:PLUGIN')."
+        ),
     )
 
     # ------------------------------------------------------------------
@@ -609,6 +622,18 @@ class Settings(BaseSettings):
         except OSError as exc:
             raise ValueError(f"{file_env} could not be read: {file_path}") from exc
         object.__setattr__(self, field_name, value)
+
+    @field_validator("plugins", mode="before")
+    @classmethod
+    def _parse_plugins(cls, value: object) -> list[str]:
+        """Accept a comma-separated string (env) or a list of import specs."""
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [item.strip() for item in value.split(",") if item.strip()]
+        if isinstance(value, list | tuple):
+            return [str(item).strip() for item in value if str(item).strip()]
+        raise ValueError("plugins must be a string or a list of 'module:attr' strings")
 
     @model_validator(mode="after")
     def _validate_production_security(self) -> Settings:
