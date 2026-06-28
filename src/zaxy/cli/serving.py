@@ -776,6 +776,7 @@ def memory_outcome(
     lesson: str | None = typer.Option(None, "--lesson", help="Lesson learned; on failure/partial proposes a preventive rule"),
     trigger: str | None = typer.Option(None, "--trigger", help="Trigger condition for the preventive rule"),
     confidence: float | None = typer.Option(None, "--confidence", help="Explicit confidence for the preventive rule 0.0-1.0"),
+    prior: float | None = typer.Option(None, "--prior", help="Prior confidence 0.0-1.0 the memory would help; scales reinforcement by surprise"),
     task_id: str | None = typer.Option(None, "--task-id", help="Task identifier this outcome belongs to"),
     eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
     session_id: str = typer.Option("default", help="Session ID to record the outcome into"),
@@ -791,6 +792,8 @@ def memory_outcome(
         safe_outcome = validate_outcome(outcome)
         if confidence is not None and not 0.0 <= confidence <= 1.0:
             raise typer.BadParameter("confidence must be between 0.0 and 1.0")
+        if prior is not None and not 0.0 <= prior <= 1.0:
+            raise typer.BadParameter("prior must be between 0.0 and 1.0")
         safe_session_id = validate_session_id(session_id)
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
@@ -819,6 +822,7 @@ def memory_outcome(
                 lesson=lesson,
                 trigger=trigger,
                 confidence=confidence,
+                prior=prior,
                 task_id=task_id,
                 session_id=safe_session_id,
             )

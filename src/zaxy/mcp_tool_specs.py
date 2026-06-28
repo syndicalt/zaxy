@@ -359,7 +359,8 @@ TOOLS = [
         description=(
             "Agent reports an outcome on recalled memory; reinforces the cited memory and, on "
             "failure/partial with a lesson, proposes a governed preventive rule through the "
-            "evolution gate (cited, reversible, audited)."
+            "evolution gate (cited, reversible, audited). Pass `prior` (the agent's prior "
+            "confidence the memory would help, 0.0-1.0) to scale reinforcement by prediction error (surprise)."
         ),
         inputSchema={
             "type": "object",
@@ -375,6 +376,10 @@ TOOLS = [
                 "lesson": {"type": "string", "description": "Lesson learned; on failure/partial proposes a preventive rule"},
                 "trigger": {"type": "string", "description": "Trigger condition for the preventive rule"},
                 "confidence": {"type": "number", "description": "Explicit confidence for the preventive rule (0.0-1.0)"},
+                "prior": {
+                    "type": "number",
+                    "description": "Prior confidence (0.0-1.0) the recalled memory would help; scales reinforcement by prediction error (surprise)",
+                },
                 "task_id": {"type": "string", "description": "Task identifier this outcome belongs to"},
                 "session_id": {"type": "string", "description": "Session ID for multi-agent sharding"},
             },

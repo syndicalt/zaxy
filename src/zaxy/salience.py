@@ -76,6 +76,12 @@ SALIENCE_MAX = 10.0
 #: Upper bound for an explicit per-event ``weight`` override.
 MAX_REINFORCEMENT_WEIGHT = SALIENCE_MAX
 
+#: Smallest representable per-event ``weight``. Surprise-scaled attenuation
+#: (e.g. an ``invalidated`` reinforcement at maximal prediction error) clamps
+#: UP to this floor rather than crossing zero, keeping every weight a valid,
+#: replayable, reversible multiplier within ``(0.0, MAX_REINFORCEMENT_WEIGHT]``.
+MIN_REINFORCEMENT_WEIGHT = 0.01
+
 #: Cue record convention (encoding specificity): event payloads may carry a
 #: ``cues`` mapping with these optional string fields. Cues are plain payload
 #: data — no log schema change — and only affect ranking under the cognitive
@@ -286,6 +292,41 @@ def build_invalidated_reinforcement_event(
         source={"invalidation_id": invalidation_id},
         weight=weight,
     )
+
+
+def prediction_error_weight(kind: str, prediction_error: float) -> float:
+    """Scale a reinforcement multiplier by prediction error (surprise).
+
+    Surprise-weighted reinforcement (a Rescorla-Wagner intuition): an outcome
+    that merely confirms what the agent already expected (low prediction
+    error) barely moves salience, while a surprising outcome (high error)
+    drives the multiplier to — and past — the fixed-table strength for
+    ``kind``. The mapping is continuous with
+    :data:`SALIENCE_REINFORCEMENT_MULTIPLIERS`:
+
+    - ``pe == 0`` -> ``1.0`` (no surprise, no net salience change);
+    - ``pe == 0.5`` -> ``SALIENCE_REINFORCEMENT_MULTIPLIERS[kind]`` exactly
+      (continuity with the fixed table the forgetting lane tunes);
+    - ``pe == 1`` -> maximal surprise, extrapolated linearly from those two.
+
+    The result is clamped to ``[MIN_REINFORCEMENT_WEIGHT,
+    MAX_REINFORCEMENT_WEIGHT]`` so an ``invalidated`` kind at high surprise
+    floors (rather than crossing zero) and a positive kind never crosses the
+    ceiling — every return value is a valid per-event ``weight`` override.
+
+    Args:
+        kind: A reinforcement kind in
+            :data:`SALIENCE_REINFORCEMENT_MULTIPLIERS`.
+        prediction_error: Surprise in ``[0.0, 1.0]`` (finite, non-bool).
+
+    Returns:
+        The surprise-scaled multiplier, ready to pass as ``weight``.
+    """
+    kind = _validate_kind(kind)
+    pe = _validate_prediction_error(prediction_error)
+    base = SALIENCE_REINFORCEMENT_MULTIPLIERS[kind]
+    weight = base + (base - 1.0) * (2.0 * pe - 1.0)
+    return min(max(weight, MIN_REINFORCEMENT_WEIGHT), MAX_REINFORCEMENT_WEIGHT)
 
 
 def event_ref_index(events: Iterable[object]) -> dict[int, tuple[str, str]]:
@@ -631,6 +672,17 @@ def _validate_weight(value: float | None) -> float | None:
         raise ValueError(
             f"weight must be a finite number greater than 0.0 and at most {MAX_REINFORCEMENT_WEIGHT}"
         )
+    return float(value)
+
+
+def _validate_prediction_error(value: object) -> float:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int | float)
+        or not math.isfinite(value)
+        or not 0.0 <= float(value) <= 1.0
+    ):
+        raise ValueError("prediction_error must be a finite number in [0.0, 1.0]")
     return float(value)
 
 

@@ -18,6 +18,7 @@ from zaxy.salience import (
     ENCODING_REDUNDANT_MIN_OVERLAP,
     ENCODING_REINFORCING_MIN_OVERLAP,
     MAX_REINFORCEMENT_WEIGHT,
+    MIN_REINFORCEMENT_WEIGHT,
     REINFORCEMENT_EVENT_TYPE,
     SALIENCE_BASE,
     SALIENCE_MAX,
@@ -36,6 +37,7 @@ from zaxy.salience import (
     cue_overlap,
     cue_pairs,
     event_ref_index,
+    prediction_error_weight,
     reinforcement_targets_from_citations,
     resolve_citation_target,
     target_ref,
@@ -1125,3 +1127,77 @@ def test_encoding_decision_tag_payload_is_compact_and_replayable() -> None:
     }
     novel = EncodingDecision(classification="novel", content_overlap=0.1, entity_overlap=0.0)
     assert "duplicate_of" not in novel.tag_payload()
+
+
+# ----------------------------------------------------------------------
+# Prediction-error-weighted reinforcement (3 / I1.3)
+# ----------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("kind", sorted(SALIENCE_REINFORCEMENT_MULTIPLIERS))
+def test_prediction_error_weight_matches_the_fixed_table_at_pe_half(kind: str) -> None:
+    # pe == 0.5 reproduces the tuned multiplier exactly, so a reported prior
+    # extends the table rather than replacing it.
+    assert prediction_error_weight(kind, 0.5) == pytest.approx(
+        SALIENCE_REINFORCEMENT_MULTIPLIERS[kind]
+    )
+
+
+@pytest.mark.parametrize("kind", sorted(SALIENCE_REINFORCEMENT_MULTIPLIERS))
+def test_prediction_error_weight_is_unity_without_surprise(kind: str) -> None:
+    # No surprise -> no net salience change for any reinforcement kind.
+    assert prediction_error_weight(kind, 0.0) == pytest.approx(1.0)
+
+
+def test_prediction_error_weight_grows_with_surprise_for_positive_kinds() -> None:
+    weights = [prediction_error_weight("confirmed", pe) for pe in (0.0, 0.25, 0.5, 0.75, 1.0)]
+    assert weights == sorted(weights)
+    assert weights[0] == pytest.approx(1.0)
+    assert weights[-1] > SALIENCE_REINFORCEMENT_MULTIPLIERS["confirmed"]
+
+
+def test_prediction_error_weight_attenuates_invalidated_and_floors_at_max_surprise() -> None:
+    weights = [prediction_error_weight("invalidated", pe) for pe in (0.0, 0.25, 0.5, 0.75, 1.0)]
+    assert weights == sorted(weights, reverse=True)
+    assert weights[0] == pytest.approx(1.0)
+    # The high-surprise formula would cross zero; it clamps UP to the floor.
+    assert weights[-1] == pytest.approx(MIN_REINFORCEMENT_WEIGHT)
+
+
+def test_prediction_error_weight_clamps_down_to_the_ceiling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # promoted at pe == 1 yields 3.0; lower the ceiling below that to exercise
+    # the upper clamp branch.
+    monkeypatch.setattr("zaxy.salience.MAX_REINFORCEMENT_WEIGHT", 1.5)
+    assert prediction_error_weight("promoted", 1.0) == pytest.approx(1.5)
+
+
+def test_prediction_error_weight_outputs_are_always_valid_weight_overrides() -> None:
+    # Every result must pass the per-event weight validator (0 < w <= MAX), so
+    # the surprise-scaled multiplier is always a replayable override.
+    for kind in SALIENCE_REINFORCEMENT_MULTIPLIERS:
+        for pe in (0.0, 0.1, 0.5, 0.9, 1.0):
+            weight = prediction_error_weight(kind, pe)
+            assert 0.0 < weight <= MAX_REINFORCEMENT_WEIGHT
+            event = build_reinforcement_event(
+                actor="agent",
+                session_id="agent-1",
+                kind=kind,
+                targets=[TARGET],
+                source=SOURCE,
+                weight=weight,
+            )
+            assert event["payload"]["weight"] == pytest.approx(weight)
+
+
+@pytest.mark.parametrize("kind", ["boosted", "", " ", 3])
+def test_prediction_error_weight_rejects_bad_kind(kind: object) -> None:
+    with pytest.raises(ValueError, match="kind"):
+        prediction_error_weight(kind, 0.5)
+
+
+@pytest.mark.parametrize("pe", [-0.1, 1.5, math.inf, math.nan, True])
+def test_prediction_error_weight_rejects_out_of_range_or_bool_pe(pe: object) -> None:
+    with pytest.raises(ValueError, match="prediction_error"):
+        prediction_error_weight("confirmed", pe)

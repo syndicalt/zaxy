@@ -9348,6 +9348,64 @@ def test_memory_outcome_rejects_invalid_confidence(tmp_path: Path) -> None:
     assert result.exit_code != 0
 
 
+def test_memory_outcome_prior_records_surprise(tmp_path: Path) -> None:
+    """A reported --prior is recorded on the cited outcome event and scales reinforcement."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    eventloom_path = workspace / ".eventloom"
+    (workspace / ".env.local").write_text("PROJECTION_BACKEND=null\n", encoding="utf-8")
+    runner = CliRunner()
+
+    append_result = runner.invoke(
+        app,
+        [
+            "memory", "append", "decision.made",
+            "--actor", "zaxy-agent", "--session-id", "ext",
+            "--payload-json", '{"summary": "trust the stale cache"}',
+            "--eventloom-path", str(eventloom_path), "--json",
+        ],
+    )
+    assert append_result.exit_code == 0, append_result.output
+    seeded = json.loads(append_result.output)
+
+    result = runner.invoke(
+        app,
+        [
+            "memory", "outcome",
+            "--outcome", "failure",
+            "--summary", "the cache was stale",
+            "--target-seq", str(seeded["seq"]),
+            "--target-hash", seeded["hash"],
+            "--prior", "0.9",
+            "--eventloom-path", str(eventloom_path),
+            "--session-id", "ext",
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    events = EventLog(eventloom_path / "ext.jsonl").read_all()
+    outcome_event = next(e for e in events if e.type == "memory.outcome.recorded")
+    assert outcome_event.payload["prior"] == 0.9
+    assert outcome_event.payload["prediction_error"] == 0.9
+    reinforcement = next(e for e in events if e.type == "memory.reinforcement")
+    assert reinforcement.payload["weight"] < 0.2
+
+
+def test_memory_outcome_rejects_invalid_prior(tmp_path: Path) -> None:
+    """A prior outside [0, 1] fails validation before any append."""
+    result = CliRunner().invoke(
+        app,
+        [
+            "memory", "outcome",
+            "--outcome", "failure",
+            "--summary", "x",
+            "--prior", "1.5",
+            "--eventloom-path", str(tmp_path / ".eventloom"),
+        ],
+    )
+    assert result.exit_code != 0
+
+
 def test_memory_evolution_policy_reports_auto_with_rollback_default(tmp_path: Path) -> None:
     """memory evolution-policy should report the auto_with_rollback default."""
     workspace = tmp_path / "ws"
