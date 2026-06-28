@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Governed Active Memory - Zaxy Docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,600&family=Inter:wght@400;550;650;750;850&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../../index.html">Overview</a>
+      <a href="../../docs/coordinate-roadmap.html">Coordinate</a>
+      <a href="../../docs/why-zaxy.html">Why Zaxy</a>
+      <a href="../../docs/benchmarks.html">Benchmarks</a>
+      <a href="../getting-started.html">Start</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="governed-active-memory">Governed Active Memory</h1>
+      <blockquote>Zaxy 3 position paper (I8p — &quot;Proof &amp; Category Definition&quot;). The category claim, the three differentiating claims, the now-real demo, and the honest evidence boundary for Zaxy&#x27;s event-sourced agent-memory system. Every Zaxy capability cited below maps to shipped code on <code>master</code>; every number comes from a committed benchmark artifact and carries its caveat inline. Competitor figures are labeled vendor- or self-reported and are never restated as Zaxy&#x27;s own. The grounding plan is <a href="https://github.com/syndicalt/zaxy/blob/master/ZAXY-3.md">ZAXY-3.md</a>; the metrics index is <a href="https://github.com/syndicalt/zaxy/blob/master/AGENTS.md">AGENTS.md</a>; the published benchmark surface is <a href="../benchmarks.html">benchmarks.md</a>.</blockquote>
+      <h2 id="summary">Summary</h2>
+      <p>The agent-memory field has converged on one idea: memory should be <em>active</em> — it should reflect on experience, distill skills, prevent repeated mistakes, and get better over time. The two strongest category rivals make memory active by letting it <strong>mutate itself</strong>: caura-memclaw runs an autonomous nightly &quot;Crystallizer&quot; over a mutable store; Letta (formerly MemGPT) gives the model self-editing memory blocks under last-write-wins concurrency. Both ship working active-learning loops. Both, by construction, give up the ability to answer &quot;what changed, why, on whose evidence, and can we take it back?&quot;</p>
+      <p>Zaxy&#x27;s thesis — <strong>Governed Active Memory</strong> — is the inverse:</p>
+      <blockquote>Other systems make memory active by letting it mutate itself. Zaxy makes memory active while keeping every change a <strong>gated, replayable, cited event</strong>.</blockquote>
+      <p>This is not a slogan retrofitted onto a vector database. Zaxy&#x27;s substrate is an append-only, hash-chained Eventloom log; the entire memory state is a pure <em>replay function</em> of that log. Every learning step — a reinforcement, a generated rule, a consolidation, a cross-agent promotion, a forget — is a sealed event with a citation and a hash-chain position. The 2026 governance literature now argues this is mandatory rather than optional. This paper states the category, maps the three claims to shipped code and event types, walks the demo that no mutable-store or last-write-wins system can reproduce, and draws a deliberately conservative line between what is proven today and what is not yet independently validated.</p>
+      <h2 id="the-category-and-where-the-rivals-sit">The category, and where the rivals sit</h2>
+      <p>The competitive teardown in <a href="https://github.com/syndicalt/zaxy/blob/master/ZAXY-3.md">ZAXY-3.md</a> §3 is the source of truth; the factual positions are summarized here.</p>
+      <p><strong>caura-memclaw (caura-ai)</strong> — the direct category rival. &quot;Fleet memory for AI agents — governed, shared, self-improving.&quot; Architecture: a <em>mutable</em> PostgreSQL + pgvector + Redis store with an async event bus — <strong>not</strong> event-sourced. Its active-learning loop (the &quot;Karpathy Loop&quot;) has agents report success/fail/partial outcomes; winners are reinforced and <strong>failures auto-generate preventive <code>rule</code> memories</strong>. A nightly <strong>Crystallizer</strong> LLM-merges near-duplicates and retires stale data autonomously, <em>not</em> review-gated. memclaw added a tamper-evident hash-chained <strong>audit log</strong> in v2.17.0 — but the hash-chaining is on the audit log only; the memory store itself remains mutable. Its proof points are <strong>[vendor-claimed]</strong> (eToro: 300+ agents, 26.5k memories, 1,372 shared skills, 23 ms p50) and <strong>[self-reported]</strong> (LoCoMo 77.6%, LongMemEval 72.5%, 96–98% token savings). These are memclaw&#x27;s figures on memclaw&#x27;s harness; they are not Zaxy results and are reproduced here only to characterize the rival.</p>
+      <p><strong>Letta (letta-ai, formerly MemGPT)</strong> — the category&#x27;s research engine. An OS metaphor (MemGPT, arXiv <a href="https://arxiv.org/abs/2310.08560">2310.08560</a>) with core in-context <strong>memory blocks</strong>, recall, and archival tiers, plus <strong>self-editing memory</strong> (insert/replace/rethink tools). Its active loop is <strong>sleep-time agents</strong>: a background agent shares the primary&#x27;s memory blocks and asynchronously rewrites them into &quot;learned context&quot; (<em>Sleep-time Compute</em>, Lin et al. 2025, arXiv <a href="https://arxiv.org/abs/2504.13171">2504.13171</a>; the paper reports <strong>[vendor/ self-reported]</strong> ~5× less test-time compute). Edits are largely autonomous; concurrency is <strong>last-write-wins</strong>; there is no tamper-evident log and no first-class citations or grounded checkout.</p>
+      <p>Both rivals are <strong>ahead on the active axis</strong> (a shipped loop plus background reflection in production) and <strong>behind on provenance/governance-by-construction</strong> (mutable stores, autonomous overwrite, last-write-wins). Zaxy is the inverse, and Zaxy 3 closes the active gap <em>without</em> surrendering the substrate that makes the provenance claims true. The category Zaxy defines and intends to own is <strong>Governed Active Memory</strong>: active learning where every mutation is a gated, replayable, cited event.</p>
+      <h2 id="the-three-claims-mapped-to-shipped-code">The three claims, mapped to shipped code</h2>
+      <p>Each claim below names the shipped module and event type that makes it true. The load-bearing invariant under all three (ZAXY-3 §9): the log is the source of truth, every derived artifact is <code>authority_status=non_authoritative</code> until it passes an explicit gate, nothing rewrites history, and everything cites an <code>eventloom://&lt;thread&gt;/events/&lt;seq&gt;#&lt;hash&gt;</code> source.</p>
+      <h3 id="claim-1-provable-evolution">Claim 1 — Provable evolution</h3>
+      <p><em>Every reinforcement, rule, consolidation, promotion, and forget is a cited, hash-chained event, and the whole memory state is a replay of the log.</em></p>
+      <ul>
+        <li><strong>Outcome → governed preventive rule (I1).</strong> <code>outcome_learning.py</code> builds the preventive-rule events; <code>MemoryFabric.generate_preventive_rule</code> routes a failure outcome through the evolution gate (op <code>rule_generate</code>) and, above threshold under the default tier, appends a <code>memory.rule.generated</code> event (otherwise it is held as <code>memory.rule.proposed</code>). This is the governed twin of memclaw&#x27;s auto-rule: same trigger, but the rule is non-authoritative, cited, and reversible.</li>
+        <li><strong>The single gate (I4).</strong> <code>evolution_policy.py</code> + <code>MemoryFabric.evaluate_evolution_gate</code> implement one configurable autonomy policy with three tiers — <code>propose_only</code>, <code>auto_with_rollback</code>, and <code>require_review</code> — selectable globally (<code>evolution_autonomy_default</code>, shipped default <code>auto_with_rollback</code>) and per-op (<code>evolution_op_autonomy</code>, e.g. <code>forget=propose_only</code>). Every gate decision records a non-authoritative, replayable <code>evolution.gate.evaluated</code> event. I1, I2, and I7 producers all route through this one gate.</li>
+        <li><strong>Fleet propagation (I7).</strong> <code>fleet.py</code> emits <code>fleet.skill.promoted</code>, <code>fleet.outcome.propagated</code>, and <code>fleet.rule.propagated</code> for cross-agent sharing; lifecycle is <code>fleet.promotion.reviewed</code>, <code>fleet.promotion.rolled_back</code>, and <code>fleet.memory.superseded</code> (additive supersession, never delete/overwrite). &quot;Which agent taught the fleet this, from what evidence&quot; is a deterministic replay query, not a side log.</li>
+        <li><strong>Replay.</strong> Because the Eventloom log is append-only and hash-chained, <code>EventLog.verify()</code> validates the chain and the projection is a pure replay function; <code>memory_replay</code> (MCP) and <code>zaxy replay</code> / <code>zaxy memory log</code> / <code>zaxy memory diff</code> (CLI) reconstruct exactly how any state was reached.</li>
+      </ul>
+      <p>This is precisely the property the 2026 security literature now calls mandatory: long-term-memory security &quot;<em>cannot be retrofitted at retrieval or execution time alone, but must be anchored in storage-time provenance, versioning, and policy-aware retention from the outset</em>&quot; — Verifiable Memory Governance, Lin et al. 2026 (arXiv <a href="https://arxiv.org/abs/2604.16548">2604.16548</a>). Zaxy is that from the substrate up.</p>
+      <h3 id="claim-2-drift-resistant-consolidation">Claim 2 — Drift-resistant consolidation</h3>
+      <p><em>Compaction is additive, source-backed, and audited; the log is never rewritten by a summarize-and-overwrite step.</em></p>
+      <p>Competitors crystallize by LLM summarize-and-overwrite. SSGM (Lam et al. 2026, arXiv <a href="https://arxiv.org/abs/2603.11768">2603.11768</a>) names the failure mode: <strong>semantic drift — knowledge degrades through iterative summarization.</strong> Zaxy treats this warning as a hard constraint.</p>
+      <ul>
+        <li><strong>Additive, audited compaction.</strong> Consolidation produces cited, review-pending candidates that are always non-authoritative; <code>compaction.py</code>&#x27;s <code>audit_event_log</code> checks identity-recall and citation-coverage before any additive medoid/exemplar projection is built, and it never rewrites the log.</li>
+        <li><strong>Governed sleep-time crystallization (I2).</strong> <code>crystallization.py</code> is a config-gated (<code>crystallization_enabled</code>, off by default), operator/cron-fired</li>
+      </ul>
+      <p><strong>one-shot</strong> reflection pass — no always-on daemon and no MCP tool, so the MCP surface stays pull-only. Each pass <em>schedules existing primitives</em> (consolidation, procedure mining, the metacognition monitor, the compaction audit, a read-only salience replay), routes every fresh candidate through the I4 gate, and appends one <code>crystallization.run.completed</code> summary event citing the candidate ids it produced. &quot;Auto-apply&quot; means an <em>accepted review</em> that is still non-authoritative and reversible within the rollback window — never a promotion to authority, and never a destructive overwrite. Details: <a href="../crystallization.html">crystallization.md</a>, <a href="../consolidation.html">consolidation.md</a>.</p>
+      <ul>
+        <li><strong>Long-horizon two-tier assembly (I3).</strong> For never-ending threads, <a href="../consolidation.html">consolidation.md</a> describes an explicit episodic (recent) vs consolidated (remote) checkout (<code>long_horizon_enabled</code>, <code>long_horizon_recent_window</code>): older history is represented by its <em>cited</em> consolidation candidates, never by raw re-summarization, and the consolidated tier stays cited back to source events.</li>
+      </ul>
+      <h3 id="claim-3-reversible-and-verified-forgetting">Claim 3 — Reversible and verified forgetting</h3>
+      <p><em>Forgetting is reversible attenuation by default; hard deletion is governed cryptographic erasure that leaves the hash chain verifiable.</em></p>
+      <p>VMG (2604.16548) requires storage-time provenance, versioning, <strong>rollbackability, and verified-forgetting</strong>. Zaxy ships all four.</p>
+      <ul>
+        <li><strong>Reversible attenuation (default).</strong> Salience decay (half-life 30 days, clamped at ≥ 0.01) lets a memory fade from default ranking while staying one explicit query away, with a replayable record of why it faded. &quot;Forgotten&quot; never means &quot;gone.&quot;</li>
+        <li><strong>Edit → re-ingest and rollback (I5a).</strong> <code>editable.py</code> + <code>MemoryFabric.edit_memory</code> re-ingest a human edit as a cited <code>memory.corrected</code> event (the original is never mutated); <code>rollback_memory</code> reverses a prior evolution with a cited <code>memory.rolled_back</code> event that, on replay, undoes the cited evolution&#x27;s effect (a rolled-back consolidation acceptance reverts the candidate to its pre-acceptance status). Both route through the I4 <code>update</code> gate and leave <code>EventLog.verify().ok == True</code>. MCP: <code>memory_edit</code>, <code>memory_rollback</code>; CLI: <code>zaxy memory edit</code>, <code>zaxy memory rollback</code>. See <a href="../editability.html">editability.md</a>.</li>
+        <li><strong>Verified forgetting / crypto-erasure (I5b).</strong> Because a payload is sealed into the event hash, you cannot scrub plaintext without breaking <code>verify()</code>. So forgettable memories are encrypted at append time (an <code>append(..., forgettable=True)</code> seals the payload as a <code>__zaxy_cipher</code> ciphertext cell); the data-encryption key is wrapped under a key-encryption key stored only in an out-of-log erasure vault. <code>MemoryFabric.verified_forget</code> (event <code>memory.forgotten</code>, via <code>forgetting.py</code>, routed through the I4 <code>forget</code> gate) destroys the wrapped key and appends a cited tombstone. The on-disk ciphertext and its hash are untouched — <code>EventLog.verify()</code> stays green — while the plaintext is permanently unrecoverable and readers see a <code>[FORGOTTEN]</code> sentinel. MCP: <code>memory_forget</code>; CLI: <code>zaxy memory forget</code>.</li>
+      </ul>
+      <p><strong>Honest caveat (carried from <a href="../editability.html">editability.md</a>):</strong> the erasure crypto reuses Zaxy&#x27;s portable-bundle envelope, which is <strong>experimental and unaudited</strong> — do not rely on it for high-value-secret or compliance guarantees without an independent cryptographic review.</p>
+      <h2 id="the-demo-now-real">The demo (now real)</h2>
+      <p>The differentiation that survives a demo (ZAXY-3 §10) is a four-step sequence that exercises one Eventloom session end to end. Every step below maps to shipped code; none of it is possible on a mutable store (memclaw) or under last-write-wins (Letta).</p>
+      <ol>
+        <li><strong>Evolve — generate a preventive rule from a failure.</strong> An agent reports a failure outcome on a recalled memory; <code>MemoryFabric.generate_preventive_rule</code> routes it through the I4 gate (<code>evolution.gate.evaluated</code>, op <code>rule_generate</code>) and appends a cited <code>memory.rule.generated</code> event (<code>outcome_learning.py</code>).</li>
+        <li><strong>Replay — reconstruct exactly how the rule came to be.</strong> The rule cites its source events; <code>memory_replay</code> / <code>zaxy replay</code> replays the hash-chained log to show the precise failure observations and the gate decision that produced it, and <code>EventLog.verify()</code> confirms the chain is intact.</li>
+        <li><strong>Roll it back — reverse the evolution.</strong> <code>MemoryFabric.rollback_memory</code> appends a cited <code>memory.rolled_back</code> event (<code>editable.py</code>) that, on replay, undoes the rule&#x27;s effect — additively, without mutating the original rule event.</li>
+        <li><strong>Verified-forget — crypto-erase a payload while keeping <code>verify()</code> green.</strong> <code>MemoryFabric.verified_forget</code> destroys the wrapped key for a forgettable payload and appends a cited <code>memory.forgotten</code> tombstone (<code>forgetting.py</code>); the ciphertext and its hash are untouched, so the hash chain still verifies, yet the plaintext is gone for good.</li>
+      </ol>
+      <p>A mutable store cannot replay <em>how</em> a rule was formed because it overwrote the evidence; a last-write-wins store cannot guarantee a rollback or a verified erase leaves an intact, tamper-evident chain. Governed Active Memory can do all four because each step is just one more sealed, cited event.</p>
+      <h2 id="evidence-honest">Evidence (honest)</h2>
+      <p>Two committed artifacts back the claims. Both carry their caveats inline; neither is overstated.</p>
+      <h3 id="fleetbench-scaffold-governance-token-efficiency-transfer-proxy">FleetBench scaffold (governance, token efficiency, transfer proxy)</h3>
+      <p>Source: <code>reports/experimental/fleet-benchmark-scaffold/report.md</code> (and <code>report.json</code>), version <code>fleet-v1</code>, fingerprint <code>d4619d57…536cfa30</code> (scored fields only; latency excluded). Measured over real CoordinationBench runs at three scale points.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>worker_count</th>
+            <th>coordination_quality</th>
+            <th>governance_correctness</th>
+            <th>cross_agent_transfer (proxy)</th>
+            <th>token_efficiency</th>
+            <th>latency_ms</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>3</td>
+            <td>0.907407</td>
+            <td>1.0</td>
+            <td>1.0</td>
+            <td>0.535</td>
+            <td>19.967</td>
+          </tr>
+          <tr>
+            <td>5</td>
+            <td>0.907407</td>
+            <td>1.0</td>
+            <td>1.0</td>
+            <td>0.586667</td>
+            <td>9.146</td>
+          </tr>
+          <tr>
+            <td>8</td>
+            <td>0.907407</td>
+            <td>1.0</td>
+            <td>1.0</td>
+            <td>0.645714</td>
+            <td>10.32</td>
+          </tr>
+          <tr>
+            <td><strong>mean</strong></td>
+            <td>0.907407</td>
+            <td>1.0</td>
+            <td>1.0</td>
+            <td>0.589127</td>
+            <td>13.144</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>What this shows, with caveats:</p>
+      <ul>
+        <li><strong><code>governance_correctness = 1.0</code> and <code>coordination_quality ≈ 0.907</code></strong> are</li>
+      </ul>
+      <p><strong>REAL, exact-scored, deterministic</strong> aggregates of CoordinationBench signals (accepted parent state, stale-claim rejection, duplicate-consolidation rejection, non-authoritative-leakage prevention, evidence coverage). This is direct evidence for the governance-correctness claim <em>on the harness</em>.</p>
+      <ul>
+        <li><strong><code>token_efficiency</code> rises with worker count</strong> (0.535 → 0.587 → 0.646; mean 0.589) — the fraction of raw worker-log tokens <em>not</em> injected into the governed accepted-state brief (<code>1 - injected/returned</code>). It is REAL but computed from <code>_approx_tokens</code> estimates (<code>len // 4</code>), not tokenizer-exact counts.</li>
+        <li><strong><code>cross_agent_transfer = 1.0</code> is a SCAFFOLD within-mission PROXY</strong> (<code>scope = within_mission_proxy</code>): it scores worker→parent promotion <em>inside a single mission</em>, <strong>not</strong> fleet-wide cross-agent transfer. True fleet-wide transfer is realized by I7 and is not yet measured here.</li>
+        <li><strong><code>latency_ms</code> is REAL wall-clock and environment-dependent</strong>; it is excluded from the fingerprint and from determinism checks. Do not read it as a portable performance claim.</li>
+      </ul>
+      <h3 id="longmemeval-500-hash-report-plumbing-and-recall-parity">LongMemEval 500 hash report (plumbing and recall parity)</h3>
+      <p>Source: <a href="https://github.com/syndicalt/zaxy/blob/master/AGENTS.md">AGENTS.md</a> Metrics table. The full 500-question LongMemEval-compatible <strong>hash</strong> checkout: mean <strong>0.724</strong>, Answer@5 <strong>0.628</strong>, Recall@5 <strong>0.972</strong>, citation coverage <strong>1.000</strong>, p95 <strong>1472.11 ms</strong>, p99 <strong>2652.55 ms</strong>.</p>
+      <p>Caveats, stated plainly:</p>
+      <ul>
+        <li>This run uses the <strong><code>hash</code> embedding provider</strong>. A hash embedding is <em>not</em> a semantic embedding, so these numbers prove <strong>plumbing and recall parity</strong> — the retrieval/citation path returns the right events with full citation coverage (Recall@5 0.972, citation coverage 1.000) — they do <strong>not</strong> measure semantic retrieval quality. The lower mean/Answer@5 versus recall reflects synthesis-side behavior, not a retrieval failure.</li>
+        <li>It is a Zaxy <strong>same-harness checkout diagnostic</strong>, <strong>not</strong> an official LongMemEval end-to-end assistant score (the standing claim-boundary in <a href="../benchmarks.html">benchmarks.md</a>).</li>
+      </ul>
+      <h2 id="current-evidence-boundary">Current evidence boundary</h2>
+      <p>This is the section the honesty discipline exists for. Drawing the line clearly is part of the claim.</p>
+      <p><strong>Proven today (on committed artifacts):</strong></p>
+      <ul>
+        <li>Governance/provenance by construction: append-only hash-chained log, replayable state, non-authoritative-by-default artifacts, a single auditable evolution gate, reversible rollback, and verified forgetting that keeps <code>verify()</code> green — all shipped and event-typed.</li>
+        <li>Governance correctness and coordination quality on the FleetBench scaffold (<code>governance_correctness = 1.0</code>, <code>coordination_quality ≈ 0.907</code>, exact and deterministic).</li>
+        <li>Plumbing and recall parity on the LongMemEval hash harness (Recall@5 0.972, citation coverage 1.000), with monotone token-efficiency gains as worker count grows on the scaffold.</li>
+      </ul>
+      <p><strong>Not yet independently validated (do not claim):</strong></p>
+      <ul>
+        <li><strong>Semantic retrieval quality on a real embedding provider.</strong> The headline evidence above uses hash embeddings; semantic quality at scale is unproven here.</li>
+        <li><strong>Fleet-scale cross-agent transfer.</strong> The scaffold&#x27;s transfer number is a within-mission proxy; genuine fleet-wide propagation is implemented (I7) but not yet measured at fleet scale.</li>
+        <li><strong>Head-to-head comparisons with memclaw or Letta.</strong> Competitor figures in this paper are vendor- or self-reported on their own harnesses; Zaxy has not run a same-harness head-to-head, and CoordinationBench keeps competitor claims disclosure-only (<a href="../benchmarks.html">benchmarks.md</a>).</li>
+        <li><strong>Cryptographic assurance of verified forgetting.</strong> The erasure envelope is experimental and unaudited (see Claim 3).</li>
+      </ul>
+      <p>No number in this document is a substitute for any of the above. The category claim rests on the governance/provenance properties, which are proven; the performance and head-to-head claims are explicitly deferred.</p>
+      <h2 id="research-foundation">Research foundation</h2>
+      <p>The Zaxy 3 design borrows mechanism from neuroscience and the agent-memory literature, and the 2026 governance papers validate the substrate bet. The full mapping is in <a href="https://github.com/syndicalt/zaxy/blob/master/ZAXY-3.md">ZAXY-3.md</a> §5; the essentials follow with real links.</p>
+      <p><strong>Neuroscience → mechanism.</strong></p>
+      <ul>
+        <li>Complementary Learning Systems — McClelland, McNaughton &amp; O&#x27;Reilly 1995 (<a href="https://pubmed.ncbi.nlm.nih.gov/7624455/">PMC</a>); updated for AI in Kumaran, Hassabis &amp; McClelland 2016 (<a href="https://pubmed.ncbi.nlm.nih.gov/27315762/">TICS</a>). Fast episodic store + slow structured store trained by replay → the two-tier assembly (I3): Eventloom as the hippocampal episodic log, the consolidated projection as neocortical structure.</li>
+        <li>Systems consolidation — Frankland &amp; Bontempi 2005 (<a href="https://www.nature.com/articles/nrn1607">nrn1607</a>). Recent→remote reorganization → recent vs remote tiers and time-dependent governed promotion (I3, I7).</li>
+        <li>Hippocampal replay / sleep consolidation — Wilson &amp; McNaughton 1994 (<a href="https://www.science.org/doi/10.1126/science.8036517">Science</a>); Diekelmann &amp; Born 2010 (<a href="https://www.nature.com/articles/nrn2762">nrn2762</a>). Offline reactivation reorganizes memory → the background crystallization runner (I2).</li>
+        <li>Schema-based assimilation — Tse et al. 2007 (<a href="https://www.science.org/doi/10.1126/science.1135935">Science</a>). Fast-assimilate schema-consistent facts, gate novel/conflicting ones (I2/I4).</li>
+        <li>Synaptic tagging &amp; salience — Frey &amp; Morris 1997 (<a href="https://www.nature.com/articles/385533a0">Nature 385:533</a>). Salient/surprising events are preferentially stabilized → outcome/prediction-error-weighted reinforcement (I1).</li>
+        <li>Reconsolidation — Nader, Schafe &amp; LeDoux 2000 (<a href="https://www.nature.com/articles/35021052">Nature</a>). Retrieval makes a memory labile and prediction-error-gated for update → the basis for governed update-on-recall (I4) and outcome-gated learning (I1).</li>
+        <li>Adaptive forgetting — Richards &amp; Frankland 2017, <em>The Persistence and Transience of Memory</em>, Neuron (https://www.cell.com/neuron/fulltext/S0896-6273(17)30365-3). Forgetting is regulated and adaptive → decay-aware retrieval + reversible attenuation (Claim 3).</li>
+      </ul>
+      <p><strong>Agent-memory systems → what to match/beat.</strong></p>
+      <ul>
+        <li>MemGPT (<a href="https://arxiv.org/abs/2310.08560">2310.08560</a>) → tiered/paged long-horizon context (I3).</li>
+        <li>Generative Agents — Park et al. 2023 (<a href="https://arxiv.org/abs/2304.03442">2304.03442</a>) → reflection into higher-level memories that <strong>cite their source observations</strong>, a precedent for cited consolidation (I2, I5).</li>
+        <li>Reflexion — Shinn et al. 2023 (<a href="https://arxiv.org/abs/2303.11366">2303.11366</a>) → outcome feedback → verbal self-reflection (I1).</li>
+        <li>Voyager — Wang et al. 2023 (<a href="https://arxiv.org/abs/2305.16291">2305.16291</a>) → an ever-growing library of verified executable skills (I6, I1).</li>
+        <li>A-MEM — Xu et al. 2025 (<a href="https://arxiv.org/abs/2502.12110">2502.12110</a>) → &quot;memory evolution&quot; updates to linked notes (I4).</li>
+        <li>Mem0 — Chhikara et al. 2025 (<a href="https://arxiv.org/abs/2504.19413">2504.19413</a>) → extract-then-update with ADD/UPDATE/DELETE/NOOP ops (I3, governance vocabulary for I4).</li>
+        <li>HippoRAG — Gutiérrez et al. 2024 (<a href="https://arxiv.org/abs/2405.14831">2405.14831</a>) → Personalized PageRank over a KG (I3; Zaxy already ships a <code>graph_walk</code> lane).</li>
+        <li>MemoryBank — Zhong et al. 2023 (<a href="https://arxiv.org/abs/2305.10250">2305.10250</a>) → Ebbinghaus-curve decay/reinforce (I1/I4).</li>
+        <li>Larimar — Das et al. 2024 (<a href="https://arxiv.org/abs/2403.11901">2403.11901</a>) → one-shot edit + selective fact-forgetting (I5).</li>
+        <li>Self-RAG — Asai et al. 2023 (<a href="https://arxiv.org/abs/2310.11511">2310.11511</a>) → reflection tokens + per-segment citations (I5, I1).</li>
+        <li>Sleep-time Compute — Lin et al. 2025 (<a href="https://arxiv.org/abs/2504.13171">2504.13171</a>) → background pre-computation of learned context (I2).</li>
+        <li>Surveys/vocabulary: Zhang et al. 2024 (<a href="https://arxiv.org/abs/2404.13501">2404.13501</a>); Du et al. 2025 (<a href="https://arxiv.org/abs/2505.00675">2505.00675</a>), whose six atomic ops (Consolidation, Updating, Indexing, Forgetting, Retrieval, Condensation) Zaxy adopts as its governance vocabulary; Shi et al. 2024 (<a href="https://arxiv.org/abs/2404.16789">2404.16789</a>).</li>
+      </ul>
+      <p><strong>2026 governance → why the substrate bet is right.</strong></p>
+      <ul>
+        <li>SSGM — Lam et al. 2026 (<a href="https://arxiv.org/abs/2603.11768">2603.11768</a>): names semantic drift from iterative summarization; validates Claim 2.</li>
+        <li>Verifiable Memory Governance — Lin et al. 2026 (<a href="https://arxiv.org/abs/2604.16548">2604.16548</a>): storage-time provenance, versioning, rollbackability, verified-forgetting; validates Claims 1 and 3.</li>
+        <li>Provenance / evidence-tracing — Wang et al. 2026 (<a href="https://arxiv.org/abs/2606.04990">2606.04990</a>): every recalled/consolidated item should carry its evidence trail; validates the citation invariant.</li>
+      </ul>
+      <h2 id="reproducibility">Reproducibility</h2>
+      <p>Every number above is checkable from committed artifacts.</p>
+      <p><strong>FleetBench scaffold.</strong> Regenerate over real CoordinationBench cases with the shipped CLI:</p>
+      <pre><code class="language-bash">zaxy fleet-benchmark --output-dir reports/benchmarks/fleet-v1 \
+  --worker-counts 3,5,8 --missions 1</code></pre>
+      <p>The exact command that produced the committed scaffold artifact (<code>reports/experimental/fleet-benchmark-scaffold/report.md</code>) is:</p>
+      <pre><code class="language-bash">env PYTHONPATH=src EMBEDDING_ENABLED=true EMBEDDING_PROVIDER=hash EMBEDDING_DIMENSION=1536 \
+  python -c &#x27;from pathlib import Path; from zaxy_benchmarks.fleet_benchmark import run_fleet_benchmark; run_fleet_benchmark(Path(&quot;reports/experimental/fleet-benchmark-scaffold&quot;))&#x27;</code></pre>
+      <p>The scored fields are deterministic and fingerprinted; <code>latency_ms</code> is excluded because it is wall-clock and environment-dependent.</p>
+      <p><strong>LongMemEval 500.</strong> The hash-report metrics live in the <a href="https://github.com/syndicalt/zaxy/blob/master/AGENTS.md">AGENTS.md</a> Metrics table; the published headline checkout report and its claim boundary live in <a href="../benchmarks.html">benchmarks.md</a> (the headline 500 artifact under <code>reports/benchmarks/</code>). The benchmark page is the authority on which artifact is the current public claim.</p>
+      <h2 id="related-documentation">Related documentation</h2>
+      <ul>
+        <li>Plan and category source: <a href="https://github.com/syndicalt/zaxy/blob/master/ZAXY-3.md">ZAXY-3.md</a></li>
+        <li>Architecture: <a href="../architecture.html">architecture.md</a></li>
+        <li>Evolution gate, crystallization, consolidation: <a href="../crystallization.html">crystallization.md</a>, <a href="../consolidation.html">consolidation.md</a></li>
+        <li>Editability, rollback, verified forgetting: <a href="../editability.html">editability.md</a></li>
+        <li>Fleet memory plane: <a href="../agent-events.html">agent-events.md</a>, <a href="../mcp.html">mcp.md</a></li>
+        <li>Plugins: <a href="../plugins.html">plugins.md</a></li>
+        <li>Benchmarks and claim boundaries: <a href="../benchmarks.html">benchmarks.md</a></li>
+        <li>Project overview: <a href="../../README.html">README.md</a></li>
+      </ul>
+    </article>
+  </main>
+</body>
+</html>

@@ -389,4 +389,5 @@ and do not combine them with the headline 500 or Harvey LAB numbers.
   headline report and keep the previous headline under `reports/archive/`.
 
 Related docs: [testing.md](testing.md), [external-validation.md](external-validation.md),
+the [Governed Active Memory thesis](research/governed-active-memory.md),
 and [README.md](../README.md).
