@@ -150,6 +150,7 @@ _COMMAND_PANELS: tuple[tuple[str, tuple[str, ...]], ...] = (
         (
             "memory",
             "coordinate",
+            "fleet",
             "replay",
             "index-codebase",
             "refresh-context",
@@ -325,6 +326,9 @@ trace_app = typer.Typer(help="Export neutral trace correlations from Eventloom")
 experimental_app = typer.Typer(help="Run isolated experimental memory research commands")
 
 
+fleet_app = typer.Typer(help="Govern the fleet memory plane (cross-agent/cross-session propagation)")
+
+
 app.add_typer(memory_app, name="memory")
 
 
@@ -350,6 +354,9 @@ app.add_typer(trace_app, name="trace")
 
 
 app.add_typer(experimental_app, name="experimental")
+
+
+app.add_typer(fleet_app, name="fleet")
 
 
 app.add_typer(plugin_app, name="plugin")
@@ -1315,6 +1322,265 @@ def coordinate_detect_conflicts(
         typer.echo(json.dumps(payload, indent=2, sort_keys=True))
         return
     typer.echo(f"Recorded {len(results)} conflict event(s)")
+
+
+def _fleet_manager(eventloom_path: Path) -> Any:
+    from zaxy.config import Settings
+    from zaxy.coordination_semantic import build_semantic_conflict_detector
+    from zaxy.fleet import FleetManager
+
+    settings = Settings()
+    return FleetManager(
+        eventloom_path=eventloom_path,
+        settings=settings,
+        semantic_conflict_detector=build_semantic_conflict_detector(settings),
+    )
+
+
+def _fleet_source_events(source_event: list[str] | None) -> list[dict[str, object]]:
+    if not source_event:
+        raise typer.BadParameter("at least one --source-event SEQ:HASH is required")
+    return [_parse_source_event(value) for value in source_event]
+
+
+def _emit_fleet_promotion(result: Any, json_output: bool) -> None:
+    if json_output:
+        typer.echo(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+    elif result.rejected:
+        typer.echo(f"Promotion rejected: {result.reason}")
+    else:
+        typer.echo(
+            f"Promotion {result.promotion_id} recorded "
+            f"(review_status={result.review_status}, auto_applied={result.auto_applied})"
+        )
+    if result.rejected:
+        raise typer.Exit(code=1)
+
+
+@fleet_app.command("create")
+def fleet_create(
+    fleet_id: str = typer.Argument(..., help="Fleet identifier"),
+    summary: str = typer.Option(..., "--summary", help="Human summary of the fleet"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    actor: str = typer.Option("coordinator", help="Actor recording the event"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Create a governed fleet thread."""
+    result = _fleet_manager(eventloom_path).create_fleet(fleet_id, summary=summary, actor=actor)
+    if json_output:
+        typer.echo(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+    else:
+        typer.echo(f"Fleet {result.fleet_id} created")
+
+
+@fleet_app.command("enroll")
+def fleet_enroll(
+    fleet_id: str = typer.Argument(..., help="Fleet identifier"),
+    agent: str = typer.Option(..., "--agent", help="Agent identifier to enroll"),
+    trust_tier: str | None = typer.Option(None, "--trust-tier", help="Trust tier (default: configured fleet_default_trust_tier)"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    actor: str = typer.Option("coordinator", help="Actor recording the event"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Enroll an agent into a fleet (first enrollee of a steward-less fleet becomes steward)."""
+    from zaxy.config import Settings
+    from zaxy.fleet import validate_trust_tier
+
+    tier = validate_trust_tier(trust_tier or Settings().fleet_default_trust_tier)
+    result = _fleet_manager(eventloom_path).enroll_agent(fleet_id, agent, actor=actor, trust_tier=tier)
+    if json_output:
+        typer.echo(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+    else:
+        suffix = " (first-steward bootstrap)" if result.bootstrap_steward else ""
+        typer.echo(f"Agent {result.agent_id} enrolled as {result.trust_tier}{suffix}")
+
+
+@fleet_app.command("assign-trust")
+def fleet_assign_trust(
+    fleet_id: str = typer.Argument(..., help="Fleet identifier"),
+    agent: str = typer.Option(..., "--agent", help="Agent identifier"),
+    trust_tier: str = typer.Option(..., "--trust-tier", help="New trust tier"),
+    actor: str = typer.Option(..., "--actor", help="Steward actor authorizing the assignment"),
+    rationale: str | None = typer.Option(None, "--rationale", help="Reason for the assignment"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Assign a trust tier to an enrolled agent (steward authority)."""
+    result = _fleet_manager(eventloom_path).assign_trust(
+        fleet_id, agent, trust_tier=trust_tier, actor=actor, rationale=rationale
+    )
+    if json_output:
+        typer.echo(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+    else:
+        typer.echo(f"Agent {result.agent_id} assigned trust tier {result.trust_tier}")
+
+
+@fleet_app.command("promote-skill")
+def fleet_promote_skill(
+    fleet_id: str = typer.Argument(..., help="Fleet identifier"),
+    skill_id: str = typer.Option(..., "--skill-id", help="Skill identifier"),
+    skill_version: str = typer.Option(..., "--skill-version", help="Skill version"),
+    origin_session: str = typer.Option(..., "--origin-session", help="Originating session/thread"),
+    source_event: list[str] | None = typer.Option(None, "--source-event", help="Cited source event SEQ:HASH (repeatable)"),  # noqa: B008
+    confidence: float = typer.Option(..., "--confidence", help="Promotion confidence in [0,1]"),
+    actor: str = typer.Option(..., "--actor", help="Proposing actor (must be an enrolled agent)"),
+    origin_actor: str | None = typer.Option(None, "--origin-actor", help="Agent that originally learned the skill"),
+    visibility_scope: str = typer.Option("fleet", "--visibility-scope", help="Target scope: fleet or global"),
+    keystone: bool = typer.Option(False, "--keystone", help="Mark as a fleet keystone"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Propose a skill promotion to fleet scope through the I4 gate."""
+    result = _fleet_manager(eventloom_path).promote_skill(
+        fleet_id,
+        skill_id=skill_id,
+        skill_version=skill_version,
+        origin_session=origin_session,
+        source_events=_fleet_source_events(source_event),
+        confidence=confidence,
+        actor=actor,
+        origin_actor=origin_actor,
+        visibility_scope=visibility_scope,
+        keystone=keystone,
+    )
+    _emit_fleet_promotion(result, json_output)
+
+
+@fleet_app.command("promote-outcome")
+def fleet_promote_outcome(
+    fleet_id: str = typer.Argument(..., help="Fleet identifier"),
+    outcome: str = typer.Option(..., "--outcome", help="Outcome: success, failure, or partial"),
+    summary: str = typer.Option(..., "--summary", help="Outcome summary"),
+    origin_session: str = typer.Option(..., "--origin-session", help="Originating session/thread"),
+    source_event: list[str] | None = typer.Option(None, "--source-event", help="Cited source event SEQ:HASH (repeatable)"),  # noqa: B008
+    confidence: float = typer.Option(..., "--confidence", help="Promotion confidence in [0,1]"),
+    actor: str = typer.Option(..., "--actor", help="Proposing actor (must be an enrolled agent)"),
+    origin_actor: str | None = typer.Option(None, "--origin-actor", help="Agent that originally learned the outcome"),
+    claim_key: str | None = typer.Option(None, "--claim-key", help="Claim key for conflict detection"),
+    visibility_scope: str = typer.Option("fleet", "--visibility-scope", help="Target scope: fleet or global"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Propose an outcome propagation to fleet scope through the I4 gate."""
+    result = _fleet_manager(eventloom_path).propagate_outcome(
+        fleet_id,
+        outcome=outcome,
+        summary=summary,
+        origin_session=origin_session,
+        source_events=_fleet_source_events(source_event),
+        confidence=confidence,
+        actor=actor,
+        origin_actor=origin_actor,
+        claim_key=claim_key,
+        visibility_scope=visibility_scope,
+    )
+    _emit_fleet_promotion(result, json_output)
+
+
+@fleet_app.command("promote-rule")
+def fleet_promote_rule(
+    fleet_id: str = typer.Argument(..., help="Fleet identifier"),
+    rule: str = typer.Option(..., "--rule", help="Preventive rule text"),
+    trigger: str = typer.Option(..., "--trigger", help="Trigger condition for the rule"),
+    origin_session: str = typer.Option(..., "--origin-session", help="Originating session/thread"),
+    source_event: list[str] | None = typer.Option(None, "--source-event", help="Cited source event SEQ:HASH (repeatable)"),  # noqa: B008
+    confidence: float = typer.Option(..., "--confidence", help="Promotion confidence in [0,1]"),
+    actor: str = typer.Option(..., "--actor", help="Proposing actor (must be an enrolled agent)"),
+    origin_actor: str | None = typer.Option(None, "--origin-actor", help="Agent that originally learned the rule"),
+    visibility_scope: str = typer.Option("fleet", "--visibility-scope", help="Target scope: fleet or global"),
+    keystone: bool = typer.Option(False, "--keystone", help="Mark as a fleet keystone"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Propose a preventive-rule propagation to fleet scope through the I4 gate."""
+    result = _fleet_manager(eventloom_path).propagate_rule(
+        fleet_id,
+        rule=rule,
+        trigger=trigger,
+        origin_session=origin_session,
+        source_events=_fleet_source_events(source_event),
+        confidence=confidence,
+        actor=actor,
+        origin_actor=origin_actor,
+        visibility_scope=visibility_scope,
+        keystone=keystone,
+    )
+    _emit_fleet_promotion(result, json_output)
+
+
+@fleet_app.command("review")
+def fleet_review(
+    fleet_id: str = typer.Argument(..., help="Fleet identifier"),
+    promotion: str = typer.Option(..., "--promotion", help="Promotion id to review"),
+    decision: str = typer.Option(..., "--decision", help="accepted, rejected, or deferred"),
+    actor: str = typer.Option(..., "--actor", help="Steward actor recording the review"),
+    rationale: str | None = typer.Option(None, "--rationale", help="Review rationale"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Steward review of a held promotion (accepted activates a pending memory)."""
+    result = _fleet_manager(eventloom_path).review_promotion(
+        fleet_id, promotion, decision=decision, actor=actor, rationale=rationale
+    )
+    if json_output:
+        typer.echo(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+    else:
+        typer.echo(f"Promotion {result.promotion_id} reviewed: {decision}")
+
+
+@fleet_app.command("rollback")
+def fleet_rollback(
+    fleet_id: str = typer.Argument(..., help="Fleet identifier"),
+    promotion: str = typer.Option(..., "--promotion", help="Promotion id to roll back"),
+    reason: str = typer.Option(..., "--reason", help="Reason for the rollback"),
+    actor: str = typer.Option(..., "--actor", help="Actor recording the rollback"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Reversibly un-share a promotion (lowers effective scope additively)."""
+    result = _fleet_manager(eventloom_path).rollback_promotion(
+        fleet_id, promotion, reason=reason, actor=actor
+    )
+    if json_output:
+        typer.echo(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+    else:
+        typer.echo(f"Promotion {result.promotion_id} rolled back")
+
+
+@fleet_app.command("status")
+def fleet_status(
+    fleet_id: str = typer.Argument(..., help="Fleet identifier"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Print a governed fleet brief (active promotions, enrolled agents, trust tiers)."""
+    brief = _fleet_manager(eventloom_path).fleet_brief(fleet_id)
+    if json_output:
+        typer.echo(json.dumps(brief.to_dict(), indent=2, sort_keys=True))
+        return
+    typer.echo(f"Fleet {brief.fleet_id}: {brief.summary or '-'}")
+    typer.echo(f"Agents: {len(brief.agents)}")
+    typer.echo(f"Active promotions: {len(brief.active_promotions)}")
+    typer.echo(f"Pending promotions: {len(brief.pending_promotions)}")
+
+
+@fleet_app.command("audit")
+def fleet_audit(
+    fleet_id: str = typer.Argument(..., help="Fleet identifier"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Print full provenance for every fleet memory (replay-only)."""
+    report = _fleet_manager(eventloom_path).fleet_audit(fleet_id)
+    if json_output:
+        typer.echo(json.dumps(report.to_dict(), indent=2, sort_keys=True))
+        return
+    typer.echo(f"Fleet {report.fleet_id}: {len(report.records)} memory record(s)")
+    for record in report.records:
+        typer.echo(
+            f"- {record.promotion_id} [{record.review_status}] {record.kind} "
+            f"by {record.origin_actor} from {len(record.source_events)} source event(s)"
+        )
 
 
 async def _project_packet_result_to_graph(

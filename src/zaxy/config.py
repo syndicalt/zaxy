@@ -177,6 +177,20 @@ class Settings(BaseSettings):
             "(operator/cron-triggered; off by default)"
         ),
     )
+    fleet_enabled: bool = Field(
+        default=False,
+        description=(
+            "Enable the governed fleet memory plane (cross-agent/cross-session "
+            "propagation, opt-in, off by default)"
+        ),
+    )
+    fleet_default_trust_tier: str = Field(
+        default="member",
+        description=(
+            "Default trust tier for newly enrolled fleet agents: untrusted, "
+            "member, trusted, or steward (validated against TRUST_TIERS at use site)"
+        ),
+    )
 
     # ------------------------------------------------------------------
     # Pathlight
