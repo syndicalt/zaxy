@@ -27,7 +27,7 @@ const toc = headings.filter((h) => h.depth === 2 || h.depth === 3);
     crossorigin="anonymous"
   />
 
-  <div class="doc wrap">
+  <div class="doc">
     <aside class="doc__side" aria-label="Docs navigation">
       <details class="doc__sidewrap" open>
         <summary class="doc__sidetoggle">Documentation</summary>
@@ -87,6 +87,7 @@ const toc = headings.filter((h) => h.depth === 2 || h.depth === 3);
     padding-top: clamp(28px, 4vw, 48px);
     padding-bottom: clamp(48px, 8vw, 96px);
     align-items: start;
+    padding-inline: var(--gutter);
   }
   .doc__side {
     position: sticky;
@@ -204,7 +205,7 @@ const toc = headings.filter((h) => h.depth === 2 || h.depth === 3);
 <style is:global>
   /* ---- rendered markdown (.prose) ---- */
   .prose {
-    max-width: 76ch;
+    max-width: none;
     font-size: 1rem;
     line-height: 1.72;
     color: var(--text);
