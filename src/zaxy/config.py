@@ -170,6 +170,13 @@ class Settings(BaseSettings):
             "(e.g. 'forget=propose_only') to tighten guardrails for specific ops"
         ),
     )
+    crystallization_enabled: bool = Field(
+        default=False,
+        description=(
+            "Enable the governed sleep-time crystallization runner "
+            "(operator/cron-triggered; off by default)"
+        ),
+    )
 
     # ------------------------------------------------------------------
     # Pathlight
