@@ -49,7 +49,7 @@ from zaxy.procedure_mining import mine_and_propose
 from zaxy.salience import SalienceLedger
 from zaxy.security import validate_session_id
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from zaxy.core.fabric import MemoryFabric
 
 #: Event type for the per-pass audit/summary record.

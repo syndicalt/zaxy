@@ -25,7 +25,7 @@ from zaxy.lifecycle import (
     build_file_edit_applied_event,
     build_tool_call_completed_event,
 )
-from zaxy.metacognition import build_conflict_cluster_event
+from zaxy.metacognition import build_conflict_cluster_event, build_known_unknown_event
 from zaxy.salience import build_reinforcement_event
 
 # A recurring successful tool sequence; nine supporting sessions push the mined
@@ -406,3 +406,100 @@ def test_cli_crystallize_disabled_by_default(tmp_path: Path, monkeypatch: pytest
     result = CliRunner().invoke(app, ["crystallize", "--json"])
     assert result.exit_code == 1
     assert "disabled" in result.output.lower()
+
+
+@pytest.mark.asyncio
+async def test_metacognition_monitor_fires_reverify_for_open_known_unknown(
+    tmp_path: Path,
+) -> None:
+    fabric = await _build_fabric(tmp_path)
+    try:
+        eventlog = fabric.session_manager.get("crystal").eventlog
+        source = _append_spec(
+            eventlog,
+            build_tool_call_completed_event(
+                tool_name="memory_query", status="succeeded", session_id="crystal"
+            ),
+            thread="crystal",
+        )
+        unknown = build_known_unknown_event(
+            actor="zaxy",
+            session_id="crystal",
+            claim_key="deploy.window.policy",
+            question="What is the production token budget?",
+            reason="No cited source establishes the production token budget.",
+            source_events=[{"seq": source.seq, "hash": source.hash}],
+            reverify_query="Re-verify the production token budget",
+        )
+        _append_spec(eventlog, unknown, thread="crystal")
+
+        report = await run_crystallization_pass(
+            fabric, session_id="crystal", consolidation=False, procedure_mining=False
+        )
+        reverify_after_first = len(_events_of_type(eventlog, "metacognition.reverify.requested"))
+        rerun = await run_crystallization_pass(
+            fabric, session_id="crystal", consolidation=False, procedure_mining=False
+        )
+        reverify_after_second = len(_events_of_type(eventlog, "metacognition.reverify.requested"))
+    finally:
+        await fabric.close()
+
+    assert report.reverify_requested == 1
+    assert reverify_after_first == 1
+    emitted = _events_of_type(eventlog, "metacognition.reverify.requested")[0]
+    assert emitted.payload["status"] == "open"
+    assert emitted.payload["authority_status"] == "non_authoritative"
+    assert emitted.payload["priority"] == "normal"
+    assert "production token budget" in emitted.payload["query"]
+    # Idempotent: the open known-unknown already carries an open reverify request.
+    assert rerun.reverify_requested == 0
+    assert reverify_after_second == 1
+
+
+def test_plan_reverify_and_citation_helper_edge_branches() -> None:
+    from zaxy.crystallization import (
+        _merge_citations,
+        _normalize_citations,
+        _optional_str,
+        _plan_reverify_requests,
+    )
+
+    cite = {"seq": 1, "hash": "a" * 64}
+    summary = {
+        "conflict_clusters": [
+            # claim_key=None forces dedup through the reverify-id path, not claim-key.
+            {
+                "claim_key": None,
+                "claim": "c",
+                "supporting_source_events": [cite],
+                "conflicting_source_events": [],
+                "cluster_id": "cl",
+            },
+            # No sources -> skipped.
+            {"claim_key": "k2", "supporting_source_events": [], "conflicting_source_events": []},
+        ],
+        "open_unknowns": [
+            {"claim_key": None, "question": "q", "source_events": [cite], "unknown_id": "uk"},
+            # No sources -> skipped.
+            {"claim_key": "u2", "question": "q2", "source_events": []},
+        ],
+    }
+    existing: set[str] = set()
+    open_keys: set[str] = set()
+    first = _plan_reverify_requests(
+        summary, actor="t", session_id="s", existing_reverify_ids=existing, open_reverify_claim_keys=open_keys
+    )
+    assert len(first) == 2  # the two cited gaps; the two source-less gaps are skipped
+    # Re-running with the now-populated id set exercises the reverify-id dedup skip.
+    second = _plan_reverify_requests(
+        summary, actor="t", session_id="s", existing_reverify_ids=existing, open_reverify_claim_keys=open_keys
+    )
+    assert second == []
+
+    assert _optional_str(None) is None
+    assert _optional_str("   ") is None
+    assert _optional_str(123) is None
+    assert _optional_str("x") == "x"
+    assert _normalize_citations("not-a-list") == []
+    assert _normalize_citations([{"seq": 0, "hash": "a" * 64}, {"hash": "a" * 64}, cite]) == [cite]
+    assert _merge_citations(None, [cite], [cite]) == [cite]
