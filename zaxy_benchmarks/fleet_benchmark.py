@@ -36,7 +36,6 @@ from pathlib import Path
 from typing import Any
 
 from zaxy.coordination import CoordinationBrief
-
 from zaxy_benchmarks.coordination_benchmark import (
     CoordinationBenchCase,
     CoordinationBenchCaseResult,
