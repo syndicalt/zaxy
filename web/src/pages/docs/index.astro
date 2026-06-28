@@ -1,0 +1,98 @@
+---
+import { getCollection } from "astro:content";
+import Doc from "../../layouts/Doc.astro";
+import { buildDocsNav } from "../../lib/nav";
+
+const docs = await getCollection("docs");
+const nav = buildDocsNav(docs.map((d) => ({ id: d.id, body: d.body })));
+
+const featured = [
+  {
+    href: "/docs/getting-started.html",
+    title: "Getting started",
+    body: "Install, point an MCP client at the embedded runtime, and run the memory loop.",
+  },
+  {
+    href: "/docs/architecture.html",
+    title: "Architecture",
+    body: "Append-only Eventloom → governed projection → cited Memory Checkout.",
+  },
+  {
+    href: "/docs/mcp.html",
+    title: "MCP tools",
+    body: "The model-facing surface: checkout, append, ingest, feedback, fleet.",
+  },
+  {
+    href: "/docs/benchmarks.html",
+    title: "Benchmarks",
+    body: "FleetBench + LongMemEval methodology, with the evidence boundary stated.",
+  },
+];
+---
+
+<Doc title="Documentation" nav={nav} headings={[]} slug="__index">
+  <h1>Documentation</h1>
+  <p>
+    Zaxy is an event-sourced memory runtime for agent fleets. The append-only
+    log is the source of truth; everything else is a replayable projection.
+    Start below, or browse the full set in the sidebar.
+  </p>
+
+  <div class="cards not-prose">
+    {
+      featured.map((c) => (
+        <a class="card" href={c.href}>
+          <span class="card__t">{c.title}</span>
+          <span class="card__b">{c.body}</span>
+          <span class="card__a mono">read →</span>
+        </a>
+      ))
+    }
+  </div>
+</Doc>
+
+<style>
+  .cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin: 1.6em 0;
+  }
+  .card {
+    background: var(--ink);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    border-bottom: 0 !important;
+    transition: background 0.15s ease;
+  }
+  .card:hover {
+    background: var(--ink-2);
+  }
+  .card__t {
+    font-family: var(--serif);
+    font-size: 1.18rem;
+    color: var(--white);
+  }
+  .card__b {
+    font-size: 0.88rem;
+    color: var(--gray);
+    line-height: 1.45;
+  }
+  .card__a {
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    color: var(--teal);
+    margin-top: auto;
+  }
+  @media (max-width: 560px) {
+    .cards {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

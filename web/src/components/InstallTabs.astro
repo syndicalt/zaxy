@@ -1,0 +1,153 @@
+---
+// Install surfaces — uvx, pip, and an MCP client config. Each block carries a
+// copy affordance (wired by the shared [data-copy] handler).
+const tabs = [
+  {
+    id: "uvx",
+    label: "uvx",
+    copy: "uvx zaxy-memory@3.0.0 serve",
+    lines: [
+      { t: "# zero-install, pinned", c: "dim" },
+      { t: "uvx zaxy-memory@3.0.0 serve" },
+    ],
+  },
+  {
+    id: "pip",
+    label: "pip",
+    copy: "pip install -U zaxy-memory && zaxy init --preset local-claude",
+    lines: [
+      { t: "pip install -U zaxy-memory" },
+      { t: "zaxy init --preset local-claude", c: "dim" },
+    ],
+  },
+  {
+    id: "mcp",
+    label: "MCP config",
+    copy: '{ "mcpServers": { "zaxy": { "command": "uvx", "args": ["zaxy-memory@3.0.0", "serve"] } } }',
+    lines: [
+      { t: "{" },
+      { t: '  "mcpServers": {' },
+      { t: '    "zaxy": {' },
+      { t: '      "command": "uvx",' },
+      { t: '      "args": ["zaxy-memory@3.0.0", "serve"]' },
+      { t: "    }" },
+      { t: "  }" },
+      { t: "}" },
+    ],
+  },
+];
+---
+
+<div class="inst" data-inst>
+  <div class="inst__tabs" role="tablist" aria-label="Install methods">
+    {
+      tabs.map((t, i) => (
+        <button
+          class="inst__tab mono"
+          role="tab"
+          type="button"
+          id={`tab-${t.id}`}
+          aria-controls={`panel-${t.id}`}
+          aria-selected={i === 0 ? "true" : "false"}
+          data-tab={t.id}
+        >
+          {t.label}
+        </button>
+      ))
+    }
+  </div>
+  {
+    tabs.map((t, i) => (
+      <div
+        class="inst__panel"
+        role="tabpanel"
+        id={`panel-${t.id}`}
+        aria-labelledby={`tab-${t.id}`}
+        data-panel={t.id}
+        hidden={i !== 0}
+      >
+        <pre class="inst__code">{t.lines.map((l) => (
+            <span class={`ln${l.c ? " ln--" + l.c : ""}`}>{l.t + "\n"}</span>
+          ))}</pre>
+        <button class="copy inst__copy" type="button" data-copy={t.copy}>
+          COPY
+        </button>
+      </div>
+    ))
+  }
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>("[data-inst]").forEach((root) => {
+    const tabs = [...root.querySelectorAll<HTMLButtonElement>("[data-tab]")];
+    const panels = [
+      ...root.querySelectorAll<HTMLElement>(".inst__panel[data-panel]"),
+    ];
+    const select = (id: string) => {
+      tabs.forEach((t) =>
+        t.setAttribute(
+          "aria-selected",
+          t.dataset.tab === id ? "true" : "false",
+        ),
+      );
+      panels.forEach((p) => (p.hidden = p.dataset.panel !== id));
+    };
+    tabs.forEach((t) =>
+      t.addEventListener("click", () => select(t.dataset.tab!)),
+    );
+  });
+</script>
+
+<style>
+  .inst {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+    max-width: 640px;
+  }
+  .inst__tabs {
+    display: flex;
+    background: var(--ink-2);
+    border-bottom: 1px solid var(--line);
+  }
+  .inst__tab {
+    background: transparent;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    color: var(--gray);
+    font-size: 0.74rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 12px 18px;
+    cursor: pointer;
+  }
+  .inst__tab:hover {
+    color: var(--white);
+  }
+  .inst__tab[aria-selected="true"] {
+    color: var(--white);
+    border-bottom-color: var(--teal);
+  }
+  .inst__panel {
+    position: relative;
+    background: #0c141a;
+  }
+  .inst__code {
+    margin: 0;
+    padding: 18px 20px;
+    font-family: var(--mono);
+    font-size: 0.84rem;
+    line-height: 1.65;
+    color: var(--teal-lt);
+    overflow-x: auto;
+    white-space: pre;
+  }
+  .inst__code .ln--dim {
+    color: var(--faint);
+  }
+  .inst__copy {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+  }
+</style>

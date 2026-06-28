@@ -1,0 +1,266 @@
+---
+import Base from "../../layouts/Base.astro";
+import InstallTabs from "../../components/InstallTabs.astro";
+
+const steps = [
+  {
+    n: "01",
+    t: "Install & bootstrap",
+    b: "One command writes a local MCP config, an embedded store, and the onboarding profile — no external service.",
+    cmd: "zaxy init --preset local-claude",
+  },
+  {
+    n: "02",
+    t: "Point your agent at it",
+    b: "Add the server to any MCP client. The memory loop — checkout, capture, feedback — becomes the default for the session.",
+    cmd: null,
+  },
+  {
+    n: "03",
+    t: "Prove it works",
+    b: "Doctor checks Eventloom integrity, MCP defaults, capture coverage, and the latest cited checkout.",
+    cmd: "zaxy doctor",
+  },
+];
+
+const clients = [
+  { name: "Claude Code", cmd: "zaxy init --preset local-claude" },
+  { name: "Codex", cmd: "codex mcp add zaxy -- uvx zaxy-memory@3.0.0 serve" },
+  { name: "Cursor", cmd: "zaxy init --client cursor" },
+  { name: "VS Code", cmd: "zaxy init --client vscode" },
+];
+---
+
+<Base
+  title="Install — Zaxy 3"
+  description="Install Zaxy 3: zero-install via uvx or pip, MCP-native, local-first on an embedded store."
+>
+  <section class="section">
+    <div class="wrap inst-head">
+      <p class="kicker">INSTALL</p>
+      <h1>Install Zaxy.</h1>
+      <p class="lede">
+        Local-first and MCP-native. Runs in-process on an embedded store; point
+        any MCP client at it and the cited memory loop is on by default.
+      </p>
+    </div>
+
+    <div class="wrap inst-tabs-wrap">
+      <InstallTabs />
+      <p class="muted inst-foot">
+        Optional <code>Neo4j</code> / <code>pgGraph</code> /
+        <code>LatticeDB</code> backends via <code>PROJECTION_BACKEND</code>. Neo4j
+        remains the release default and quality-control backend.
+      </p>
+    </div>
+  </section>
+
+  <hr class="rule wrap-rule" />
+
+  <section class="section">
+    <div class="wrap">
+      <header class="sec-head">
+        <p class="kicker">FIRST&nbsp;RUN</p>
+        <h2>Three steps to a<br />governed memory loop.</h2>
+      </header>
+      <ol class="steps">
+        {
+          steps.map((s) => (
+            <li class="step">
+              <span class="step__n mono">{s.n}</span>
+              <div class="step__body">
+                <h3 class="step__t">{s.t}</h3>
+                <p class="step__b">{s.b}</p>
+                {s.cmd && (
+                  <div class="cmd">
+                    <span>
+                      <span class="dollar">$</span>
+                      {s.cmd}
+                    </span>
+                    <button class="copy" type="button" data-copy={s.cmd}>
+                      COPY
+                    </button>
+                  </div>
+                )}
+              </div>
+            </li>
+          ))
+        }
+      </ol>
+    </div>
+  </section>
+
+  <hr class="rule wrap-rule" />
+
+  <section class="section">
+    <div class="wrap">
+      <header class="sec-head">
+        <p class="kicker">MCP&nbsp;CLIENTS</p>
+        <h2>Verified install targets.</h2>
+        <p class="sec-intro">
+          Project-local config write-and-merge is supported for each client
+          below; <code>zaxy doctor</code> confirms the install.
+        </p>
+      </header>
+      <div class="clients">
+        {
+          clients.map((c) => (
+            <div class="client">
+              <span class="client__name">{c.name}</span>
+              <code class="client__cmd">{c.cmd}</code>
+              <button class="copy client__copy" type="button" data-copy={c.cmd}>
+                COPY
+              </button>
+            </div>
+          ))
+        }
+      </div>
+      <p class="linkrow">
+        <a class="tlink" href="/docs/mcp-install-targets.html"
+          >Install-target matrix →</a
+        >
+        <a class="tlink" href="/docs/getting-started.html">Getting started →</a>
+      </p>
+    </div>
+  </section>
+</Base>
+
+<script>
+  document.querySelectorAll<HTMLButtonElement>("[data-copy]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(btn.getAttribute("data-copy") ?? "");
+        const prev = btn.textContent;
+        btn.textContent = "COPIED";
+        setTimeout(() => (btn.textContent = prev), 1400);
+      } catch {
+        /* no-op */
+      }
+    });
+  });
+</script>
+
+<style>
+  .inst-head {
+    max-width: 60ch;
+  }
+  .inst-head h1 {
+    margin: 0.4em 0 0.4em;
+  }
+  .inst-tabs-wrap {
+    margin-top: clamp(28px, 4vw, 44px);
+  }
+  .inst-foot {
+    margin-top: 16px;
+    font-size: 0.86rem;
+    max-width: 60ch;
+  }
+  code {
+    font-family: var(--mono);
+    font-size: 0.85em;
+    color: var(--teal-lt);
+  }
+  .wrap-rule {
+    max-width: var(--maxw);
+    margin-inline: auto;
+  }
+  .sec-head {
+    max-width: 60ch;
+    margin-bottom: clamp(24px, 4vw, 40px);
+  }
+  .sec-head h2 {
+    margin: 0.45em 0 0.5em;
+  }
+  .sec-intro {
+    color: var(--gray);
+    max-width: 54ch;
+    margin: 0;
+  }
+  .cmd {
+    max-width: 30em;
+    margin-top: 14px;
+  }
+
+  .steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .step {
+    background: var(--ink);
+    display: grid;
+    grid-template-columns: 56px 1fr;
+    gap: 18px;
+    padding: 24px 22px;
+  }
+  .step__n {
+    color: var(--teal);
+    font-size: 0.9rem;
+  }
+  .step__t {
+    font-size: 1.24rem;
+    margin: 0 0 0.4em;
+  }
+  .step__b {
+    color: var(--gray);
+    font-size: 0.94rem;
+    margin: 0;
+    max-width: 60ch;
+  }
+
+  .clients {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .client {
+    background: var(--ink);
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    position: relative;
+  }
+  .client__name {
+    font-family: var(--serif);
+    font-size: 1.08rem;
+    color: var(--white);
+  }
+  .client__cmd {
+    font-size: 0.78rem;
+    color: var(--teal-lt);
+    overflow-x: auto;
+    white-space: nowrap;
+    padding-right: 56px;
+  }
+  .client__copy {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+  }
+  .linkrow {
+    display: flex;
+    gap: 28px;
+    flex-wrap: wrap;
+    margin: 26px 0 0;
+  }
+  @media (max-width: 620px) {
+    .clients {
+      grid-template-columns: 1fr;
+    }
+    .step {
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+  }
+</style>

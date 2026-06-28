@@ -46,7 +46,6 @@ mypy src
 pytest
 zaxy doctor --beta-readiness
 scripts/release-check.sh --root .
-python scripts/build-site-docs.py --check
 scripts/validate-docs.sh --root .
 ```
 

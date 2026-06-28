@@ -1,0 +1,93 @@
+<svg width="1600" height="900" viewBox="0 0 1600 900" xmlns="http://www.w3.org/2000/svg" font-family="Inter, system-ui, sans-serif">
+  <defs>
+    <radialGradient id="vig" cx="62%" cy="40%" r="85%">
+      <stop offset="0%" stop-color="#162430"/><stop offset="62%" stop-color="#0b1014"/><stop offset="100%" stop-color="#05080a"/>
+    </radialGradient>
+    <radialGradient id="bloom" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#2eb7a4" stop-opacity="0.42"/><stop offset="55%" stop-color="#2eb7a4" stop-opacity="0.10"/><stop offset="100%" stop-color="#2eb7a4" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="spine" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#2eb7a4" stop-opacity="0.5"/><stop offset="45%" stop-color="#8fd9cd"/><stop offset="100%" stop-color="#2eb7a4" stop-opacity="0.8"/>
+    </linearGradient>
+    <pattern id="grid" width="92" height="92" patternUnits="userSpaceOnUse">
+      <path d="M92 0H0V92" fill="none" stroke="#dce6e2" stroke-opacity="0.04" stroke-width="1"/>
+    </pattern>
+    <filter id="soft" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="6"/></filter>
+    <filter id="spineglow" x="-30%" y="-60%" width="160%" height="220%"><feGaussianBlur stdDeviation="9"/></filter>
+    <marker id="garrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1 L9 5 L0 9 z" fill="#d9a441"/></marker>
+    <g id="zmark"><rect x="-19" y="-19" width="38" height="38" rx="9" fill="#f8faf7"/><path d="M-9,-7 H9 L-9,7 H10" fill="none" stroke="#0b1014" stroke-width="3.6" stroke-linejoin="round" stroke-linecap="round"/></g>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#vig)"/>
+  <rect width="1600" height="900" fill="url(#grid)"/>
+
+  <!-- faint provenance threads in the background -->
+  <g stroke="#2eb7a4" stroke-opacity="0.06" fill="none" stroke-width="1.5">
+    <path d="M620,720 C950,640 1180,700 1560,600"/>
+    <path d="M640,790 C980,720 1220,760 1560,690"/>
+    <path d="M660,180 C980,260 1220,210 1560,250"/>
+  </g>
+
+  <!-- bloom behind the chain -->
+  <ellipse cx="1130" cy="430" rx="520" ry="360" fill="url(#bloom)"/>
+
+  <!-- the hash-chained event spine -->
+  <path d="M690,560 C960,340 1190,560 1520,300" fill="none" stroke="#2eb7a4" stroke-opacity="0.5" stroke-width="11" filter="url(#spineglow)"/>
+  <path d="M690,560 C960,340 1190,560 1520,300" fill="none" stroke="url(#spine)" stroke-width="3"/>
+
+  <!-- citation threads -->
+  <g>
+    <line x1="801" y1="491" x2="801" y2="609" stroke="#2eb7a4" stroke-opacity="0.28" stroke-width="1.2" stroke-dasharray="2 6"/><circle cx="801" cy="609" r="3" fill="#2eb7a4" opacity="0.6"/>
+    <line x1="941" y1="454" x2="941" y2="583" stroke="#2eb7a4" stroke-opacity="0.28" stroke-width="1.2" stroke-dasharray="2 6"/><circle cx="941" cy="583" r="3" fill="#2eb7a4" opacity="0.6"/>
+    <line x1="1151" y1="441" x2="1151" y2="587" stroke="#2eb7a4" stroke-opacity="0.28" stroke-width="1.2" stroke-dasharray="2 6"/><circle cx="1151" cy="587" r="3" fill="#2eb7a4" opacity="0.6"/>
+    <line x1="1471" y1="336" x2="1471" y2="503" stroke="#2eb7a4" stroke-opacity="0.28" stroke-width="1.2" stroke-dasharray="2 6"/><circle cx="1471" cy="503" r="3" fill="#2eb7a4" opacity="0.6"/>
+  </g>
+
+  <!-- beads -->
+  <g>
+    <circle cx="730" cy="530" r="15" fill="#2eb7a4" opacity="0.18" filter="url(#soft)"/><circle cx="730" cy="530" r="5" fill="#0e1620" stroke="#2eb7a4" stroke-width="1.8"/>
+    <circle cx="801" cy="491" r="21" fill="#2eb7a4" opacity="0.18" filter="url(#soft)"/><circle cx="801" cy="491" r="7" fill="#8fd9cd" stroke="#2eb7a4" stroke-width="1.5"/>
+    <circle cx="872" cy="467" r="15" fill="#2eb7a4" opacity="0.18" filter="url(#soft)"/><circle cx="872" cy="467" r="5" fill="#0e1620" stroke="#2eb7a4" stroke-width="1.8"/>
+    <circle cx="941" cy="454" r="27" fill="#2eb7a4" opacity="0.18" filter="url(#soft)"/><circle cx="941" cy="454" r="9" fill="#8fd9cd" stroke="#2eb7a4" stroke-width="1.5"/>
+    <circle cx="1082" cy="445" r="18" fill="#2eb7a4" opacity="0.18" filter="url(#soft)"/><circle cx="1082" cy="445" r="6" fill="#0e1620" stroke="#2eb7a4" stroke-width="1.8"/>
+    <circle cx="1151" cy="441" r="24" fill="#2eb7a4" opacity="0.18" filter="url(#soft)"/><circle cx="1151" cy="441" r="8" fill="#8fd9cd" stroke="#2eb7a4" stroke-width="1.5"/>
+    <circle cx="1246" cy="429" r="15" fill="#2eb7a4" opacity="0.18" filter="url(#soft)"/><circle cx="1246" cy="429" r="5" fill="#0e1620" stroke="#2eb7a4" stroke-width="1.8"/>
+    <circle cx="1387" cy="384" r="18" fill="#2eb7a4" opacity="0.18" filter="url(#soft)"/><circle cx="1387" cy="384" r="6" fill="#0e1620" stroke="#2eb7a4" stroke-width="1.8"/>
+    <circle cx="1471" cy="336" r="21" fill="#2eb7a4" opacity="0.18" filter="url(#soft)"/><circle cx="1471" cy="336" r="7" fill="#8fd9cd" stroke="#2eb7a4" stroke-width="1.5"/>
+  </g>
+
+  <!-- governance gate (diamond) -->
+  <g transform="translate(1012,448)">
+    <rect x="-15" y="-15" width="30" height="30" rx="5" transform="rotate(45)" fill="#2eb7a4" opacity="0.22" filter="url(#soft)"/>
+    <rect x="-13" y="-13" width="26" height="26" rx="5" transform="rotate(45)" fill="#0e1620" stroke="#8fd9cd" stroke-width="2.4"/>
+    <path d="M-5,0 L-1,4 L6,-5" fill="none" stroke="#8fd9cd" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="1012" y="414" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="13" letter-spacing="1" fill="#8fd9cd">gate</text>
+
+  <!-- rollback arc -->
+  <path d="M1246,419 C1216,339 1181,346 1151,429" fill="none" stroke="#d9a441" stroke-width="2.2" stroke-opacity="0.9" marker-end="url(#garrow)"/>
+  <text x="1199" y="343" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12.5" fill="#d9a441">rollback</text>
+
+  <!-- forgotten (encrypted) crystal -->
+  <polygon points="1332.5,421.7 1315.2,431.7 1297.9,421.7 1297.9,401.7 1315.2,391.7 1332.5,401.7" fill="#0c1418" stroke="#54655f" stroke-width="2"/><rect x="1309" y="410" width="12" height="10" rx="2" fill="none" stroke="#7d8b86" stroke-width="1.6"/><path d="M1312,410 v-4 a3,3 0 0 1 6,0 v4" fill="none" stroke="#7d8b86" stroke-width="1.6"/>
+  <text x="1315" y="452" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12.5" fill="#66747a">forgotten</text>
+
+  <!-- LEFT: headline block -->
+  <text x="100" y="318" font-family="JetBrains Mono, monospace" font-size="22" letter-spacing="6" fill="#2eb7a4">RELEASE · v3.0.0</text>
+  <text x="92" y="470" font-family="Georgia, 'Times New Roman', serif" font-size="150" font-weight="700" fill="#f8faf7">Zaxy 3</text>
+  <text x="100" y="548" font-family="Georgia, 'Times New Roman', serif" font-size="46" font-weight="700" fill="#f8faf7">Active memory you can prove.</text>
+  <text x="100" y="596" font-family="Inter, system-ui, sans-serif" font-size="23" fill="#9fb0aa">Governed Active Memory — every change a gated,</text>
+  <text x="100" y="628" font-family="Inter, system-ui, sans-serif" font-size="23" fill="#9fb0aa">replayable, cited event.</text>
+  <g transform="translate(100,672)">
+    <rect x="0" y="0" width="270" height="46" rx="23" fill="none" stroke="#2eb7a4" stroke-width="2"/>
+    <circle cx="26" cy="23" r="6" fill="#2eb7a4"/>
+    <text x="46" y="30" font-family="JetBrains Mono, monospace" font-size="16" fill="#8fd9cd">uvx zaxy-memory@3.0.0</text>
+  </g>
+
+  <!-- footer brand -->
+  <g transform="translate(102,830)">
+    <use href="#zmark" transform="scale(0.8)"/>
+    <text x="32" y="7" font-family="Georgia, 'Times New Roman', serif" font-size="26" font-weight="700" fill="#f8faf7">Zaxy</text>
+    <text x="108" y="7" font-family="JetBrains Mono, monospace" font-size="14.5" fill="#66747a">event-sourced agent memory · MIT</text>
+  </g>
+</svg>

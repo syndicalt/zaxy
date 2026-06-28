@@ -1,0 +1,319 @@
+---
+// Scripted walkthrough over canned events (no runtime). Four steps replay a
+// real lifecycle; each is a hash-sealed, cited event. User-driven; the swap
+// uses a subtle fade that collapses under prefers-reduced-motion.
+type Line = { t: string; c?: "cmd" | "cite" | "ok" | "dim" };
+type Step = { n: string; key: string; head: string; lines: Line[]; cap: string };
+
+const steps: Step[] = [
+  {
+    n: "01",
+    key: "evolve",
+    head: "eventloom://default · seq 24",
+    cap: "An agent proposes a rule. The evolution gate reviews it — approval is itself a cited, hash-sealed event.",
+    lines: [
+      { t: "{" },
+      { t: '  "type": "memory.evolution.gated",' },
+      { t: '  "actor": "agent:planner",' },
+      { t: '  "payload": {' },
+      { t: '    "rule": "retry rate-limited calls w/ backoff",' },
+      { t: '    "confidence": 0.86,' },
+      { t: '    "gate": "approved"' },
+      { t: "  }," },
+      { t: '  "prev_hash": "9f06…", "hash": "51aa…",' },
+      { t: '  "citation": "eventloom://default/events/24#51aa"', c: "cite" },
+      { t: "}" },
+      { t: "" },
+      { t: "✓ chain verifies · sealed under eventloom.v1", c: "ok" },
+    ],
+  },
+  {
+    n: "02",
+    key: "replay",
+    head: "$ zaxy memory checkout",
+    cap: "Recall is a Memory Checkout: a budgeted, cited packet assembled from the log — never an uncited blob.",
+    lines: [
+      { t: '$ zaxy memory checkout "rate limit policy"', c: "cmd" },
+      { t: "→ 1 cited result", c: "dim" },
+      { t: "  rule: retry rate-limited calls w/ backoff" },
+      { t: "  confidence 0.86 · governed" },
+      { t: "  ↳ eventloom://default/events/24#51aa", c: "cite" },
+      { t: "  ↳ src/zaxy/fabric.py:120", c: "cite" },
+      { t: "" },
+      { t: "✓ every claim carries its source", c: "ok" },
+    ],
+  },
+  {
+    n: "03",
+    key: "rollback",
+    head: "eventloom://default · seq 26",
+    cap: "Reversing a change appends a new event. Nothing is deleted — the original stays auditable, the rollback replayable.",
+    lines: [
+      { t: "{" },
+      { t: '  "type": "memory.rollback",' },
+      { t: '  "actor": "human:reviewer",' },
+      { t: '  "target_seq": 25, "target_hash": "e0c2…",' },
+      { t: '  "reason": "regressed on eval",' },
+      { t: '  "citation": "eventloom://default/events/26#7b41"', c: "cite" },
+      { t: "}" },
+      { t: "" },
+      { t: "✓ evolution 25 intact · 26 supersedes it", c: "ok" },
+    ],
+  },
+  {
+    n: "04",
+    key: "forget",
+    head: "eventloom://default · seq 27",
+    cap: "Verified forgetting destroys the payload's encryption key. The event remains; the secret is gone for good.",
+    lines: [
+      { t: "{" },
+      { t: '  "type": "memory.forget",' },
+      { t: '  "actor": "human:reviewer",' },
+      { t: '  "target_seq": 22, "method": "key-destroyed",' },
+      { t: '  "citation": "eventloom://default/events/27#c2d9"', c: "cite" },
+      { t: "}" },
+      { t: "" },
+      { t: "✓ payload 22 unrecoverable · chain still verifies", c: "ok" },
+    ],
+  },
+];
+---
+
+<div class="demo" data-demo>
+  <nav class="demo__steps" aria-label="Proof walkthrough">
+    {
+      steps.map((s, i) => (
+        <button
+          class="demo__step"
+          type="button"
+          data-step={i}
+          aria-pressed={i === 0 ? "true" : "false"}
+        >
+          <span class="demo__n mono">{s.n}</span>
+          <span class="demo__key">{s.key}</span>
+        </button>
+      ))
+    }
+  </nav>
+
+  <div class="demo__stage">
+    {
+      steps.map((s, i) => (
+        <figure
+          class="demo__panel"
+          data-panel={i}
+          hidden={i !== 0}
+          aria-hidden={i !== 0 ? "true" : "false"}
+        >
+          <div class="term">
+            <div class="term__bar">
+              <span class="term__dot" aria-hidden="true" />
+              <span class="term__head mono">{s.head}</span>
+            </div>
+            <pre class="term__body">{s.lines.map((l) => (
+                <span class={`ln${l.c ? " ln--" + l.c : ""}`}>{l.t + "\n"}</span>
+              ))}</pre>
+          </div>
+          <figcaption class="demo__cap">{s.cap}</figcaption>
+        </figure>
+      ))
+    }
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>("[data-demo]").forEach((root) => {
+    const stepBtns = [
+      ...root.querySelectorAll<HTMLButtonElement>("[data-step]"),
+    ];
+    const panels = [...root.querySelectorAll<HTMLElement>("[data-panel]")];
+    let active = 0;
+
+    const show = (i: number) => {
+      active = (i + panels.length) % panels.length;
+      stepBtns.forEach((b, k) =>
+        b.setAttribute("aria-pressed", k === active ? "true" : "false"),
+      );
+      panels.forEach((p, k) => {
+        const on = k === active;
+        p.hidden = !on;
+        p.setAttribute("aria-hidden", on ? "false" : "true");
+        if (on) {
+          p.classList.remove("is-in");
+          // restart the subtle fade (no-op under reduced-motion via CSS)
+          void p.offsetWidth;
+          p.classList.add("is-in");
+        }
+      });
+    };
+
+    stepBtns.forEach((b, i) => b.addEventListener("click", () => show(i)));
+    root.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowRight") show(active + 1);
+      if (e.key === "ArrowLeft") show(active - 1);
+    });
+    show(0);
+  });
+</script>
+
+<style>
+  .demo {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 0;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .demo__steps {
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--line);
+    background: var(--ink-2);
+  }
+  .demo__step {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    text-align: left;
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    border-left: 2px solid transparent;
+    color: var(--gray);
+    padding: 16px 18px;
+    cursor: pointer;
+    font-family: var(--sans);
+    transition:
+      color 0.15s ease,
+      border-color 0.15s ease,
+      background 0.15s ease;
+  }
+  .demo__step:last-child {
+    border-bottom: 0;
+  }
+  .demo__step:hover {
+    color: var(--white);
+    background: var(--ink-raised);
+  }
+  .demo__step[aria-pressed="true"] {
+    color: var(--white);
+    border-left-color: var(--teal);
+    background: var(--ink-raised);
+  }
+  .demo__n {
+    font-size: 0.72rem;
+    color: var(--faint);
+  }
+  .demo__step[aria-pressed="true"] .demo__n {
+    color: var(--teal);
+  }
+  .demo__key {
+    font-family: var(--serif);
+    font-size: 1.06rem;
+    font-style: italic;
+  }
+  .demo__stage {
+    padding: 22px;
+    min-height: 320px;
+    display: flex;
+  }
+  .demo__panel {
+    margin: 0;
+    width: 100%;
+  }
+  .demo__panel.is-in .term,
+  .demo__panel.is-in .demo__cap {
+    animation: fade 0.32s ease both;
+  }
+  @keyframes fade {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .demo__panel.is-in .term,
+    .demo__panel.is-in .demo__cap {
+      animation: none;
+    }
+  }
+  .term {
+    background: #0c141a;
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius);
+  }
+  .term__bar {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--line-2);
+  }
+  .term__dot {
+    width: 8px;
+    height: 8px;
+    border: 1px solid var(--teal-dim);
+    border-radius: 50%;
+  }
+  .term__head {
+    font-size: 0.72rem;
+    color: var(--faint);
+  }
+  .term__body {
+    margin: 0;
+    padding: 16px 18px;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    line-height: 1.6;
+    color: var(--gray);
+    overflow-x: auto;
+    white-space: pre;
+  }
+  .ln--cmd {
+    color: var(--white);
+  }
+  .ln--cite {
+    color: var(--faint);
+  }
+  .ln--ok {
+    color: var(--teal);
+  }
+  .ln--dim {
+    color: var(--faint);
+  }
+  .demo__cap {
+    margin: 16px 2px 0;
+    font-size: 0.92rem;
+    line-height: 1.55;
+    color: var(--gray);
+    max-width: 60ch;
+  }
+  @media (max-width: 760px) {
+    .demo {
+      grid-template-columns: 1fr;
+    }
+    .demo__steps {
+      flex-direction: row;
+      border-right: 0;
+      border-bottom: 1px solid var(--line);
+      overflow-x: auto;
+    }
+    .demo__step {
+      border-bottom: 0;
+      border-left: 0;
+      border-top: 2px solid transparent;
+      flex-direction: column;
+      gap: 2px;
+      white-space: nowrap;
+    }
+    .demo__step[aria-pressed="true"] {
+      border-left-color: transparent;
+      border-top-color: var(--teal);
+    }
+  }
+</style>

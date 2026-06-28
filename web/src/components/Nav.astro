@@ -1,0 +1,118 @@
+---
+const links = [
+  { href: "/#system", label: "System" },
+  { href: "/#proof", label: "Proof" },
+  { href: "/#evidence", label: "Evidence" },
+  { href: "/docs.html", label: "Docs" },
+  { href: "/install.html", label: "Install" },
+];
+const path = Astro.url.pathname;
+const isCurrent = (href: string) => {
+  const base = href.split("#")[0].replace(/\/$/, "");
+  if (!base || base === "") return false;
+  return path === base || path.startsWith(base + "/") || path.startsWith(base + ".");
+};
+---
+
+<header class="nav">
+  <div class="wrap nav__row">
+    <a class="nav__brand" href="/" aria-label="Zaxy home">
+      <span class="nav__mark" aria-hidden="true">Z</span>
+      <span class="nav__word">Zaxy <span class="nav__v">3</span></span>
+    </a>
+    <nav class="nav__links" aria-label="Primary">
+      {
+        links.map((l) => (
+          <a
+            href={l.href}
+            class="nav__link"
+            aria-current={isCurrent(l.href) ? "page" : undefined}
+          >
+            {l.label}
+          </a>
+        ))
+      }
+      <a
+        class="nav__link nav__link--ext"
+        href="https://github.com/syndicalt/zaxy"
+        rel="noopener">GitHub ↗</a
+      >
+    </nav>
+  </div>
+</header>
+
+<style>
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: color-mix(in srgb, var(--ink) 86%, transparent);
+    backdrop-filter: blur(6px);
+    border-bottom: 1px solid var(--line);
+  }
+  .nav__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 64px;
+  }
+  .nav__brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6em;
+    color: var(--white);
+  }
+  .nav__mark {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border: 1px solid var(--teal);
+    color: var(--teal);
+    font-family: var(--serif);
+    font-size: 0.95rem;
+    border-radius: 2px;
+  }
+  .nav__word {
+    font-family: var(--serif);
+    font-size: 1.12rem;
+    letter-spacing: -0.01em;
+  }
+  .nav__v {
+    color: var(--teal);
+  }
+  .nav__links {
+    display: flex;
+    align-items: center;
+    gap: clamp(14px, 2vw, 28px);
+  }
+  .nav__link {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.06em;
+    color: var(--gray);
+    padding-block: 4px;
+    border-bottom: 1px solid transparent;
+  }
+  .nav__link:hover {
+    color: var(--white);
+  }
+  .nav__link[aria-current="page"] {
+    color: var(--white);
+    border-color: var(--teal);
+  }
+  .nav__link--ext {
+    color: var(--faint);
+  }
+  @media (max-width: 720px) {
+    .nav__links {
+      gap: 12px;
+    }
+    .nav__link {
+      font-size: 0.7rem;
+    }
+    .nav__link--ext {
+      display: none;
+    }
+  }
+</style>

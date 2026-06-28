@@ -1,0 +1,203 @@
+---
+// fig.1 — the append-only log. Hand-built line-art, no gradients/glows.
+// A hash-linked event chain with an evolution GATE, a gold ROLLBACK arc,
+// a FORGOTTEN (key-destroyed) node, and faint citation leaders to sources.
+interface Props {
+  class?: string;
+}
+const { class: klass = "" } = Astro.props;
+---
+
+<svg
+  class={`chain ${klass}`}
+  viewBox="0 0 760 360"
+  role="img"
+  aria-label="An append-only event log: hash-linked events passing an evolution gate, a rolled-back evolution, a forgotten node whose key was destroyed, and citation leaders down to sources."
+  xmlns="http://www.w3.org/2000/svg"
+>
+  <defs>
+    <marker
+      id="arr"
+      viewBox="0 0 10 10"
+      refX="7"
+      refY="5"
+      markerWidth="6"
+      markerHeight="6"
+      orient="auto-start-reverse"
+    >
+      <path d="M0,0 L8,5 L0,10" class="arrhead"></path>
+    </marker>
+  </defs>
+
+  <!-- axis -->
+  <line class="lnk axis" x1="64" y1="150" x2="120" y2="150"></line>
+  <text class="lbl" x="64" y="138">append-only</text>
+
+  <!-- connectors + hash chevrons -->
+  <line class="lnk" x1="106" y1="150" x2="194" y2="150"></line>
+  <line class="lnk" x1="226" y1="150" x2="310" y2="150"></line>
+  <line class="lnk" x1="350" y1="150" x2="434" y2="150"></line>
+  <line class="lnk" x1="466" y1="150" x2="554" y2="150"></line>
+  <line class="lnk" x1="586" y1="150" x2="662" y2="150"></line>
+  <path class="chev" d="M147,146 L153,150 L147,154"></path>
+  <path class="chev" d="M265,146 L271,150 L265,154"></path>
+  <path class="chev" d="M389,146 L395,150 L389,154"></path>
+  <path class="chev" d="M507,146 L513,150 L507,154"></path>
+  <path class="chev" d="M621,146 L627,150 L621,154"></path>
+
+  <!-- rollback arc (gold): evolution at 25 rolled back to 24 -->
+  <path
+    class="roll"
+    d="M570,132 C560,92 460,92 450,130"
+    marker-end="url(#arr)"></path>
+  <text class="roll-lbl" x="510" y="86" text-anchor="middle">ROLLBACK</text>
+
+  <!-- citation leaders -->
+  <line class="cite" x1="210" y1="167" x2="210" y2="288"></line>
+  <line class="cite" x1="450" y1="167" x2="450" y2="288"></line>
+  <line class="lnk faintline" x1="150" y1="296" x2="520" y2="296"></line>
+  <line class="cite" x1="210" y1="290" x2="210" y2="302"></line>
+  <line class="cite" x1="450" y1="290" x2="450" y2="302"></line>
+  <text class="src" x="210" y="318" text-anchor="middle">eventloom://…#9f06</text>
+  <text class="src" x="450" y="318" text-anchor="middle">src/zaxy/fabric.py:120</text>
+
+  <!-- events -->
+  <circle class="ev" cx="90" cy="150" r="16"></circle>
+  <text class="seq" x="90" y="154" text-anchor="middle">21</text>
+  <text class="hash" x="90" y="178" text-anchor="middle">·9f06</text>
+
+  <circle class="ev" cx="210" cy="150" r="16"></circle>
+  <text class="seq" x="210" y="154" text-anchor="middle">22</text>
+  <text class="hash" x="210" y="178" text-anchor="middle">·b73c</text>
+
+  <!-- gate (diamond) -->
+  <polygon class="gate" points="330,128 352,150 330,172 308,150"></polygon>
+  <path class="gate-mark" d="M322,150 L328,156 L339,144"></path>
+  <text class="gate-lbl" x="330" y="194" text-anchor="middle">GATE</text>
+
+  <circle class="ev" cx="450" cy="150" r="16"></circle>
+  <text class="seq" x="450" y="154" text-anchor="middle">24</text>
+  <text class="hash" x="450" y="178" text-anchor="middle">·51aa</text>
+
+  <circle class="ev" cx="570" cy="150" r="16"></circle>
+  <text class="seq" x="570" y="154" text-anchor="middle">25</text>
+  <text class="hash" x="570" y="178" text-anchor="middle">·e0c2</text>
+
+  <!-- forgotten (hexagon + lock, dimmed) -->
+  <polygon
+    class="forgot"
+    points="698,150 689,165.6 671,165.6 662,150 671,134.4 689,134.4"></polygon>
+  <path class="forgot lock-sh" d="M675,146 a5,5 0 0 1 10,0 v3"></path>
+  <rect class="forgot lock-bd" x="673" y="148" width="14" height="11" rx="1"
+  ></rect>
+  <text class="forgot-lbl" x="680" y="190" text-anchor="middle">FORGOTTEN</text>
+</svg>
+
+<style>
+  .chain {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+  .lnk {
+    stroke: var(--line-strong);
+    stroke-width: 1.25;
+  }
+  .faintline {
+    stroke: var(--line);
+  }
+  .axis {
+    stroke-dasharray: 2 3;
+  }
+  .chev {
+    fill: none;
+    stroke: var(--faint);
+    stroke-width: 1.25;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .ev {
+    fill: #0c141a;
+    stroke: var(--teal-dim);
+    stroke-width: 1.4;
+  }
+  .seq {
+    fill: var(--white);
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+  .hash {
+    fill: var(--faint);
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.04em;
+  }
+  .gate {
+    fill: #0c141a;
+    stroke: var(--teal);
+    stroke-width: 1.5;
+  }
+  .gate-mark {
+    fill: none;
+    stroke: var(--teal);
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .gate-lbl {
+    fill: var(--teal);
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.18em;
+  }
+  .roll {
+    fill: none;
+    stroke: var(--gold);
+    stroke-width: 1.5;
+  }
+  .arrhead {
+    fill: none;
+    stroke: var(--gold);
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .roll-lbl {
+    fill: var(--gold);
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.2em;
+  }
+  .cite {
+    stroke: var(--faint);
+    stroke-width: 1;
+    stroke-dasharray: 2 4;
+  }
+  .src {
+    fill: var(--faint);
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.02em;
+  }
+  .lbl {
+    fill: var(--faint);
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .forgot {
+    stroke: var(--faint);
+    fill: none;
+    stroke-width: 1.3;
+  }
+  .lock-bd {
+    fill: #0c141a;
+  }
+  .forgot-lbl {
+    fill: var(--faint);
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.16em;
+  }
+</style>

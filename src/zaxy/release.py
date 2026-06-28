@@ -384,7 +384,6 @@ def _check_release_gate_script(root: Path) -> dict[str, str]:
         "scripts/check-coverage.py",
         "tests/test_packet_memory_e2e.py",
         "scripts/build-dist.sh",
-        "python scripts/build-site-docs.py --check",
         "scripts/validate-docs.sh",
         "scripts/validate-deployment.sh",
         "PYTHONPATH=src python -m zaxy hook-status",
@@ -1050,7 +1049,7 @@ def _check_release_gate_surface_coverage(root: Path) -> dict[str, str]:
         "LANGGRAPH_SMOKE_CMD": ("LangGraph smoke", "test_langgraph_example_runs_without_langgraph_dependency"),
         "COORDINATE_SMOKE_CMD": ("Coordinate mission smoke", "test_coordinate_three_worker_example_runs"),
         "BACKEND_SHOOTOUT_CMD": ("benchmark comparison", "scripts/check-backend-shootout.py"),
-        "DOCS_CMD": ("docs validation", "python scripts/build-site-docs.py --check"),
+        "DOCS_CMD": ("docs validation", "scripts/validate-docs.sh"),
         "BETA_UAT_CMD": ("beta UAT", "scripts/beta-uat.sh"),
         "EXTERNAL_VALIDATION_CMD": ("external validation", "scripts/check-external-validation.py"),
     }
