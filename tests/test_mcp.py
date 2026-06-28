@@ -935,6 +935,49 @@ class TestMemoryOutcome:
         with pytest.raises(ValueError):
             await server.handle_memory_outcome({"outcome": "success"})
 
+    async def test_prior_scales_reinforcement_by_surprise(self, tmp_path: Path) -> None:
+        """A reported prior threads through the surface to surprise-scaled reinforcement."""
+        with (
+            patch("zaxy.mcp_server.build_projection_store") as mock_build_projection_store,
+            patch("zaxy.mcp_server.MemoryTracer") as mock_tracer_cls,
+        ):
+            mock_build_projection_store.return_value = AsyncMock()
+            mock_tracer_cls.return_value = AsyncMock()
+            server = ZaxyMCPServer(eventloom_path=str(tmp_path / ".eventloom"))
+            server.graph = mock_build_projection_store.return_value
+            server.tracer = mock_tracer_cls.return_value
+
+        seeded = json.loads(
+            (
+                await server.handle_memory_append(
+                    {
+                        "event_type": "decision.made",
+                        "actor": "zaxy-agent",
+                        "payload": {"text": "trust the stale cache"},
+                        "session_id": "agent-1",
+                    }
+                )
+            )[0].text
+        )
+        await server.handle_memory_outcome(
+            {
+                "outcome": "failure",
+                "summary": "the cache was stale",
+                "target_seq": seeded["seq"],
+                "target_hash": seeded["hash"],
+                "prior": 0.9,
+                "session_id": "agent-1",
+            }
+        )
+        events = server.session_manager.get("agent-1").eventlog.read_all()
+        reinforcement = next(e for e in events if e.type == "memory.reinforcement")
+        # High prior + failure = high surprise -> stronger attenuation than the
+        # default invalidated multiplier (0.2); the prior is recorded for audit.
+        assert reinforcement.payload["weight"] < 0.2
+        outcome_event = next(e for e in events if e.type == "memory.outcome.recorded")
+        assert outcome_event.payload["prior"] == 0.9
+        assert outcome_event.payload["prediction_error"] == 0.9
+
 
 class TestCausalAndConsolidationTools:
     """Tests for causal reads and consolidation MCP handlers."""

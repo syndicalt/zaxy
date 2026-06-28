@@ -595,6 +595,7 @@ class ZaxyMCPServer:
             lesson=arguments.get("lesson"),
             trigger=arguments.get("trigger"),
             confidence=arguments.get("confidence"),
+            prior=arguments.get("prior"),
             task_id=arguments.get("task_id"),
             session_id=session_id,
         )

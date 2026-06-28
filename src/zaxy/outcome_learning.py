@@ -31,6 +31,11 @@ RULE_GENERATED_EVENT_TYPE = "memory.rule.generated"
 #: ``auto_with_rollback`` tier); partial is weaker (held for review by default).
 DEFAULT_RULE_CONFIDENCE: Mapping[str, float] = {"failure": 0.9, "partial": 0.7}
 
+#: The observed outcome value the loop compares against the agent's prior to
+#: derive prediction error (surprise): success and failure anchor the ends,
+#: partial sits at the midpoint.
+OUTCOME_ACTUAL: Mapping[str, float] = {"success": 1.0, "failure": 0.0, "partial": 0.5}
+
 _HASH_RE = "0123456789abcdef"
 
 
@@ -55,6 +60,20 @@ def preventive_rule_confidence(outcome: str, explicit: float | None = None) -> f
     return DEFAULT_RULE_CONFIDENCE.get(validate_outcome(outcome), 0.7)
 
 
+def prediction_error(outcome: str, prior: float) -> float:
+    """Return the prediction error (surprise) of an outcome against a prior.
+
+    The prediction error is ``abs(actual - prior)`` where ``actual`` is the
+    observed :data:`OUTCOME_ACTUAL` value for ``outcome`` and ``prior`` is the
+    agent's reported confidence in ``[0.0, 1.0]`` that the recalled memory
+    would lead to success. It is ``0`` when the result was fully anticipated
+    and ``1`` when maximally surprising -- the signal the salience update is
+    scaled by.
+    """
+    actual = OUTCOME_ACTUAL[validate_outcome(outcome)]
+    return abs(actual - _validate_unit_interval(prior, field_name="prior"))
+
+
 def build_outcome_event(
     *,
     actor: str,
@@ -63,6 +82,8 @@ def build_outcome_event(
     summary: str,
     target: Mapping[str, Any] | None = None,
     task_id: str | None = None,
+    prior: float | None = None,
+    prediction_error: float | None = None,
 ) -> dict[str, Any]:
     """Build a non-authoritative ``memory.outcome.recorded`` event spec."""
     _validate_non_empty_string(actor, field_name="actor")
@@ -79,6 +100,12 @@ def build_outcome_event(
     if task_id is not None:
         _validate_non_empty_string(task_id, field_name="task_id")
         payload["task_id"] = task_id
+    if prior is not None:
+        payload["prior"] = _validate_unit_interval(prior, field_name="prior")
+    if prediction_error is not None:
+        payload["prediction_error"] = _validate_unit_interval(
+            prediction_error, field_name="prediction_error"
+        )
     return {
         "event_type": OUTCOME_EVENT_TYPE,
         "actor": actor,
@@ -148,3 +175,13 @@ def _snapshot_event_ref(ref: Mapping[str, Any]) -> dict[str, Any]:
 def _validate_non_empty_string(value: object, *, field_name: str) -> None:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field_name} must be a non-empty string")
+
+
+def _validate_unit_interval(value: object, *, field_name: str) -> float:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int | float)
+        or not 0.0 <= float(value) <= 1.0
+    ):
+        raise ValueError(f"{field_name} must be a number between 0.0 and 1.0")
+    return float(value)

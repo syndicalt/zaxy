@@ -110,6 +110,7 @@ from zaxy.metrics import get_metrics
 from zaxy.outcome_learning import (
     build_outcome_event,
     build_rule_event,
+    prediction_error,
     preventive_rule_confidence,
     validate_outcome,
 )
@@ -156,6 +157,7 @@ from zaxy.salience import (
     cue_overlap,
     cue_pairs,
     event_ref_index,
+    prediction_error_weight,
     reinforcement_targets_from_citations,
     target_ref,
 )
@@ -1327,6 +1329,7 @@ class MemoryFabric:
         trigger: str | None = None,
         confidence: float | None = None,
         task_id: str | None = None,
+        prior: float | None = None,
         actor: str = "zaxy-agent",
         session_id: str | None = None,
     ) -> dict[str, Any]:
@@ -1339,10 +1342,17 @@ class MemoryFabric:
         (``memory.rule.generated``) above threshold under the default
         auto_with_rollback tier, otherwise held as ``memory.rule.proposed``. All
         events are non-authoritative, cited, and replayable. See ``ZAXY-3.md`` (I1).
+
+        When ``prior`` (the agent's confidence the recalled memory would
+        succeed, in ``[0, 1]``) is supplied, the surprise
+        ``pe = |actual - prior|`` is recorded on the outcome event and scales
+        the reinforcement ``weight`` (continuous with the fixed multiplier
+        table at ``pe == 0.5``); omitting it leaves behavior unchanged.
         """
         sid = validate_session_id(session_id or "default")
         outcome = validate_outcome(outcome)
         target = target_ref(target_seq, target_hash)
+        pe = prediction_error(outcome, prior) if prior is not None else None
 
         outcome_spec = build_outcome_event(
             actor=actor,
@@ -1351,6 +1361,8 @@ class MemoryFabric:
             summary=summary,
             target=target,
             task_id=task_id,
+            prior=prior,
+            prediction_error=pe,
         )
         outcome_event = await self.append(
             outcome_spec["event_type"], outcome_spec["actor"], payload=outcome_spec["payload"], session_id=sid
@@ -1360,13 +1372,23 @@ class MemoryFabric:
 
         if target is not None and outcome in ("success", "failure"):
             citation = f"eventloom://{sid}/events/{outcome_event.seq}#{outcome_event.hash}"
+            kind = "confirmed" if outcome == "success" else "invalidated"
+            weight = prediction_error_weight(kind, pe) if pe is not None else None
             if outcome == "success":
                 reinforce_spec = build_confirmed_reinforcement_event(
-                    actor=actor, session_id=sid, feedback_id=citation, targets=[target]
+                    actor=actor,
+                    session_id=sid,
+                    feedback_id=citation,
+                    targets=[target],
+                    weight=weight,
                 )
             else:
                 reinforce_spec = build_invalidated_reinforcement_event(
-                    actor=actor, session_id=sid, invalidation_id=citation, targets=[target]
+                    actor=actor,
+                    session_id=sid,
+                    invalidation_id=citation,
+                    targets=[target],
+                    weight=weight,
                 )
             await self.append(
                 reinforce_spec["event_type"], reinforce_spec["actor"], payload=reinforce_spec["payload"], session_id=sid

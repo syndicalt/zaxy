@@ -426,7 +426,7 @@
       "name": "memory_evolution_gate"
     },
     {
-      "description": "Agent reports an outcome on recalled memory; reinforces the cited memory and, on failure/partial with a lesson, proposes a governed preventive rule through the evolution gate (cited, reversible, audited).",
+      "description": "Agent reports an outcome on recalled memory; reinforces the cited memory and, on failure/partial with a lesson, proposes a governed preventive rule through the evolution gate (cited, reversible, audited). Pass `prior` (the agent's prior confidence the memory would help, 0.0-1.0) to scale reinforcement by prediction error (surprise).",
       "input_schema": {
         "additionalProperties": false,
         "properties": {
@@ -441,6 +441,10 @@
           "outcome": {
             "description": "Outcome of using the recalled memory: success, failure, or partial",
             "type": "string"
+          },
+          "prior": {
+            "description": "Prior confidence (0.0-1.0) the recalled memory would help; scales reinforcement by prediction error (surprise)",
+            "type": "number"
           },
           "session_id": {
             "description": "Session ID for multi-agent sharding",
