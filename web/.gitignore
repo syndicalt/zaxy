@@ -7,3 +7,7 @@ src/content/docs/
 public/assets/
 public/reports/
 public/docs/
+
+# the repo-root .gitignore has a Python `lib/` rule that would otherwise drop
+# our tracked src/lib/ (e.g. nav.ts) — re-include it here.
+!src/lib/
