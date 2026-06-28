@@ -2,6 +2,71 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 3.0.0 - 2026-06-28
+
+Zaxy 3 — Governed Active Memory. Memory is now *active* — it reflects on
+experience, distills skills, prevents repeated mistakes, and improves over time —
+while every change stays a gated, replayable, cited Eventloom event. The log
+remains the single source of truth, every derived artifact is
+`authority_status=non_authoritative` until it clears an explicit gate, and
+nothing rewrites history. Roadmap and category thesis: `ZAXY-3.md` and
+`docs/research/governed-active-memory.md`.
+
+- **Memory Evolution Policy (I4) — the governance gate.** One configurable
+  autonomy policy decides when memory may evolve autonomously vs. requires review
+  vs. is proposal-only, set globally (`evolution_autonomy_default`) and per-op
+  (`evolution_op_autonomy`, e.g. `forget=propose_only`). Every decision is a
+  replayable `evolution.gate.evaluated` event. The default is **auto_with_rollback**
+  (reversible auto-apply above threshold); the strict tiers (`propose_only`,
+  `require_review`) ship as opt-in. Outcome rules, crystallization, fleet
+  promotion, and inferred-edge generation all route through this one gate.
+- **Outcome-Driven Learning Loop (I1).** Agents report success/failure/partial
+  outcomes on recalled memory; failures generate governed preventive rules
+  (`memory.rule.generated`, otherwise held as `memory.rule.proposed`) through the
+  gate, and reinforcement is prediction-error weighted. New `memory_outcome` MCP
+  tool and `zaxy memory outcome` CLI.
+- **Governed Sleep-Time Crystallization (I2).** An optional, config-gated
+  (`crystallization_enabled`, off by default) one-shot reflection pass schedules
+  the existing consolidation, procedure-mining, metacognition, compaction-audit,
+  and salience-replay primitives, routes every candidate through the gate, and
+  appends one cited `crystallization.run.completed` summary. No always-on daemon;
+  the MCP surface stays pull-only; output is additive and source-backed, never a
+  destructive summarize-and-overwrite (drift-resistant per SSGM).
+- **Long-Horizon Two-Tier Context Assembly (I3).** For never-ending threads,
+  Memory Checkout can split an explicit episodic (recent) vs. consolidated
+  (remote) tier (`long_horizon_enabled`, `long_horizon_recent_window`); older
+  history is carried by its cited consolidation candidates, never raw
+  re-summarization.
+- **Transparency & Controlled Editability (I5).** Human edits re-ingest as cited
+  `memory.corrected` events (originals are never mutated); rollback reverses a
+  prior evolution with a cited `memory.rolled_back` event. Verified forgetting
+  crypto-erases a payload (`append(..., forgettable=True)` seals a `__zaxy_cipher`
+  cell; `memory.forgotten` destroys the wrapped key) so the plaintext is
+  unrecoverable while `EventLog.verify()` stays green. New `memory_edit` /
+  `memory_rollback` / `memory_forget` MCP tools and matching `zaxy memory edit` /
+  `rollback` / `forget` CLI. The erasure envelope is experimental and unaudited —
+  do not rely on it for compliance guarantees without an independent cryptographic
+  review.
+- **Fleet Memory Plane (I7).** Governed cross-agent / cross-session propagation:
+  an outcome, rule, or skill learned by one agent becomes cited, replayable fleet
+  knowledge only through the I4 gate. Trust tiers + visibility scopes, a dedicated
+  `fleet.<id>` thread, `fleet.skill.promoted` / `fleet.outcome.propagated` /
+  `fleet.rule.propagated` plus review / rollback / supersession lifecycle events,
+  and enrollment-gated fleet retrieval in checkout. Promotion raises *visibility*,
+  never *authority*; conflicts are additive supersessions; un-sharing is a
+  reversible rollback. New `fleet_*` MCP tools and a `zaxy fleet` CLI group.
+- **External Plugin API (I6).** A stable out-of-process plugin contract for
+  extractors, skills, and projections, with the six-language code-intelligence
+  layer packaged as the reference plugin.
+- **Proof & Category Definition (I8).** `zaxy fleet-benchmark` (FleetBench
+  scaffold) scores coordination quality, governance correctness, a within-mission
+  transfer proxy, and token efficiency over real CoordinationBench runs
+  (deterministic + fingerprinted; latency excluded). The published Governed Active
+  Memory thesis (`docs/research/governed-active-memory.md`) states the category
+  and maps every claim to shipped code, grounded in the 2026 governance
+  literature (SSGM, Verifiable Memory Governance), with the honesty boundary —
+  hash-embedding and within-mission-proxy caveats — drawn inline.
+
 ## 2.6.3 - 2026-06-23
 
 - Organized `zaxy --help` into ordered, labeled command panels. The top-level
