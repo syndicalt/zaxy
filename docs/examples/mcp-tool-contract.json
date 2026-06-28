@@ -1,5 +1,5 @@
 {
-  "tool_count": 51,
+  "tool_count": 58,
   "tools": [
     {
       "description": "The front door to Zaxy memory: call this first, before substantial work, to checkout current, cited, prompt-ready memory state for a session. Start here; every other memory tool is plumbing or power use, discoverable through memory_capabilities.",
@@ -2253,6 +2253,279 @@
         "type": "object"
       },
       "name": "memory_confidence"
+    },
+    {
+      "description": "Create a governed fleet memory plane and record the creator as its implicit steward. Off unless fleet_enabled; the fleet plane crosses trust boundaries only through the I4 gate and never grants authority (promotions stay non_authoritative).",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "default": "coordinator",
+            "type": "string"
+          },
+          "fleet_id": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "fleet_id",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "name": "fleet_create"
+    },
+    {
+      "description": "Enroll an agent in a fleet at a trust tier (enrollment never escalates trust).",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "default": "coordinator",
+            "type": "string"
+          },
+          "agent_id": {
+            "type": "string"
+          },
+          "fleet_id": {
+            "type": "string"
+          },
+          "trust_tier": {
+            "default": "member",
+            "enum": [
+              "untrusted",
+              "member",
+              "trusted",
+              "steward"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "fleet_id",
+          "agent_id"
+        ],
+        "type": "object"
+      },
+      "name": "fleet_enroll"
+    },
+    {
+      "description": "Assign a trust tier to an enrolled agent (steward authority required).",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "agent_id": {
+            "type": "string"
+          },
+          "fleet_id": {
+            "type": "string"
+          },
+          "rationale": {
+            "type": "string"
+          },
+          "trust_tier": {
+            "enum": [
+              "untrusted",
+              "member",
+              "trusted",
+              "steward"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "fleet_id",
+          "agent_id",
+          "trust_tier",
+          "actor"
+        ],
+        "type": "object"
+      },
+      "name": "fleet_assign_trust"
+    },
+    {
+      "description": "Propose a cross-boundary fleet promotion (kind: skill, outcome, or rule) through the I4 gate. Routes through the governed FleetManager: the actor's trust tier must permit the visibility scope, the crossing is gate-evaluated and cited, and below-threshold or require_review crossings are held pending steward review. Returns the gated result including review_status and promotion_id. No path makes anything authoritative.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "claim_key": {
+            "description": "Optional claim key when kind=outcome",
+            "type": "string"
+          },
+          "confidence": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "fleet_id": {
+            "type": "string"
+          },
+          "keystone": {
+            "default": false,
+            "type": "boolean"
+          },
+          "kind": {
+            "enum": [
+              "skill",
+              "outcome",
+              "rule"
+            ],
+            "type": "string"
+          },
+          "origin_actor": {
+            "type": "string"
+          },
+          "origin_session": {
+            "type": "string"
+          },
+          "outcome": {
+            "description": "Required when kind=outcome",
+            "enum": [
+              "success",
+              "failure",
+              "partial"
+            ],
+            "type": "string"
+          },
+          "rule": {
+            "description": "Required when kind=rule",
+            "type": "string"
+          },
+          "skill_id": {
+            "description": "Required when kind=skill",
+            "type": "string"
+          },
+          "skill_version": {
+            "description": "Required when kind=skill",
+            "type": "string"
+          },
+          "source_events": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "hash": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "seq": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "seq",
+                "hash"
+              ],
+              "type": "object"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "summary": {
+            "description": "Required when kind=outcome",
+            "type": "string"
+          },
+          "trigger": {
+            "description": "Required when kind=rule",
+            "type": "string"
+          },
+          "visibility_scope": {
+            "default": "fleet",
+            "enum": [
+              "fleet",
+              "global"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "fleet_id",
+          "kind",
+          "origin_session",
+          "source_events",
+          "confidence",
+          "actor"
+        ],
+        "type": "object"
+      },
+      "name": "fleet_promote"
+    },
+    {
+      "description": "Steward review of a held fleet promotion (accepted activates a pending memory).",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "decision": {
+            "enum": [
+              "accepted",
+              "rejected",
+              "deferred"
+            ],
+            "type": "string"
+          },
+          "fleet_id": {
+            "type": "string"
+          },
+          "promotion_id": {
+            "type": "string"
+          },
+          "rationale": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "fleet_id",
+          "promotion_id",
+          "decision",
+          "actor"
+        ],
+        "type": "object"
+      },
+      "name": "fleet_review"
+    },
+    {
+      "description": "Return a replay-backed fleet brief: active and pending promotions, enrolled agents, and trust tiers.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "fleet_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "fleet_id"
+        ],
+        "type": "object"
+      },
+      "name": "fleet_status"
+    },
+    {
+      "description": "Return full replay-only provenance for every fleet memory: origin actor/session, source + gate citations.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "fleet_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "fleet_id"
+        ],
+        "type": "object"
+      },
+      "name": "fleet_audit"
     }
   ]
 }

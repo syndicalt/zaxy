@@ -273,6 +273,74 @@ style edges, plus lifecycle and outcome entities for application metrics.
 Graph properties preserve procedure, applicability, status, citations, outcome
 evidence, rollback guidance, contradiction reasons, and version identifiers.
 
+## Fleet Memory Plane
+
+Use `fleet.*` events for governed cross-agent/cross-session knowledge sharing
+(Zaxy 3 / I7). The fleet plane is opt-in (`fleet_enabled`, off by default). A
+fleet memory is never a copy or mutation of its source: it is a new,
+`non_authoritative` event on a dedicated `fleet.<fleet_id>` thread that **cites**
+the originating events and the I4 `evolution.gate.evaluated` it routed through.
+Promotion raises *visibility scope*, never *authority*; nothing here ever becomes
+authoritative.
+
+Two orthogonal controls govern every crossing: a **visibility scope** ladder
+(`private`, `session`, `mission`, `fleet`, `global`) carried as event metadata,
+and an agent **trust tier** (`untrusted`, `member`, `trusted`, `steward`)
+authorizing how far an agent may *propose*. Each crossing composes three
+independent gates — trust tier permits the scope, the I4 gate decides auto-apply
+vs. review, and a steward reviews held promotions — and a breach of any one stops
+the crossing auditably.
+
+Registration and governance events:
+
+- `fleet.created`: create a fleet; the creator is recorded as the implicit steward.
+- `fleet.agent.enrolled`: enroll an agent at a trust tier (never escalates trust).
+- `fleet.trust.assigned`: a steward assigns a trust tier (reversible, audited).
+
+Propagation events (each carries `promotion_id`, `fleet_id`, `origin_session`,
+`origin_actor`, `visibility_scope`, `confidence`, `source_events`, `gate_event`,
+`review_status`, and `authority_status="non_authoritative"`):
+
+- `fleet.skill.promoted`: share a validated skill version fleet-wide.
+- `fleet.outcome.propagated`: share a success/failure/partial outcome.
+- `fleet.rule.propagated`: share a preventive rule (with `trigger`).
+
+Lifecycle (governance, conflict, reversal) events:
+
+- `fleet.promotion.reviewed`: steward `accepted`/`rejected`/`deferred` a held promotion.
+- `fleet.memory.superseded`: additive supersession — both prior and superseding
+  promotions are retained and replayable.
+- `fleet.promotion.rolled_back`: a reversible un-share that lowers effective scope.
+
+Propagation event:
+
+```json
+{
+  "promotion_id": "fleetpromo:0a1b2c3d4e5f60718293a4b5",
+  "fleet_id": "platform",
+  "outcome": "failure",
+  "summary": "Pre-warm the JWKS cache before the first token refresh",
+  "claim_key": "auth.jwks.cache",
+  "origin_session": "agent-a",
+  "origin_actor": "agent-a",
+  "visibility_scope": "fleet",
+  "confidence": 0.92,
+  "source_events": [{"seq": 12, "hash": "abcdef123456..."}],
+  "gate_event": {"seq": 41, "hash": "fedcba654321..."},
+  "review_status": "active",
+  "authority_status": "non_authoritative"
+}
+```
+
+Projection: `fleet` plus `fleet_skill` / `fleet_outcome` / `fleet_rule` entities
+citing their source events, carrying `visibility_scope`, `fleet_id`,
+`review_status`, and `non_authoritative`. The reviewed/superseded/rolled-back
+events update `review_status` in place without deleting any promotion. Memory
+Checkout adds a distinct, cited, non-authoritative **fleet lane**: an agent
+receives a fleet's `active` promotions only when it is enrolled at a tier above
+`untrusted` — a non-enrolled or untrusted agent never receives a fleet's promoted
+memory, and pending/superseded/rolled-back promotions are never surfaced as active.
+
 ## Schema Migrations
 
 Use `schema.migration.proposed` when a stable or beta contract needs a

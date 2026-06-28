@@ -623,6 +623,12 @@ def build_memory_checkout(
     skills = _checkout_skills(ranked_contexts, query)
     if skills:
         diagnostics = {**diagnostics, "skills": {"count": len(skills), "items": skills}}
+    fleet = _checkout_fleet(ranked_contexts)
+    if fleet:
+        diagnostics = {
+            **diagnostics,
+            "fleet": {"count": len(fleet), "items": fleet, "non_authoritative": True},
+        }
     skill_analytics = _checkout_skill_analytics(ranked_contexts)
     if skill_analytics["version_count"] or skill_analytics["outcome_count"]:
         diagnostics = {**diagnostics, "skill_analytics": skill_analytics}
@@ -895,6 +901,15 @@ def _checkout_salience_diagnostics(
 def _checkout_contexts_with_synthesis(query: str, assembly: ContextAssembly) -> list[Context]:
     """Return recall contexts plus a compact checkout-only synthesis proof when available."""
     checkout_contexts = list(assembly.recall.contexts() or assembly.contexts)
+    # The fleet lane is a distinct, enrollment-gated, cited, non-authoritative
+    # lane that must never be budget-competed away by recall; merge it in so it
+    # always reaches the checkout (source_lanes + the dedicated fleet section).
+    if assembly.fleet_contexts:
+        present = {id(context) for context in checkout_contexts}
+        checkout_contexts = [
+            *checkout_contexts,
+            *(context for context in assembly.fleet_contexts if id(context) not in present),
+        ]
     if any(
         (context.metadata or {}).get("source_kind") == "source_synthesis"
         or "zaxy_synthesis_bundle=true" in context.content
@@ -1237,6 +1252,44 @@ def _checkout_skills(contexts: list[Context], query: str, *, limit: int = 3) -> 
         if len(skills) >= limit:
             break
     return skills
+
+
+def _checkout_fleet(contexts: list[Context]) -> list[dict[str, Any]]:
+    """Summarize the distinct, cited, non-authoritative fleet checkout lane.
+
+    Mirrors :func:`_checkout_skills`: it reads the already-assembled contexts
+    rather than re-querying, surfacing only the enrollment-gated fleet-lane
+    items (``assembly_lane == "fleet"``). Every item is non-authoritative and
+    carries its Eventloom citation and fleet provenance.
+    """
+    items: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for context in contexts:
+        metadata = context.metadata or {}
+        if metadata.get("assembly_lane") != "fleet":
+            continue
+        promotion_id = metadata.get("promotion_id")
+        if not isinstance(promotion_id, str) or promotion_id in seen:
+            continue
+        seen.add(promotion_id)
+        items.append(
+            {
+                "promotion_id": promotion_id,
+                "fleet_id": metadata.get("fleet_id"),
+                "kind": metadata.get("kind"),
+                "summary": context.content,
+                "citation": _context_citation(context),
+                "visibility_scope": metadata.get("visibility_scope"),
+                "review_status": metadata.get("review_status"),
+                "origin_actor": metadata.get("origin_actor"),
+                "origin_session": metadata.get("origin_session"),
+                "keystone": bool(metadata.get("keystone")),
+                "non_authoritative": True,
+                "authority_status": "non_authoritative",
+                "score": context.score,
+            }
+        )
+    return items
 
 
 def _checkout_skill_analytics(contexts: list[Context]) -> dict[str, Any]:

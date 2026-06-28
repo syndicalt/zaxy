@@ -2786,6 +2786,91 @@ class MemoryFabric:
             "candidates": sorted(candidates.values(), key=lambda item: item["created_seq"]),
         }
 
+    def _fleet_manager(self) -> Any:
+        """Return a FleetManager bound to this fabric's session manager.
+
+        Twin of the MCP server's ``_coordination_manager``: the fleet plane
+        replays the same Eventloom store this fabric reads, so checkout's fleet
+        lane sees exactly the governed state the ``fleet_*`` tools wrote.
+        """
+        from zaxy.fleet import FleetManager
+
+        manager = FleetManager(eventloom_path=self.eventloom_path, settings=self.settings)
+        manager.session_manager = self.session_manager
+        return manager
+
+    def _fleet_lane_contexts(
+        self, fleet_ids: list[str] | None, *, agent_id: str
+    ) -> list[Context]:
+        """Resolve the enrollment-gated, cited, non-authoritative fleet lane.
+
+        Returns nothing unless ``fleet_enabled`` is on and ``fleet_ids`` are
+        requested (default-off: byte-identical checkout otherwise). For each
+        requested fleet the agent must be enrolled at a tier above ``untrusted``
+        (a non-enrolled or ``untrusted`` agent never receives a fleet's promoted
+        memory); only ``active`` promotions whose visibility scope reaches the
+        fleet are surfaced, each carrying its Eventloom citation, fleet
+        provenance, and a ``fleet`` source-lane marker.
+        """
+        if not getattr(self.settings, "fleet_enabled", False) or not fleet_ids:
+            return []
+        from zaxy.fleet import fleet_thread
+
+        manager = self._fleet_manager()
+        contexts: list[Context] = []
+        seen: set[str] = set()
+        for fleet_id in fleet_ids:
+            try:
+                brief = manager.fleet_brief(fleet_id)
+            except Exception:
+                get_metrics().record_degraded_operation("query", "fleet_lane_unavailable")
+                continue
+            tier = next(
+                (agent.trust_tier for agent in brief.agents if agent.agent_id == agent_id),
+                None,
+            )
+            if tier is None or tier == "untrusted":
+                # Not enrolled, or sandboxed/untrusted: never receives fleet memory.
+                continue
+            thread = fleet_thread(fleet_id)
+            for memory in brief.active_promotions:
+                if memory.visibility_scope not in ("fleet", "global"):
+                    continue
+                if memory.promotion_id in seen:
+                    continue
+                seen.add(memory.promotion_id)
+                contexts.append(self._fleet_memory_context(memory, thread=thread))
+        return contexts
+
+    @staticmethod
+    def _fleet_memory_context(memory: Any, *, thread: str) -> Context:
+        """Project one active fleet memory into a cited, non-authoritative Context."""
+        citation = f"eventloom://{thread}/events/{memory.event_seq}#{memory.event_hash[:12]}"
+        confidence = memory.confidence if isinstance(memory.confidence, int | float) else 0.5
+        return Context(
+            content=memory.summary or memory.promotion_id,
+            source="fleet",
+            score=float(confidence),
+            valid_from=memory.timestamp or None,
+            metadata={
+                "assembly_lane": "fleet",
+                "source_lane": "fleet",
+                "citation": citation,
+                "non_authoritative": True,
+                "authority_status": "non_authoritative",
+                "fleet_id": memory.fleet_id,
+                "promotion_id": memory.promotion_id,
+                "kind": memory.kind,
+                "review_status": memory.review_status,
+                "visibility_scope": memory.visibility_scope,
+                "keystone": memory.keystone,
+                "origin_actor": memory.origin_actor,
+                "origin_session": memory.origin_session,
+                "entity_type": "fleet_promotion",
+                "entity_name": memory.promotion_id,
+            },
+        )
+
     async def assemble_context(
         self,
         query: str,
@@ -2798,6 +2883,8 @@ class MemoryFabric:
         as_of_seq: int | None = None,
         purpose: PurposeProfile | dict[str, Any] | str | None = None,
         cues: dict[str, str] | None = None,
+        fleet_ids: list[str] | None = None,
+        agent_id: str | None = None,
     ) -> ContextAssembly:
         """Assemble recent replay plus retrieval into prompt-ready context.
 
@@ -2860,6 +2947,9 @@ class MemoryFabric:
                 _contexts_as_of_seq(recall.contexts(), as_of_seq),
                 budget=candidate_limit,
             )
+        fleet_contexts = self._fleet_lane_contexts(fleet_ids, agent_id=agent_id or sid)
+        if fleet_contexts:
+            contexts = [*contexts, *fleet_contexts]
         compacted = False
         if max_recent_events is not None and len(replay_events) > max_recent_events:
             replay_events = replay_events[-max_recent_events:]
@@ -2902,6 +2992,7 @@ class MemoryFabric:
             working_set=working_set_payload,
             recall=recall,
             replay_events=session_events,
+            fleet_contexts=fleet_contexts,
         )
 
     async def checkout_memory(
@@ -2916,6 +3007,8 @@ class MemoryFabric:
         purpose: PurposeProfile | dict[str, Any] | str | None = None,
         record_reinforcement: bool = True,
         cues: dict[str, str] | None = None,
+        fleet_ids: list[str] | None = None,
+        agent_id: str | None = None,
     ) -> MemoryCheckout:
         """Checkout the current cited memory state an agent should condition on.
 
@@ -2940,6 +3033,8 @@ class MemoryFabric:
             as_of_seq=as_of_seq,
             purpose=purpose,
             cues=cues,
+            fleet_ids=fleet_ids,
+            agent_id=agent_id,
         )
         checkout = build_memory_checkout(
             query=query,

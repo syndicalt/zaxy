@@ -558,6 +558,38 @@ approval tools export pending/conflicted findings for remote review and apply
 returned decisions as ordinary review events, with promotion only when a
 decision explicitly sets `promote`.
 
+## Fleet Tools
+
+Fleet tools drive and read the governed fleet memory plane (Zaxy 3 / I7). They
+are opt-in (`fleet_enabled`, off by default) and every one routes through the
+same `FleetManager` governance — trust tier + the I4 evolution gate + steward
+review — so no surface bypasses it and nothing ever becomes authoritative.
+
+- `fleet_create(fleet_id, summary, actor?)`: create a fleet; the creator becomes
+  its implicit steward.
+- `fleet_enroll(fleet_id, agent_id, trust_tier?, actor?)`: enroll an agent (never
+  escalates trust).
+- `fleet_assign_trust(fleet_id, agent_id, trust_tier, actor, rationale?)`: a
+  steward changes an agent's trust tier (reversible, audited).
+- `fleet_promote(fleet_id, kind, origin_session, source_events, confidence, actor, ...)`:
+  propose a cross-boundary promotion. `kind` is `skill` (needs `skill_id`,
+  `skill_version`), `outcome` (needs `outcome`, `summary`, optional `claim_key`),
+  or `rule` (needs `rule`, `trigger`). The actor's trust tier must permit the
+  `visibility_scope` (`fleet`/`global`); below-threshold or `require_review`
+  crossings are held `pending`. Returns the gated result including `review_status`
+  and `promotion_id`. An `untrusted` or non-enrolled actor is rejected with no
+  event on the fleet thread.
+- `fleet_review(fleet_id, promotion_id, decision, actor, rationale?)`: a steward
+  `accepted`/`rejected`/`deferred` a held promotion (accept activates it).
+- `fleet_status(fleet_id)`: a replay-backed fleet brief — active and pending
+  promotions, enrolled agents, and trust tiers.
+- `fleet_audit(fleet_id)`: full replay-only provenance for every fleet memory,
+  including origin actor/session and source + gate citations.
+
+Enrolled agents *receive* fleet memory through the Memory Checkout fleet lane: a
+distinct, cited, non-authoritative lane that surfaces a fleet's `active`
+promotions (skills/outcomes/rules) only to agents enrolled above `untrusted`.
+
 MCP dispatch also performs automatic lifecycle capture by default. After each
 tool call, Zaxy appends a `tool.call.completed` event to the resolved session
 with the tool name, status, argument keys, and a bounded result summary. Raw
