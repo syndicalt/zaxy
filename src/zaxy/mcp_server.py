@@ -24,6 +24,8 @@ Tools exposed:
 - memory_synthesis_evidence: Record feedback for one synthesis ledger row.
 - memory_replay: Replay events from a session.
 - memory_invalidate: Mark a fact as superseded.
+- memory_edit: Re-ingest a human edit as a cited memory.corrected event.
+- memory_rollback: Reverse a prior evolution with a cited memory.rolled_back event.
 """
 
 from __future__ import annotations
@@ -598,6 +600,66 @@ class ZaxyMCPServer:
             prior=arguments.get("prior"),
             task_id=arguments.get("task_id"),
             session_id=session_id,
+        )
+        return [TextContent(type="text", text=json.dumps(result))]
+
+    async def handle_memory_edit(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_edit: re-ingest a human edit as a cited correction event."""
+        session_id = self._session_id_from_arguments(
+            arguments, default=self._default_session_id
+        )
+        target_seq = arguments.get("target_seq")
+        if not isinstance(target_seq, int) or isinstance(target_seq, bool):
+            raise ValueError("target_seq must be an integer")
+        target_hash = arguments.get("target_hash")
+        if not isinstance(target_hash, str) or not target_hash:
+            raise ValueError("target_hash must be a non-empty string")
+        new_content = arguments.get("new_content")
+        if not isinstance(new_content, str) or not new_content:
+            raise ValueError("new_content must be a non-empty string")
+        reason = arguments.get("reason")
+        if not isinstance(reason, str) or not reason:
+            raise ValueError("reason must be a non-empty string")
+        actor = _optional_strict_text(arguments.get("actor"), "actor") or "zaxy-editor"
+        kwargs: dict[str, Any] = {}
+        if arguments.get("confidence") is not None:
+            kwargs["confidence"] = arguments["confidence"]
+        result = await self._fabric.edit_memory(
+            target_seq=target_seq,
+            target_hash=target_hash,
+            new_content=new_content,
+            reason=reason,
+            actor=actor,
+            session_id=session_id,
+            **kwargs,
+        )
+        return [TextContent(type="text", text=json.dumps(result))]
+
+    async def handle_memory_rollback(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_rollback: reverse a prior evolution with a cited event."""
+        session_id = self._session_id_from_arguments(
+            arguments, default=self._default_session_id
+        )
+        target_seq = arguments.get("target_seq")
+        if not isinstance(target_seq, int) or isinstance(target_seq, bool):
+            raise ValueError("target_seq must be an integer")
+        target_hash = arguments.get("target_hash")
+        if not isinstance(target_hash, str) or not target_hash:
+            raise ValueError("target_hash must be a non-empty string")
+        reason = arguments.get("reason")
+        if not isinstance(reason, str) or not reason:
+            raise ValueError("reason must be a non-empty string")
+        actor = _optional_strict_text(arguments.get("actor"), "actor") or "zaxy-editor"
+        kwargs: dict[str, Any] = {}
+        if arguments.get("confidence") is not None:
+            kwargs["confidence"] = arguments["confidence"]
+        result = await self._fabric.rollback_memory(
+            target_seq=target_seq,
+            target_hash=target_hash,
+            reason=reason,
+            actor=actor,
+            session_id=session_id,
+            **kwargs,
         )
         return [TextContent(type="text", text=json.dumps(result))]
 
@@ -2819,6 +2881,10 @@ async def _dispatch_tool_call(
         return await active_server.handle_memory_evolution_gate(arguments)
     if name == "memory_outcome":
         return await active_server.handle_memory_outcome(arguments)
+    if name == "memory_edit":
+        return await active_server.handle_memory_edit(arguments)
+    if name == "memory_rollback":
+        return await active_server.handle_memory_rollback(arguments)
     if name == "memory_query":
         return await active_server.handle_memory_query(arguments)
     if name == "memory_causal_successors":

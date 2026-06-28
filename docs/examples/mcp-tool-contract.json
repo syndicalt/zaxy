@@ -1,5 +1,5 @@
 {
-  "tool_count": 58,
+  "tool_count": 60,
   "tools": [
     {
       "description": "The front door to Zaxy memory: call this first, before substantial work, to checkout current, cited, prompt-ready memory state for a session. Start here; every other memory tool is plumbing or power use, discoverable through memory_capabilities.",
@@ -478,6 +478,99 @@
         "type": "object"
       },
       "name": "memory_outcome"
+    },
+    {
+      "description": "Re-ingest a human edit of a memory as a cited, non-authoritative memory.corrected event. The original event (target_seq/target_hash) is never mutated or deleted; the correction cites it and carries the edited content + reason, routed through the I4 update evolution gate (auditable). Retrieval surfaces the correction alongside the retained original; the hash-chain stays intact.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "default": "zaxy-editor",
+            "description": "Actor recording the correction",
+            "type": "string"
+          },
+          "confidence": {
+            "description": "Evidence confidence for the correction (gate input; default 1.0)",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "new_content": {
+            "description": "The corrected (edited) memory content",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why the memory was corrected",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Session ID for multi-agent sharding",
+            "type": "string"
+          },
+          "target_hash": {
+            "description": "64-hex hash of the memory event being corrected",
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "target_seq": {
+            "description": "Seq of the memory event being corrected",
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "target_seq",
+          "target_hash",
+          "new_content",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "name": "memory_edit"
+    },
+    {
+      "description": "Reverse a prior memory evolution with a cited, non-authoritative memory.rolled_back event. The target (target_seq/target_hash) must be a reversible evolution event (e.g. a consolidation acceptance, a generated preventive rule, a gate decision); the reversal cites it, routes through the I4 update gate, and on replay undoes the evolution's effect (a rolled-back consolidation acceptance reverts the candidate to its prior review status). Additive and reversible; nothing is mutated or deleted.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "default": "zaxy-editor",
+            "description": "Actor recording the rollback",
+            "type": "string"
+          },
+          "confidence": {
+            "description": "Evidence confidence for the rollback (gate input; default 1.0)",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "reason": {
+            "description": "Why the evolution is being rolled back",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Session ID for multi-agent sharding",
+            "type": "string"
+          },
+          "target_hash": {
+            "description": "64-hex hash of the evolution event being reversed",
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "target_seq": {
+            "description": "Seq of the evolution event being reversed",
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "target_seq",
+          "target_hash",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "name": "memory_rollback"
     },
     {
       "description": "Read directed causal effects of an entity from graph-backed memory.",

@@ -734,7 +734,7 @@ def test_mcp_docs_publish_tool_contract_snapshot() -> None:
     fixture = json.loads(Path("docs/examples/mcp-tool-contract.json").read_text(encoding="utf-8"))
     docs = Path("docs/mcp.md").read_text(encoding="utf-8")
 
-    assert fixture["tool_count"] == len(fixture["tools"]) == 58
+    assert fixture["tool_count"] == len(fixture["tools"]) == 60
     assert "docs/examples/mcp-tool-contract.json" in docs
     assert "MCP tool contract snapshot" in docs
     assert {tool["name"] for tool in fixture["tools"]} >= {

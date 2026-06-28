@@ -2698,6 +2698,102 @@ def _extract_consolidation_candidate_reviewed(event: Event) -> ExtractionResult:
     return ExtractionResult(entities=[review, candidate], edges=[edge], source_event_seq=event.seq)
 
 
+@register("memory.corrected")
+def _extract_memory_corrected(event: Event) -> ExtractionResult:
+    """Project a cited, non-authoritative human correction (re-ingest of an edit).
+
+    The corrected content is surfaced as a searchable entity citing the original
+    event; the original event is never mutated or deleted, so the correction is
+    purely additive.
+    """
+    correction_id = _optional_text(event.payload.get("correction_id")) or f"correction:{event.seq}"
+    content = _optional_text(event.payload.get("content"))
+    reason = _optional_text(event.payload.get("reason"))
+    target = event.payload.get("target")
+    target = target if isinstance(target, Mapping) else {}
+    target_seq = _positive_int(target.get("seq"), default=0)
+    target_hash = _optional_text(target.get("hash"))
+    properties: dict[str, Any] = {
+        "correction_id": correction_id,
+        "reason": reason,
+        "authority_status": event.payload.get("authority_status", "non_authoritative"),
+    }
+    if target_seq:
+        properties["target_seq"] = target_seq
+    if target_hash is not None:
+        properties["target_hash"] = target_hash
+        properties["target_ref"] = f"{target_seq}:{target_hash}"
+    entity = ExtractedEntity(
+        name=correction_id,
+        entity_type="memory_correction",
+        observed_at=event.timestamp,
+        summary=content,
+        properties=_compact_properties(properties),
+    )
+    return ExtractionResult(entities=[entity], edges=[], source_event_seq=event.seq)
+
+
+@register("memory.rolled_back")
+def _extract_memory_rolled_back(event: Event) -> ExtractionResult:
+    """Project a reversible rollback: undo a cited evolution without deletion.
+
+    For a rolled-back consolidation review the cited candidate is reverted to its
+    prior review status (additive, mirroring fleet rollback). Every rollback is
+    also retained as a cited, non-authoritative marker for audit.
+    """
+    rollback_id = _optional_text(event.payload.get("rollback_id")) or f"rollback:{event.seq}"
+    reason = _optional_text(event.payload.get("reason"))
+    target = event.payload.get("target")
+    target = target if isinstance(target, Mapping) else {}
+    target_seq = _positive_int(target.get("seq"), default=0)
+    target_hash = _optional_text(target.get("hash"))
+    reverts = event.payload.get("reverts")
+    reverts = reverts if isinstance(reverts, Mapping) else {}
+    reverts_type = _optional_text(reverts.get("event_type"))
+    candidate_id = _optional_text(reverts.get("candidate_id"))
+    to_status = _optional_text(reverts.get("to_status"))
+
+    entities: list[ExtractedEntity] = []
+    if (
+        reverts_type == "consolidation.candidate.reviewed"
+        and candidate_id is not None
+        and to_status is not None
+    ):
+        entities.append(
+            ExtractedEntity(
+                name=candidate_id,
+                entity_type="consolidation_candidate",
+                observed_at=event.timestamp,
+                properties={
+                    "review_status": to_status,
+                    "authority_status": _CONSOLIDATION_AUTHORITY_STATUS,
+                },
+            )
+        )
+
+    properties: dict[str, Any] = {
+        "rollback_id": rollback_id,
+        "reason": reason,
+        "reverts_event_type": reverts_type,
+        "authority_status": event.payload.get("authority_status", "non_authoritative"),
+    }
+    if target_seq:
+        properties["target_seq"] = target_seq
+    if target_hash is not None:
+        properties["target_hash"] = target_hash
+        properties["target_ref"] = f"{target_seq}:{target_hash}"
+    entities.append(
+        ExtractedEntity(
+            name=rollback_id,
+            entity_type="memory_rollback",
+            observed_at=event.timestamp,
+            summary=reason,
+            properties=_compact_properties(properties),
+        )
+    )
+    return ExtractionResult(entities=entities, edges=[], source_event_seq=event.seq)
+
+
 @register("metacognition.unknown.recorded")
 def _extract_metacognition_unknown_recorded(event: Event) -> ExtractionResult:
     """Project an open known-unknown diagnostic without granting authority."""

@@ -9425,3 +9425,139 @@ def test_memory_evolution_policy_reports_auto_with_rollback_default(tmp_path: Pa
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert payload["default_tier"] == "auto_with_rollback"
+
+
+def test_memory_edit_appends_cited_correction(tmp_path: Path) -> None:
+    """`zaxy memory edit` re-ingests a human edit as a cited correction + gate event."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    eventloom_path = workspace / ".eventloom"
+    (workspace / ".env.local").write_text("PROJECTION_BACKEND=null\n", encoding="utf-8")
+    runner = CliRunner()
+
+    append_result = runner.invoke(
+        app,
+        [
+            "memory", "append", "decision.made",
+            "--actor", "zaxy-agent",
+            "--session-id", "ext",
+            "--payload-json", '{"summary": "deploy on Fridays"}',
+            "--eventloom-path", str(eventloom_path),
+            "--json",
+        ],
+    )
+    assert append_result.exit_code == 0, append_result.output
+    seeded = json.loads(append_result.output)
+
+    result = runner.invoke(
+        app,
+        [
+            "memory", "edit",
+            "--target-seq", str(seeded["seq"]),
+            "--target-hash", seeded["hash"],
+            "--new-content", "deploy on Mondays",
+            "--reason", "policy changed",
+            "--eventloom-path", str(eventloom_path),
+            "--session-id", "ext",
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["correction_id"].startswith("correction:")
+    assert payload["gate"]["op"] == "update"
+
+    events = EventLog(eventloom_path / "ext.jsonl").read_all()
+    corrected = [e for e in events if e.type == "memory.corrected"]
+    assert len(corrected) == 1
+    assert corrected[0].payload["content"] == "deploy on Mondays"
+    assert corrected[0].payload["authority_status"] == "non_authoritative"
+    assert any(e.type == "evolution.gate.evaluated" for e in events)
+    # The original decision event is retained and the chain stays intact.
+    assert any(e.seq == seeded["seq"] and e.type == "decision.made" for e in events)
+    assert EventLog(eventloom_path / "ext.jsonl").verify().ok is True
+
+
+def test_memory_rollback_reverses_evolution(tmp_path: Path) -> None:
+    """`zaxy memory rollback` reverses a reversible evolution event additively."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    eventloom_path = workspace / ".eventloom"
+    (workspace / ".env.local").write_text("PROJECTION_BACKEND=null\n", encoding="utf-8")
+    runner = CliRunner()
+
+    gate_result = runner.invoke(
+        app,
+        [
+            "memory", "evolution-gate", "consolidate",
+            "--confidence", "0.99",
+            "--eventloom-path", str(eventloom_path),
+            "--session-id", "ext",
+            "--json",
+        ],
+    )
+    assert gate_result.exit_code == 0, gate_result.output
+    gate_event = next(
+        e for e in EventLog(eventloom_path / "ext.jsonl").read_all()
+        if e.type == "evolution.gate.evaluated"
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "memory", "rollback",
+            "--target-seq", str(gate_event.seq),
+            "--target-hash", gate_event.hash,
+            "--reason", "reverse the gate decision",
+            "--eventloom-path", str(eventloom_path),
+            "--session-id", "ext",
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["rollback_id"].startswith("rollback:")
+    assert payload["reverts"]["event_type"] == "evolution.gate.evaluated"
+
+    events = EventLog(eventloom_path / "ext.jsonl").read_all()
+    rolled = [e for e in events if e.type == "memory.rolled_back"]
+    assert len(rolled) == 1
+    assert rolled[0].payload["target"] == {"seq": gate_event.seq, "hash": gate_event.hash}
+    assert rolled[0].payload["authority_status"] == "non_authoritative"
+    assert EventLog(eventloom_path / "ext.jsonl").verify().ok is True
+
+
+def test_memory_rollback_rejects_non_reversible_target(tmp_path: Path) -> None:
+    """`zaxy memory rollback` rejects a target that is not a reversible evolution."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    eventloom_path = workspace / ".eventloom"
+    (workspace / ".env.local").write_text("PROJECTION_BACKEND=null\n", encoding="utf-8")
+    runner = CliRunner()
+
+    append_result = runner.invoke(
+        app,
+        [
+            "memory", "append", "goal.created",
+            "--actor", "user",
+            "--session-id", "ext",
+            "--payload-json", '{"title": "not reversible"}',
+            "--eventloom-path", str(eventloom_path),
+            "--json",
+        ],
+    )
+    assert append_result.exit_code == 0, append_result.output
+    seeded = json.loads(append_result.output)
+
+    result = runner.invoke(
+        app,
+        [
+            "memory", "rollback",
+            "--target-seq", str(seeded["seq"]),
+            "--target-hash", seeded["hash"],
+            "--reason", "nope",
+            "--eventloom-path", str(eventloom_path),
+            "--session-id", "ext",
+        ],
+    )
+    assert result.exit_code != 0
