@@ -154,6 +154,7 @@ _COMMAND_PANELS: tuple[tuple[str, tuple[str, ...]], ...] = (
             "index-codebase",
             "refresh-context",
             "compact",
+            "crystallize",
             "reproject",
         ),
     ),
@@ -866,6 +867,102 @@ def state_recovery_benchmark(
         json_output=json_output,
         fail_on_guardrail=not allow_failures,
     )
+
+
+@app.command("crystallize")
+def crystallize(
+    session_id: str = typer.Option("default", "--session-id", help="Session ID (Eventloom thread) to crystallize"),
+    eventloom_path: Path = typer.Option(Path(".eventloom"), "--eventloom-path", help="Eventloom directory"),  # noqa: B008
+    consolidation: bool = typer.Option(
+        True, "--consolidation/--no-consolidation", help="Propose review-pending consolidation candidates"
+    ),
+    procedure_mining: bool = typer.Option(
+        True, "--procedure-mining/--no-procedure-mining", help="Mine recurring procedures into candidates"
+    ),
+    compaction: bool = typer.Option(
+        False, "--compaction/--no-compaction", help="Run the additive compaction audit/projection diagnostic"
+    ),
+    metacognition: bool = typer.Option(
+        True, "--metacognition/--no-metacognition", help="Run the autonomous metacognition monitor"
+    ),
+    auto_apply: bool = typer.Option(
+        True, "--auto-apply/--no-auto-apply", help="Let the I4 gate auto-accept high-confidence candidates"
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Run one governed sleep-time crystallization pass (operator/cron-triggered; no daemon)."""
+    import asyncio
+
+    from zaxy.cli import serving as _serving
+    from zaxy.cli.workspace import (
+        _is_embedded_projection_lock_error,
+        _resolve_cli_projection_backend,
+    )
+    from zaxy.crystallization import run_crystallization_pass
+
+    settings = _serving._status_settings(_serving._profile_root_for_eventloom_path(eventloom_path))
+    if not getattr(settings, "crystallization_enabled", False):
+        typer.echo(
+            "zaxy crystallize is disabled; set crystallization_enabled=true "
+            "(env CRYSTALLIZATION_ENABLED=1) to enable the governed crystallization runner.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    async def _crystallize_with_path(
+        embedded_graph_path: Path, *, projection_backend_override: str | None = None
+    ) -> Any:
+        projection_backend = projection_backend_override or _resolve_cli_projection_backend(None, settings)
+        fabric = _memory_fabric(
+            eventloom_path=str(eventloom_path),
+            projection_backend=projection_backend,
+            pggraph_dsn=settings.pggraph_dsn,
+            embedded_graph_path=embedded_graph_path,
+            latticedb_path=Path(settings.latticedb_path),
+        )
+        try:
+            await fabric.connect()
+            return await run_crystallization_pass(
+                fabric,
+                session_id=session_id,
+                consolidation=consolidation,
+                procedure_mining=procedure_mining,
+                compaction=compaction,
+                metacognition=metacognition,
+                auto_apply=auto_apply,
+            )
+        finally:
+            with suppress(Exception):
+                await fabric.close()
+
+    async def _crystallize() -> Any:
+        embedded_graph_path = Path(settings.embedded_graph_path)
+        try:
+            return await _crystallize_with_path(embedded_graph_path)
+        except RuntimeError as exc:
+            if not _is_embedded_projection_lock_error(exc):
+                raise
+            # A server holds the embedded projection's single-owner lock; keep the
+            # crystallization appends durable by running with the graph lane degraded
+            # (null backend), mirroring `memory outcome`.
+            return await _crystallize_with_path(embedded_graph_path, projection_backend_override="null")
+
+    try:
+        report = asyncio.run(_crystallize())
+    except (RuntimeError, OSError) as exc:
+        typer.echo(f"zaxy crystallize failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    if json_output:
+        typer.echo(json.dumps(report.to_dict(), sort_keys=True))
+    else:
+        typer.echo(
+            f"Crystallization pass for {report.session_id}: "
+            f"consolidation={report.consolidation_candidates}, "
+            f"procedure={report.procedure_candidates}, "
+            f"auto_accepted={report.auto_accepted}, pending={report.left_pending}, "
+            f"reverify_requested={report.reverify_requested}"
+        )
 
 
 @app.command("fleet-benchmark")
