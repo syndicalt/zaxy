@@ -103,6 +103,13 @@ from zaxy.evolution_policy import (
     resolve_evolution_policy,
 )
 from zaxy.extract import extract
+from zaxy.forgetting import (
+    CIPHER_PAYLOAD_KEY,
+    FORGOTTEN_MARKER_KEY,
+    build_memory_forgotten_event,
+    cipher_cell,
+    decrypt_payload,
+)
 from zaxy.inference import build_inferred_edge_events
 from zaxy.lifecycle import build_subagent_completed_event
 from zaxy.long_horizon import build_long_horizon_plan
@@ -1141,6 +1148,8 @@ class MemoryFabric:
         payload: dict[str, Any] | None = None,
         thread: str = "default",
         session_id: str | None = None,
+        *,
+        forgettable: bool = False,
     ) -> Any:
         """Append a typed event to the immutable log and project to the graph.
 
@@ -1165,8 +1174,20 @@ class MemoryFabric:
         safe_payload = validate_payload(payload or {})
         eventlog = self.session_manager.get(sid).eventlog
 
+        if forgettable and not self.settings.forgetting_enabled:
+            raise ValueError(
+                "forgettable append requires verified forgetting; set FORGETTING_ENABLED=true"
+            )
+
         encoding = None
-        if self._encoding_classification_active() and _encoding_gate_eligible(event_type, safe_payload):
+        # Forgettable payloads are sealed as ciphertext; the encoding gate (which
+        # reads/classifies plaintext content and can project it) is skipped so no
+        # plaintext analysis of an erasable memory is denormalized into the graph.
+        if (
+            not forgettable
+            and self._encoding_classification_active()
+            and _encoding_gate_eligible(event_type, safe_payload)
+        ):
             encoding = await self._classify_append_encoding(safe_payload, session_id=sid)
             if encoding is not None and self._encoding_gate_enabled:
                 # Tag only: the event is always appended and hash-chained;
@@ -1178,6 +1199,7 @@ class MemoryFabric:
             actor=actor,
             payload=safe_payload,
             thread=sid,
+            forgettable=forgettable,
         )
 
         interference = None
@@ -1553,6 +1575,83 @@ class MemoryFabric:
             "reverts": reverts,
             "gate": decision.to_payload(candidate_ref=target),
         }
+
+    async def verified_forget(
+        self,
+        *,
+        target_seq: int,
+        target_hash: str,
+        reason: str,
+        actor: str = "zaxy-forgetter",
+        confidence: float = 1.0,
+        session_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Cryptographically erase a forgettable memory (verified forgetting / I5b).
+
+        Validates that the target is a sealed forgettable memory carrying a
+        ``__zaxy_cipher`` cell, routes the erasure through the I4 ``forget`` gate
+        (auditable ``evolution.gate.evaluated``), destroys the wrapped DEK in the
+        out-of-log erasure vault, and appends a cited, non-authoritative
+        ``memory.forgotten`` tombstone. The on-disk ciphertext and its hash are
+        untouched -- ``verify()`` stays green -- while the plaintext becomes
+        permanently unrecoverable and every reader now sees ``[FORGOTTEN]``. See
+        ``ZAXY-3.md`` (I5b). Returns the forget event ref, the cited target, the
+        ``cell_id``, whether a live key was destroyed, and the gate decision.
+        """
+        if not self.settings.forgetting_enabled:
+            raise ValueError(
+                "verified forgetting is disabled; set FORGETTING_ENABLED=true to enable crypto-erasure"
+            )
+        sid = validate_session_id(session_id or "default")
+        if not isinstance(reason, str) or not reason.strip():
+            raise ValueError("reason must be a non-empty string")
+        target_event = self._require_target_event(target_seq, target_hash, session_id=sid)
+        cell = cipher_cell(target_event.payload)
+        if cell is None or not isinstance(cell.get("cell_id"), str):
+            raise ValueError(
+                f"event at seq {target_seq} is not a forgettable (encrypted) memory; "
+                "verified_forget requires a __zaxy_cipher cell"
+            )
+        cell_id = cell["cell_id"]
+        target = {"seq": target_event.seq, "hash": target_event.hash}
+        # Gate first (records intent), then destroy the key, then append the
+        # tombstone: the security-critical erase precedes the audit record so a
+        # tombstone can never claim an erasure that did not happen.
+        decision = await self.evaluate_evolution_gate(
+            "forget", confidence, candidate_ref=target, actor=actor, session_id=sid
+        )
+        erased_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        erased = self.session_manager.vault.erase(cell_id, erased_at=erased_at)
+        spec = build_memory_forgotten_event(
+            actor=actor, session_id=sid, target=target, cell_id=cell_id, reason=reason
+        )
+        event = await self.append(
+            spec["event_type"], spec["actor"], payload=spec["payload"], session_id=sid
+        )
+        self._invalidate_query_page_cache(sid)
+        return {
+            "forget_id": spec["payload"]["forget_id"],
+            "forget_event": {"seq": event.seq, "hash": event.hash},
+            "target": target,
+            "cell_id": cell_id,
+            "erased": erased,
+            "erased_at": erased_at,
+            "gate": decision.to_payload(candidate_ref=target),
+        }
+
+    def _decrypt_event_view(self, event: Any) -> Any:
+        """Return an event whose forgettable cipher cell is decrypted for reading.
+
+        Plaintext events pass through untouched (no copy). A forgettable event is
+        copied with its payload decrypted to plaintext (DEK still live) or the
+        ``[FORGOTTEN]`` sentinel (DEK erased). The sealed ``hash`` is preserved so
+        citations stay stable. NEVER used by ``verify``/``read_all``.
+        """
+        payload = getattr(event, "payload", None)
+        if not isinstance(payload, dict) or CIPHER_PAYLOAD_KEY not in payload:
+            return event
+        decrypted = decrypt_payload(payload, vault=self.session_manager.vault)
+        return event.model_copy(update={"payload": decrypted})
 
     def _require_target_event(
         self, target_seq: object, target_hash: object, *, session_id: str
@@ -2705,9 +2804,14 @@ class MemoryFabric:
         replay = self.session_manager.replay(session_id, from_seq=1)
         query_tokens = _tokens(query)
         contexts: list[Context] = []
-        for event in replay.events:
+        for raw_event in replay.events:
+            event = self._decrypt_event_view(raw_event)
             if getattr(event, "type", None) == REINFORCEMENT_EVENT_TYPE:
                 # Salience bookkeeping is never retrievable context.
+                continue
+            event_payload = getattr(event, "payload", None)
+            if isinstance(event_payload, dict) and event_payload.get(FORGOTTEN_MARKER_KEY):
+                # A forgotten memory is excluded from retrieval.
                 continue
             content = _event_content(event)
             if not content:
@@ -3159,7 +3263,7 @@ class MemoryFabric:
             if verbatim_candidate_limit > 0
             else []
         )
-        replay_events = list(replay.events)
+        replay_events = [self._decrypt_event_view(event) for event in replay.events]
         if as_of_seq is not None:
             replay_events = [event for event in replay_events if event.seq <= as_of_seq]
         session_events = list(replay_events)

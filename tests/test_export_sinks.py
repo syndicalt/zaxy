@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 
+from zaxy.config import Settings
 from zaxy.export_sinks import FileSink, WebhookSink, push_memory_export
 from zaxy.export_view import ExportSelector, build_memory_export
 from zaxy.retrieval_cache import SessionRetrievalCache
@@ -148,3 +149,93 @@ def test_cli_export_push_unknown_sink_errors(tmp_path: Path) -> None:
         ["export-push", "--sink", "s3", "--dest", "x", "--eventloom-path", str(el), "--session-id", "demo"],
     )
     assert res.exit_code != 0
+
+
+def test_push_threads_vault_decrypts_forgettable(tmp_path: Path) -> None:
+    """P2: push_memory_export decrypts a forgettable cell when a vault is threaded;
+    without one (the pre-fix call) the raw __zaxy_cipher ciphertext leaks."""
+    from zaxy.forgetting import CIPHER_PAYLOAD_KEY, build_vault
+
+    cache = _cache(tmp_path)
+    secret = "SSN 999-88-7777"
+    cache.session_manager.get("s").eventlog.append(
+        "goal.created",
+        actor="a",
+        payload={"title": "t", "content": secret},
+        thread="s",
+        forgettable=True,
+    )
+    selector = ExportSelector(grains=frozenset({"event"}))
+    el = str(tmp_path / ".eventloom")
+    vault = build_vault(Settings(forgetting_enabled=True), el)
+
+    leaky = tmp_path / "leak.json"
+    push_memory_export("s", selector, retrieval_cache=cache, sink=FileSink(leaky))
+    assert CIPHER_PAYLOAD_KEY in leaky.read_text(encoding="utf-8")  # no vault -> leak
+
+    out = tmp_path / "ok.json"
+    push_memory_export("s", selector, retrieval_cache=cache, vault=vault, sink=FileSink(out))
+    text = out.read_text(encoding="utf-8")
+    assert CIPHER_PAYLOAD_KEY not in text
+    assert secret in text
+
+
+def test_push_plaintext_byte_identical_when_no_vault(tmp_path: Path) -> None:
+    """Default path (forgetting off / no vault): a plaintext push is unchanged --
+    vault=None projects exactly the plain helper bundle (byte-identical)."""
+    from zaxy.forgetting import build_vault
+
+    cache = _cache(tmp_path)
+    _append(cache, "s", "goal.created", {"title": "g1"})
+    selector = ExportSelector(grains=frozenset({"event"}))
+    assert build_vault(Settings(forgetting_enabled=False), str(tmp_path / ".eventloom")) is None
+    expected = build_memory_export("s", selector, retrieval_cache=cache)
+    got = build_memory_export("s", selector, retrieval_cache=cache, vault=None)
+    assert got == expected
+
+
+def test_cli_export_decrypts_forgettable_not_ciphertext(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """P2: `zaxy export` must decrypt forgettable cells (build_vault wiring) and
+    never emit the raw __zaxy_cipher ciphertext when forgetting is enabled."""
+    from typer.testing import CliRunner
+
+    from zaxy.__main__ import app
+    from zaxy.config import get_settings
+    from zaxy.forgetting import CIPHER_PAYLOAD_KEY
+
+    el = tmp_path / ".eventloom"
+    secret = "SSN 111-22-3333"
+    SessionManager(base_path=str(el)).get("demo").eventlog.append(
+        "goal.created",
+        actor="a",
+        payload={"title": "g", "content": secret},
+        thread="demo",
+        forgettable=True,
+    )
+    out = tmp_path / "b.json"
+
+    monkeypatch.setenv("FORGETTING_ENABLED", "true")
+    get_settings.cache_clear()
+    try:
+        res = CliRunner().invoke(
+            app,
+            [
+                "export",
+                "--out",
+                str(out),
+                "--eventloom-path",
+                str(el),
+                "--session-id",
+                "demo",
+                "--types",
+                "goal.created",
+            ],
+        )
+    finally:
+        get_settings.cache_clear()
+    assert res.exit_code == 0, res.output
+    text = out.read_text(encoding="utf-8")
+    assert CIPHER_PAYLOAD_KEY not in text
+    assert secret in text

@@ -203,7 +203,7 @@ class TestToolSchema:
 
     def test_tools_list_length(self) -> None:
         """Should expose the memory and context lifecycle tools."""
-        assert len(TOOLS) == 60
+        assert len(TOOLS) == 61
 
     def test_tool_names(self) -> None:
         """Tool names should match the expected contract."""
@@ -215,6 +215,7 @@ class TestToolSchema:
             "memory_outcome",
             "memory_edit",
             "memory_rollback",
+            "memory_forget",
             "memory_query",
             "memory_causal_successors",
             "memory_causal_predecessors",

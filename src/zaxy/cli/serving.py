@@ -1039,6 +1039,93 @@ def memory_rollback(
         )
 
 
+@memory_app.command("forget")
+def memory_forget(
+    target_seq: int = typer.Option(..., "--target-seq", help="Seq of the forgettable memory event to erase"),
+    target_hash: str = typer.Option(..., "--target-hash", help="64-hex hash of the forgettable memory event to erase"),
+    reason: str = typer.Option(..., "--reason", help="Why the memory is being forgotten"),
+    confidence: float = typer.Option(1.0, "--confidence", help="Evidence confidence for the forget gate 0.0-1.0"),
+    actor: str = typer.Option("zaxy-forgetter", "--actor", help="Actor recording the erasure"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    session_id: str = typer.Option("default", help="Session ID to record the erasure into"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Cryptographically erase a forgettable memory (CLI twin of MCP memory_forget)."""
+    import asyncio
+
+    from zaxy.security import validate_session_id
+
+    try:
+        if not 0.0 <= confidence <= 1.0:
+            raise typer.BadParameter("confidence must be between 0.0 and 1.0")
+        safe_session_id = validate_session_id(session_id)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    async def _forget_with_path(
+        embedded_graph_path: Path, *, projection_backend_override: str | None = None
+    ) -> Any:
+        settings = _status_settings(_profile_root_for_eventloom_path(eventloom_path))
+        projection_backend = projection_backend_override or _resolve_cli_projection_backend(
+            None, settings
+        )
+        fabric = _runtime._memory_fabric(
+            eventloom_path=str(eventloom_path),
+            projection_backend=projection_backend,
+            pggraph_dsn=settings.pggraph_dsn,
+            embedded_graph_path=embedded_graph_path,
+            latticedb_path=Path(settings.latticedb_path),
+        )
+        try:
+            await fabric.connect()
+            return await fabric.verified_forget(
+                target_seq=target_seq,
+                target_hash=target_hash,
+                reason=reason,
+                confidence=confidence,
+                actor=actor,
+                session_id=safe_session_id,
+            )
+        finally:
+            with suppress(Exception):
+                await fabric.close()
+
+    async def _forget() -> Any:
+        settings = _status_settings(_profile_root_for_eventloom_path(eventloom_path))
+        embedded_graph_path = Path(settings.embedded_graph_path)
+        try:
+            return await _forget_with_path(embedded_graph_path)
+        except RuntimeError as exc:
+            if not _is_embedded_projection_lock_error(exc):
+                raise
+            # A server holds the embedded projection's single-owner lock; the
+            # erasure (key destruction + tombstone) is still durable with the
+            # graph lane degraded (null backend), mirroring `memory rollback`.
+            return await _forget_with_path(
+                embedded_graph_path, projection_backend_override="null"
+            )
+
+    try:
+        result = asyncio.run(_forget())
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    except (RuntimeError, OSError) as exc:
+        typer.echo(f"zaxy memory forget failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    if json_output:
+        typer.echo(json.dumps(result, sort_keys=True))
+    else:
+        typer.echo(
+            f"forgotten: forget_id={result['forget_id']} "
+            f"seq={result['forget_event']['seq']} "
+            f"target={result['target']['seq']} "
+            f"cell_id={result['cell_id']} "
+            f"erased={result['erased']} "
+            f"gate={result['gate']['decision']}"
+        )
+
+
 @memory_app.command("evolution-policy")
 def memory_evolution_policy(
     eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008

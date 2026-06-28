@@ -864,7 +864,9 @@ def export_memory(
     writes an unsigned canonical bundle. Uses the shared export contract, so the
     entries match the memory_export MCP tool exactly.
     """
+    from zaxy.config import get_settings
     from zaxy.export_view import ExportSelector, build_memory_export, load_signing_key
+    from zaxy.forgetting import build_vault
     from zaxy.retrieval_cache import SessionRetrievalCache
     from zaxy.session import SessionManager
 
@@ -892,8 +894,9 @@ def export_memory(
         )
 
     cache = SessionRetrievalCache(SessionManager(base_path=eventloom_path))
+    vault = build_vault(get_settings(), eventloom_path)
     bundle = build_memory_export(
-        session_id, selector, retrieval_cache=cache, signing_key=signing_key
+        session_id, selector, retrieval_cache=cache, signing_key=signing_key, vault=vault
     )
     if not bundle["entries"]:
         raise typer.BadParameter(f"no matching memory to export in session {session_id}")
@@ -1000,8 +1003,10 @@ def export_push(
     Uses the same shared export path as `zaxy export`, so a pushed bundle is
     identical to the same export pulled. Signs when key files are supplied.
     """
+    from zaxy.config import get_settings
     from zaxy.export_sinks import FileSink, WebhookSink, push_memory_export
     from zaxy.export_view import ExportSelector, load_signing_key
+    from zaxy.forgetting import build_vault
     from zaxy.retrieval_cache import SessionRetrievalCache
     from zaxy.session import SessionManager
 
@@ -1037,8 +1042,14 @@ def export_push(
         raise typer.BadParameter("--sink must be 'file' or 'webhook'")
 
     cache = SessionRetrievalCache(SessionManager(base_path=eventloom_path))
+    vault = build_vault(get_settings(), eventloom_path)
     bundle = push_memory_export(
-        session_id, selector, retrieval_cache=cache, signing_key=signing_key, sink=sink_impl
+        session_id,
+        selector,
+        retrieval_cache=cache,
+        signing_key=signing_key,
+        vault=vault,
+        sink=sink_impl,
     )
     signed = "signed" if signing_key is not None else "unsigned"
     typer.echo(f"pushed {len(bundle['entries'])} entries ({signed}) to {sink} {dest}")

@@ -78,6 +78,7 @@ from zaxy.export_view import (
     load_signing_key,
 )
 from zaxy.extract import extract
+from zaxy.forgetting import build_vault
 from zaxy.lifecycle import (
     build_session_ended_event,
     build_tool_call_completed_event,
@@ -654,6 +655,34 @@ class ZaxyMCPServer:
         if arguments.get("confidence") is not None:
             kwargs["confidence"] = arguments["confidence"]
         result = await self._fabric.rollback_memory(
+            target_seq=target_seq,
+            target_hash=target_hash,
+            reason=reason,
+            actor=actor,
+            session_id=session_id,
+            **kwargs,
+        )
+        return [TextContent(type="text", text=json.dumps(result))]
+
+    async def handle_memory_forget(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_forget: cryptographically erase a forgettable memory."""
+        session_id = self._session_id_from_arguments(
+            arguments, default=self._default_session_id
+        )
+        target_seq = arguments.get("target_seq")
+        if not isinstance(target_seq, int) or isinstance(target_seq, bool):
+            raise ValueError("target_seq must be an integer")
+        target_hash = arguments.get("target_hash")
+        if not isinstance(target_hash, str) or not target_hash:
+            raise ValueError("target_hash must be a non-empty string")
+        reason = arguments.get("reason")
+        if not isinstance(reason, str) or not reason:
+            raise ValueError("reason must be a non-empty string")
+        actor = _optional_strict_text(arguments.get("actor"), "actor") or "zaxy-forgetter"
+        kwargs: dict[str, Any] = {}
+        if arguments.get("confidence") is not None:
+            kwargs["confidence"] = arguments["confidence"]
+        result = await self._fabric.verified_forget(
             target_seq=target_seq,
             target_hash=target_hash,
             reason=reason,
@@ -1480,6 +1509,7 @@ class ZaxyMCPServer:
             selector,
             retrieval_cache=self._retrieval_cache,
             signing_key=signing_key,
+            vault=build_vault(self._settings, self._eventloom_path),
         )
         if disclose_arg is not None:
             if not isinstance(disclose_arg, dict):
@@ -2885,6 +2915,8 @@ async def _dispatch_tool_call(
         return await active_server.handle_memory_edit(arguments)
     if name == "memory_rollback":
         return await active_server.handle_memory_rollback(arguments)
+    if name == "memory_forget":
+        return await active_server.handle_memory_forget(arguments)
     if name == "memory_query":
         return await active_server.handle_memory_query(arguments)
     if name == "memory_causal_successors":

@@ -8,11 +8,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from zaxy.config import get_settings
 from zaxy.event import EventLog
 from zaxy.security import eventlog_path, validate_session_id
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from zaxy.forgetting import PersistentErasureVault
 
 
 @dataclass(frozen=True)
@@ -41,6 +44,26 @@ class SessionManager:
         self._base = Path(base_path or settings.eventloom_path)
         self._base.mkdir(parents=True, exist_ok=True)
         self._sessions: dict[str, Session] = {}
+        self._vault: PersistentErasureVault | None = None
+        self._kek_path = settings.forgetting_kek_path
+
+    @property
+    def vault(self) -> PersistentErasureVault:
+        """Return the shared erasure vault for this base directory.
+
+        One vault per Eventloom directory, shared across every session log so a
+        forgettable append in one session and a ``verified_forget`` in another
+        read/write the same wrapped-DEK store. Built lazily (and only then is the
+        experimental crypto stack imported) so the default plaintext path is
+        untouched.
+        """
+        if self._vault is None:
+            from zaxy.forgetting import PersistentErasureVault
+
+            self._vault = PersistentErasureVault.for_eventloom_dir(
+                self._base, kek_path=self._kek_path
+            )
+        return self._vault
 
     def get(self, session_id: str) -> Session:
         """Get or create a session by ID."""
@@ -49,7 +72,7 @@ class SessionManager:
             log_path = eventlog_path(self._base, safe_id)
             self._sessions[safe_id] = Session(
                 session_id=safe_id,
-                eventlog=EventLog(str(log_path)),
+                eventlog=EventLog(str(log_path), vault_factory=lambda: self.vault),
             )
         return self._sessions[safe_id]
 
