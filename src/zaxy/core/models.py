@@ -37,6 +37,15 @@ class ContextAssembly:
     #: by default (``fleet_enabled``) and empty unless the agent is enrolled in a
     #: requested fleet; surfaced as a distinct ``fleet`` checkout lane.
     fleet_contexts: list[Context] = field(default_factory=list)
+    #: Consolidated remote-tier contexts for the two-tier long-horizon checkout.
+    #: Off by default (``long_horizon_enabled`` / the ``long_horizon`` param) and
+    #: empty unless engaged with a session that exceeds the recent window; each is
+    #: a cited, non-authoritative consolidation candidate for older history.
+    long_horizon_contexts: list[Context] = field(default_factory=list)
+    #: Episodic/consolidated split summary (``enabled``, ``recent_window``,
+    #: ``episodic_count``, ``horizon_split_seq``) when two-tier assembly is
+    #: engaged; ``None`` when off, keeping the checkout byte-identical to today.
+    long_horizon: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
