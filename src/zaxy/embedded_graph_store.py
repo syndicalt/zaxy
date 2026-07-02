@@ -40,6 +40,7 @@ from zaxy.embedded_graph_internals import (
     LEGACY_EMBEDDING_VERSION,
     VECTOR_INDEX_CACHE_MAX_ENTRIES,
     VECTOR_SEARCH_OVERSAMPLE,
+    EmbeddedProjectionLockedError,
     _adjacency_signature,
     _ann_content_digest,
     _ann_scope_digest,
@@ -77,6 +78,8 @@ from zaxy.embedded_graph_internals import (
     _TraversalIndex,
     _VectorGroup,
     _VectorIndex,
+    await_blocking_with_timeout,
+    is_embedded_projection_lock_error,
     pre_ladybug_backup_paths,
 )
 
@@ -102,6 +105,7 @@ class EmbeddedGraphStore:
         vector_ann_byte_budget_engagement: bool | None = None,
         vector_quantization: str | None = None,
         active_embedding_version: str | None = None,
+        lock_timeout_seconds: float | None = None,
     ) -> None:
         self.path = Path(path)
         self._database: Any | None = None
@@ -112,6 +116,7 @@ class EmbeddedGraphStore:
         self._vector_ann_byte_budget_engagement_override = vector_ann_byte_budget_engagement
         self._vector_quantization_override = vector_quantization
         self._active_embedding_version_override = active_embedding_version
+        self._lock_timeout_override = lock_timeout_seconds
         self._ann_supported: bool | None = None
         self._ann_indexed_tables: set[str] = set()
         self._ann_generation_states: dict[tuple[str, str, int], _AnnGenerationState] = {}
@@ -146,8 +151,17 @@ class EmbeddedGraphStore:
         import ladybug
 
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        lock_timeout = self._resolved_lock_timeout_seconds()
+
+        def _open_database() -> Any:
+            return ladybug.Database(str(self.path))
+
         try:
-            self._database = ladybug.Database(str(self.path))
+            self._database = await await_blocking_with_timeout(
+                _open_database, timeout=lock_timeout, operation="open"
+            )
+        except EmbeddedProjectionLockedError:
+            raise
         except RuntimeError as exc:
             incompatible = _is_incompatible_storage_error(exc)
             corrupt = _is_corrupt_store_error(exc)
@@ -169,7 +183,9 @@ class EmbeddedGraphStore:
                 reason,
                 backup_path,
             )
-            self._database = ladybug.Database(str(self.path))
+            self._database = await await_blocking_with_timeout(
+                _open_database, timeout=lock_timeout, operation="open-after-quarantine"
+            )
         self._connection = ladybug.Connection(self._database)
         # The `vector` extension is an official LadybugDB extension that is NOT
         # bundled in the pip wheel (unlike Kuzu 0.11.3, which auto-registered a
@@ -202,11 +218,47 @@ class EmbeddedGraphStore:
         self._clear_all_caches()
 
     async def close(self) -> None:
-        """Close embedded graph resources."""
+        """Close embedded graph resources.
+
+        A best-effort ``CHECKPOINT`` flushes the write-ahead log into the main
+        store so an owner that exits — even ungracefully, after this runs —
+        leaves a clean WAL rather than the dirty/uncheckpointed state that
+        surfaces as a ``wal_record ... UNREACHABLE_CODE`` assertion on the next
+        open.
+        """
+        if self._connection is not None and self._database is not None:
+            with suppress(Exception):
+                self._execute("CHECKPOINT")
         self._connection = None
         self._database = None
         self._clear_all_caches()
         self._bulk_projection_open = False
+
+    async def acquire_write_lock_probe(self) -> None:
+        """Force and bound single-writer lock acquisition at startup.
+
+        LadybugDB acquires its exclusive write lock lazily — on the first write
+        transaction, not at ``Database`` open — so an open that succeeds can
+        still hang indefinitely on the first projection write when a stale
+        process holds the lock. This issues one idempotent write through the
+        bounded daemon runner so that lock contention surfaces here, at startup,
+        as :class:`EmbeddedProjectionLockedError` (then reap-and-retry / degrade
+        in the caller) instead of freezing the first ``memory_checkout``. Once
+        it succeeds the lock is held for this process's lifetime; subsequent
+        writes cannot contend.
+        """
+        timeout = self._resolved_lock_timeout_seconds()
+
+        def _probe() -> None:
+            self._execute(
+                "MERGE (p:BenchmarkProjection {key: $key}) "
+                "SET p.event_count = coalesce(p.event_count, 0)",
+                {"key": "__lockprobe__"},
+            )
+
+        await await_blocking_with_timeout(
+            _probe, timeout=timeout, operation="write-lock-probe"
+        )
 
     async def init_schema(self) -> None:
         """Initialize embedded graph schema."""
@@ -1112,6 +1164,13 @@ class EmbeddedGraphStore:
 
         return get_settings().vector_ann_byte_budget_engagement
 
+    def _resolved_lock_timeout_seconds(self) -> float:
+        if self._lock_timeout_override is not None:
+            return self._lock_timeout_override
+        from zaxy.config import get_settings
+
+        return get_settings().embedded_lock_timeout_seconds
+
     def _ann_engagement_reason(self, *, count: int, dimension: int) -> str | None:
         """Return why the ANN path engages for a scope, or None to stay resident.
 
@@ -1922,10 +1981,22 @@ class EmbeddedGraphStore:
         if missing:
             raise RuntimeError(f"query references unbound parameters: {sorted(missing)}")
         connection = self._require_connection()
-        if parameters is None:
-            return connection.execute(query)
-        query, parameters = _armor_json_shaped_string_parameters(query, parameters)
-        return connection.execute(query, parameters)
+        if parameters is not None:
+            query, parameters = _armor_json_shaped_string_parameters(query, parameters)
+        try:
+            if parameters is None:
+                return connection.execute(query)
+            return connection.execute(query, parameters)
+        except RuntimeError as exc:
+            # If the engine reports the single-writer lock is held (the rare
+            # raise path; LadybugDB normally blocks silently — see
+            # acquire_write_lock_probe), surface the typed error so callers
+            # degrade instead of propagating an opaque RuntimeError.
+            if is_embedded_projection_lock_error(exc):
+                raise EmbeddedProjectionLockedError(
+                    reason="engine-reported-held", operation="execute"
+                ) from exc
+            raise
 
     def _active_node_key(self, session_id: str, entity_type: str, name: str) -> str | None:
         active_entity = self._active_entity_state(session_id=session_id, entity_type=entity_type, name=name)

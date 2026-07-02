@@ -2,6 +2,35 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 3.0.1 - 2026-07-02
+
+Patch release that eliminates the indefinite `memory_checkout` hang observed
+when a stale `zaxy serve` process holds the embedded projection's single-writer
+lock. The stdio transport never dropped; a LadybugDB write inside checkout
+blocked forever because LadybugDB acquires its exclusive lock lazily (on the
+first write, not at open), and nothing bounded acquisition or reaped the orphan.
+
+- **Bounded lock acquisition + graph-degraded fallback.** A blocking
+  `EmbeddedProjectionLockedError` is now raised within `embedded_lock_timeout_seconds`
+  (default 10s) instead of hanging. The blocking call runs on an explicit daemon
+  thread (not `asyncio.to_thread`, whose non-daemon pool would itself hang
+  shutdown). `EmbeddedGraphStore.connect()` open and a new startup
+  `acquire_write_lock_probe()` are bounded; `_execute` translates the engine's
+  `"Could not set lock"` raise. On lock failure, `ZaxyMCPServer.setup()` reaps a
+  verified broken owner once via the existing coordinator, retries, then degrades
+  to the null projection backend so verbatim + replay lanes keep serving rather
+  than wedging every tool call. The degraded posture is surfaced in
+  `memory_capabilities` and checkout diagnostics.
+- **Orphan self-termination.** The MCP owner now installs
+  `prctl(PR_SET_PDEATHSIG, SIGTERM)` (Linux) plus a portable `getppid()` watchdog
+  and an `atexit` owner-claim release, so a reconnect can never again strand a
+  lock-holding zombie when Claude Code exits. `EmbeddedGraphStore.close()` now
+  `CHECKPOINT`s the WAL, preventing the dirty-WAL `UNREACHABLE_CODE` crash on the
+  next open after an unclean exit.
+- Centralized `is_embedded_projection_lock_error` so the CLI degrade paths treat
+  the typed-timeout and engine-raise cases identically. 17 new hardening tests;
+  ruff + mypy clean; full suite 4137 passing at 92.01% coverage.
+
 ## 3.0.0 - 2026-06-28
 
 Zaxy 3 — Governed Active Memory. Memory is now *active* — it reflects on

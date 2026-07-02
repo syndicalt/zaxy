@@ -36,7 +36,9 @@ import hashlib
 import hmac
 import inspect
 import json
+import os
 import sys
+import threading
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
@@ -145,6 +147,7 @@ from zaxy.workspace import (
 )
 
 app = Server("zaxy-memory")
+logger = get_logger("mcp_server")
 remote_session_scope: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "remote_session_scope",
     default=None,
@@ -188,6 +191,12 @@ class ZaxyMCPServer:
         self._default_session_id = validate_session_id(default_session_id or settings.eventloom_thread)
         self._lifecycle_capture_enabled = settings.mcp_lifecycle_capture_enabled
         self._workspace_root = Path(workspace_root or Path.cwd()).resolve()
+        # Non-None when the projection backend degraded to the null (graph-
+        # disabled) store at setup because the embedded projection's exclusive
+        # lock was held by a stale process that could not be reaped. Surfaced in
+        # capabilities/checkout diagnostics so the model knows graph context is
+        # unavailable while verbatim + replay lanes still serve.
+        self._projection_degraded: dict[str, Any] | None = None
         self._initialized_workspaces: dict[tuple[str, str], WorkspaceProfile] = {}
         self._initialized_instruction_signatures: dict[tuple[str, str], str] = {}
         # Per-session feeling-of-knowing index, keyed by the session log-tail
@@ -338,12 +347,123 @@ class ZaxyMCPServer:
     async def setup(self) -> None:
         """Connect to the selected projection backend and initialize schema."""
         self.local_projection_runtime.ensure_available()
-        await self.graph.connect()
-        await self.graph.init_schema()
+        await self._connect_projection_with_lock_recovery()
         await self.tracer.connect()
         await self.ensure_session_initialized(
             self._workspace_root,
             session_id=self._default_session_id,
+        )
+
+    async def _connect_projection_with_lock_recovery(self) -> None:
+        """Connect the projection backend, degrading to graph-degraded on contention.
+
+        The embedded LadybugDB backend is single-writer; if a stale process
+        holds its exclusive lock, ``connect()``/probe fail fast with
+        :class:`EmbeddedProjectionLockedError` (bounded acquisition) instead of
+        hanging. We reap a verified broken owner once, retry, and if still
+        locked swap to the null projection backend so verbatim + replay lanes
+        keep serving rather than wedging every tool call. The degraded posture
+        is recorded in ``self._projection_degraded`` for capabilities/checkout
+        diagnostics. Non-embedded backends connect through the normal path.
+        """
+        from zaxy.embedded_graph_internals import EmbeddedProjectionLockedError
+
+        async def _attempt() -> None:
+            await self.graph.connect()
+            await self.graph.init_schema()
+            probe = getattr(self.graph, "acquire_write_lock_probe", None)
+            if probe is not None:
+                await probe()
+
+        try:
+            await _attempt()
+            return
+        except EmbeddedProjectionLockedError as exc:
+            logger.warning(
+                "zaxy_embedded_projection_locked reason=%s operation=%s; "
+                "attempting reap-and-retry",
+                exc.reason,
+                exc.operation,
+            )
+        if not self._reap_embedded_owner():
+            logger.warning(
+                "zaxy_embedded_projection_locked reap unavailable or unsuccessful; "
+                "degrading to graph-degraded projection"
+            )
+            await self._degrade_projection_to_null()
+            return
+        try:
+            await _attempt()
+            logger.info("zaxy_embedded_projection_recovered via reap-and-retry")
+            return
+        except EmbeddedProjectionLockedError:
+            logger.warning(
+                "zaxy_embedded_projection_locked still held after reap; "
+                "degrading to graph-degraded projection"
+            )
+            await self._degrade_projection_to_null()
+
+    def _reap_embedded_owner(self) -> bool:
+        """Attempt to reap a verified broken embedded owner; return whether reap ran.
+
+        Best-effort and scoped to the embedded backend: routes through the same
+        :class:`EmbeddedMcpRuntimeCoordinator` reap logic the serve path uses,
+        which only terminates a process verified to be a ``zaxy serve`` for
+        *this* store (never a healthy owner, another workspace, or a non-Zaxy
+        process). Returns False for non-embedded backends or any failure so the
+        caller degrades instead of crashing.
+        """
+        if str(self._projection_backend).casefold().strip() != "embedded":
+            return False
+        try:
+            from zaxy.mcp_runtime import EmbeddedMcpRuntimeCoordinator
+
+            coordinator = EmbeddedMcpRuntimeCoordinator.from_embedded_graph_path(
+                self._embedded_graph_path
+            )
+            repair = coordinator.repair_stale_runtime(
+                reap=True, expected_graph_path=self._embedded_graph_path
+            )
+            return bool(repair.get("repaired"))
+        except Exception as exc:  # noqa: BLE001 - reap is best-effort; degrade on any failure
+            logger.warning("zaxy_embedded_owner_reap_failed error=%s", exc)
+            return False
+
+    async def _degrade_projection_to_null(self) -> None:
+        """Swap the projection backend to the null store so non-graph lanes keep serving."""
+        null_store = build_projection_store(
+            ProjectionBackendConfig(
+                backend="null",
+                neo4j_uri=self._neo4j_uri,
+                neo4j_user=self._neo4j_user,
+                neo4j_password=self._neo4j_password,
+                neo4j_ca_cert=self._neo4j_ca_cert,
+                neo4j_trust_all=self._neo4j_trust_all,
+            )
+        )
+        await null_store.connect()
+        await null_store.init_schema()
+        self._projection_degraded = {
+            "status": "graph_degraded",
+            "reason": "embedded_projection_locked",
+            "original_backend": "embedded",
+            "original_path": str(self._embedded_graph_path),
+            "message": (
+                "embedded graph is locked by another instance and could not be "
+                "recovered; graph context is disabled, verbatim + replay lanes "
+                "still serve. Exit stale zaxy/claude processes for this workspace "
+                "and restart to restore the graph lane."
+            ),
+        }
+        self.graph = null_store
+        self._projection_backend = "null"
+        # The persistent fabric captured the original store at construction; it
+        # must read through the null store now or every append/query/checkout
+        # would still hit the locked embedded graph.
+        self._fabric.graph = null_store
+        logger.warning(
+            "zaxy_projection_degraded reason=embedded_projection_locked; "
+            "graph lane disabled, verbatim + replay still served"
         )
 
     async def teardown(self) -> None:
@@ -1883,6 +2003,8 @@ class ZaxyMCPServer:
             "ann_byte_budget_engagement": self._settings.vector_ann_byte_budget_engagement,
             "vector_index_cache_max_bytes": VECTOR_INDEX_CACHE_MAX_BYTES,
         }
+        if self._projection_degraded is not None:
+            manifest["projection_degraded"] = self._projection_degraded
         return [TextContent(type="text", text=json.dumps(manifest, indent=2))]
 
     async def handle_memory_feeling_of_knowing(self, arguments: dict[str, Any]) -> list[TextContent]:
@@ -2048,6 +2170,12 @@ class ZaxyMCPServer:
                 purpose=arguments.get("purpose"),
             )
         output = apply_checkout_budget(checkout.to_dict(), max_tokens=max_tokens)
+        if self._projection_degraded is not None:
+            diagnostics = output.get("diagnostics")
+            if not isinstance(diagnostics, dict):
+                diagnostics = {}
+                output["diagnostics"] = diagnostics
+            diagnostics["projection_degraded"] = self._projection_degraded
         # MCP-only: record the checkout activity for hook-status / metrics.
         record_memory_activity(
             self._eventloom_path,
@@ -3216,6 +3344,98 @@ async def proxy_main(coordinator: EmbeddedMcpRuntimeCoordinator) -> None:
             await writer.wait_closed()
 
 
+# Interval and parent-pid probe for the orphan watchdog. Module-level so tests
+# can drive the watchdog deterministically without patching the global os/time
+# modules (which would also perturb unrelated background threads).
+_ORPHAN_WATCHDOG_POLL_SECONDS = 1.0
+
+
+def _current_parent_pid() -> int:
+    """Return the current parent pid (mocked in tests)."""
+    return os.getppid()
+
+
+def _install_parent_death_signal() -> None:
+    """Ask the Linux kernel to SIGTERM this process when its parent dies.
+
+    A stdio MCP server is spawned by a client (e.g. Claude Code); if that
+    client crashes without closing stdin, the server could otherwise live on
+    holding the embedded projection's exclusive lock. On Linux, ``prctl(
+    PR_SET_PDEATHSIG, SIGTERM)`` makes the kernel deliver SIGTERM on parent
+    death so the graceful-shutdown path runs (graph.close()/owner_claim.close())
+    and releases the lock. Best-effort and silently skipped where unsupported;
+    the getppid() orphan watchdog below is the portable backstop.
+    """
+    if sys.platform != "linux":
+        return
+    try:
+        import ctypes
+
+        libc = ctypes.CDLL("libc.so.6", use_errno=True)
+        prctl = libc.prctl
+        prctl.restype = ctypes.c_int
+        prctl.argtypes = (
+            ctypes.c_int,
+            ctypes.c_ulong,
+            ctypes.c_ulong,
+            ctypes.c_ulong,
+            ctypes.c_ulong,
+        )
+        # prctl(PR_SET_PDEATHSIG=1, SIGTERM=15): kernel delivers SIGTERM on parent death.
+        if prctl(1, 15, 0, 0, 0) != 0:
+            logger.warning("zaxy_pdeathsig_install_failed errno=%s", ctypes.get_errno())
+    except Exception as exc:  # noqa: BLE001 - best-effort; the watchdog backstops this
+        logger.warning("zaxy_pdeathsig_unavailable error=%s", exc)
+
+
+def _install_orphan_watchdog(shutdown_event: asyncio.Event) -> None:
+    """Best-effort self-termination when the spawning client disappears.
+
+    Two layers: (1) ``prctl(PR_SET_PDEATHSIG)`` asks the Linux kernel to SIGTERM
+    us on parent death (immediate); (2) a portable daemon thread polls
+    ``getppid()`` and signals shutdown when the parent is gone (reparenting to
+    init/systemd). Together they guarantee a reconnect can never strand a
+    lock-holding owner: the graceful-shutdown ``finally`` runs
+    ``graph.close()``/``owner_claim.close()`` and releases the embedded
+    projection's exclusive lock. The getppid poll does not touch stdin, so it
+    cannot corrupt the MCP protocol stream (an independent stdin reader would
+    steal bytes from the SDK's stdio loop).
+    """
+    _install_parent_death_signal()
+
+    initial_ppid = _current_parent_pid()
+
+    def _watch() -> None:
+        while True:
+            threading.Event().wait(_ORPHAN_WATCHDOG_POLL_SECONDS)
+            try:
+                if _current_parent_pid() != initial_ppid:
+                    logger.warning(
+                        "zaxy_orphan_watchdog_parent_gone initial_ppid=%s; shutting down",
+                        initial_ppid,
+                    )
+                    shutdown_event.set()
+                    return
+            except OSError:
+                shutdown_event.set()
+                return
+
+    thread = threading.Thread(target=_watch, name="zaxy-orphan-watchdog", daemon=True)
+    thread.start()
+
+
+def _close_owner_claim_atexit(claim: EmbeddedMcpOwnerClaim) -> None:
+    """Release the owner flock + runtime metadata on any Python exit path.
+
+    The graceful-shutdown ``finally`` covers the normal cases; this backstops
+    interpreter exit paths that skip it (e.g. an exception before the stdio
+    loop). close() is idempotent and sync-safe (fcntl LOCK_UN + unlink), and the
+    OS releases the LadybugDB file lock on process exit regardless.
+    """
+    with suppress(Exception):
+        claim.close()
+
+
 async def main(owner_claim: EmbeddedMcpOwnerClaim | None = None) -> None:
     """Run the MCP stdio server with graceful shutdown."""
     setup_logging()
@@ -3238,12 +3458,19 @@ async def main(owner_claim: EmbeddedMcpOwnerClaim | None = None) -> None:
             projection_backend="embedded",
             graph_path=active_server._embedded_graph_path,
         )
+        import atexit
+
+        atexit.register(_close_owner_claim_atexit, owner_claim)
     logger.info("zaxy_mcp_server_ready server=%s", get_settings().server_name)
 
     # Graceful shutdown on SIGTERM/SIGINT
     import signal
 
     shutdown_event: asyncio.Event = asyncio.Event()
+
+    # Self-terminate if the spawning client (parent) dies, so a reconnect can
+    # never strand a lock-holding zombie (PR_SET_PDEATHSIG + getppid watchdog).
+    _install_orphan_watchdog(shutdown_event)
 
     def _on_signal(signum: int, _frame: Any) -> None:
         sig_name = signal.Signals(signum).name
@@ -3330,6 +3557,10 @@ async def main_sse(port: int = 8080, host: str = "127.0.0.1") -> None:
 
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, _on_signal)
+
+    # Self-terminate if the spawning client (parent) dies so the embedded
+    # projection lock can never be stranded by an orphaned SSE daemon.
+    _install_orphan_watchdog(shutdown_event)
 
     # SSE transport setup
     from starlette.applications import Starlette
