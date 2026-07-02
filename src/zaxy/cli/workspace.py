@@ -323,8 +323,9 @@ def _checkout_activity_metadata(payload: dict[str, object]) -> dict[str, object]
 
 
 def _is_embedded_projection_lock_error(exc: RuntimeError) -> bool:
-    message = str(exc)
-    return "Could not set lock on file" in message and ".kuzu" in message
+    from zaxy.embedded_graph_internals import is_embedded_projection_lock_error
+
+    return is_embedded_projection_lock_error(exc)
 
 
 def _checkout_fallback_embedded_graph_path(*, eventloom_path: Path, session_id: str) -> Path:

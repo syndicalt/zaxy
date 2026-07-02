@@ -576,6 +576,18 @@ class Settings(BaseSettings):
             "int8 (per-vector scales with float rerank of oversampled candidates)"
         ),
     )
+    embedded_lock_timeout_seconds: float = Field(
+        default=10.0,
+        gt=0,
+        description=(
+            "Maximum seconds to wait for the embedded projection's exclusive "
+            "write lock during open and the startup write-lock probe. The "
+            "embedded backend is single-writer; when a stale process holds the "
+            "lock, acquisition fails fast with EmbeddedProjectionLockedError "
+            "(triggering owner reap-and-retry then a graph-degraded fallback) "
+            "instead of hanging the MCP server indefinitely"
+        ),
+    )
 
     # ------------------------------------------------------------------
     # Reranking

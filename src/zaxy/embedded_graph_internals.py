@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import math
+import queue
 import re
+import threading
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -302,6 +305,96 @@ def _is_corrupt_store_error(exc: RuntimeError) -> bool:
     if "Could not set lock" in message:
         return False
     return any(marker in message for marker in _CORRUPT_STORE_MARKERS)
+
+
+class EmbeddedProjectionLockedError(RuntimeError):
+    """The embedded projection's exclusive write lock is held by another process.
+
+    Raised in lieu of blocking forever when the LadybugDB store cannot acquire
+    its single-writer lock within the configured timeout, or when the engine
+    itself reports the lock is held. Carries enough context for the MCP/CLI
+    layers to reap a verified stale owner, retry once, or degrade to the
+    graph-degraded (null) projection backend instead of hanging the tool call.
+    """
+
+    def __init__(
+        self,
+        *,
+        reason: str,
+        operation: str,
+        timeout_seconds: float | None = None,
+    ) -> None:
+        self.reason = reason
+        self.operation = operation
+        self.timeout_seconds = timeout_seconds
+        detail = (
+            f"embedded projection is locked by another instance ({reason}); "
+            f"failed during {operation}"
+        )
+        if timeout_seconds is not None:
+            detail += f" after {timeout_seconds:g}s"
+        super().__init__(detail)
+
+
+def is_embedded_projection_lock_error(exc: BaseException) -> bool:
+    """Return whether ``exc`` indicates the embedded projection lock is held.
+
+    Matches the typed :class:`EmbeddedProjectionLockedError` and the underlying
+    engine string (``"Could not set lock on file"`` on a ``.kuzu`` path) so the
+    MCP/CLI degrade paths treat the bounded-timeout and engine-raise cases
+    identically.
+    """
+    if isinstance(exc, EmbeddedProjectionLockedError):
+        return True
+    return "Could not set lock on file" in str(exc) and ".kuzu" in str(exc)
+
+
+async def await_blocking_with_timeout(
+    func: Callable[[], Any],
+    *,
+    timeout: float,
+    operation: str,
+) -> Any:
+    """Run a blocking call on a daemon thread, failing fast on a lock timeout.
+
+    ``asyncio.wait_for`` cannot interrupt a blocking C extension call, and
+    ``asyncio.to_thread`` runs on the default executor whose pool threads are
+    non-daemon — a permanently blocked member would hang process shutdown. The
+    blocking call is therefore executed on an explicit *daemon* thread whose
+    result is awaited through a queue with a deadline. On timeout the daemon is
+    abandoned (it cannot block exit) and :class:`EmbeddedProjectionLockedError`
+    is raised so callers can reap a stale owner, retry, or degrade instead of
+    hanging the event loop indefinitely.
+    """
+    result_queue: queue.Queue[tuple[str, Any]] = queue.Queue()
+
+    def _runner() -> None:
+        try:
+            result_queue.put(("ok", func()))
+        except BaseException as exc:  # noqa: BLE001 - propagate every engine error
+            result_queue.put(("err", exc))
+
+    worker = threading.Thread(target=_runner, name="zaxy-embedded-lock-op", daemon=True)
+    worker.start()
+    loop = asyncio.get_event_loop()
+    try:
+        outcome = await loop.run_in_executor(
+            None, result_queue.get, True, timeout
+        )
+    except queue.Empty:
+        raise EmbeddedProjectionLockedError(
+            reason="acquisition-timeout",
+            operation=operation,
+            timeout_seconds=timeout,
+        ) from None
+    kind, value = outcome
+    if kind == "ok":
+        return value
+    if is_embedded_projection_lock_error(value):
+        raise EmbeddedProjectionLockedError(
+            reason="engine-reported-held", operation=operation
+        ) from value
+    raise value
 
 
 def pre_ladybug_backup_paths(path: Path) -> list[Path]:
