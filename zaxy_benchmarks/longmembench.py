@@ -2209,6 +2209,7 @@ def _longmembench_plan_script(manifest: dict[str, object]) -> str:
         "VALIDATOR_EVIDENCE_URL=${VALIDATOR_EVIDENCE_URL:-}",
         "VALIDATOR_RUN_ID=${VALIDATOR_RUN_ID:-}",
         "VALIDATOR_RELATION=${VALIDATOR_RELATION:-}",
+        f"DATASET_PATH={shlex.quote(dataset)}",
         'if [[ -z "${RUN_OUTPUT_DIR:-}" ]]; then',
         '  if [[ "${RUN_OFFICIAL_EVAL}" == "0" ]]; then',
         f"    RUN_OUTPUT_DIR={shlex.quote(output_dir)}/smoke",
@@ -2217,9 +2218,9 @@ def _longmembench_plan_script(manifest: dict[str, object]) -> str:
         "  fi",
         "fi",
         'OFFICIAL_EVAL_COMMAND="python3 evaluate_qa.py ${EVALUATOR_MODEL} ${RUN_OUTPUT_DIR}/zaxy-hypotheses.jsonl ${LONGMEMEVAL_WORKTREE}/'
-        f'{dataset}"',
+        '${DATASET_PATH}"',
         'PRINT_METRICS_COMMAND="python3 ${LONGMEMEVAL_WORKTREE}/src/evaluation/print_qa_metrics.py ${RUN_OUTPUT_DIR}/zaxy-hypotheses.jsonl.eval-results-${EVALUATOR_MODEL} ${LONGMEMEVAL_WORKTREE}/'
-        f'{dataset}"',
+        '${DATASET_PATH}"',
         "",
         "if [[ \"${RUN_OFFICIAL_EVAL}\" != \"0\" && \"${ANSWER_MODE}\" == \"openai-compatible\" && -z \"${OPENAI_API_KEY:-}\" ]]; then",
         "  echo 'OPENAI_API_KEY is required for official openai-compatible LongMemBench runs.' >&2",
