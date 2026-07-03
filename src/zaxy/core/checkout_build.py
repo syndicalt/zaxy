@@ -554,6 +554,17 @@ def build_memory_checkout(
         retrieval_profile.salience_ranking or retrieval_profile.cue_blending
     )
     attenuation: dict[str, Any] | None = None
+    # Fold salience once per checkout. Both the cognitive ranking blend and the
+    # salience diagnostics below need the same replay over the same events, clock
+    # and half-life, so compute it a single time here rather than folding the
+    # whole log twice.
+    salience_states = (
+        SalienceLedger(half_life_days=salience_half_life_days).replay(
+            assembly.replay_events, now=checkout_now
+        )
+        if assembly.replay_events
+        else {}
+    )
     if cognitive and retrieval_profile is not None:
         ranked_contexts, attenuation = _rank_cognitive_contexts(
             checkout_contexts,
@@ -564,6 +575,7 @@ def build_memory_checkout(
             salience_floor=salience_floor,
             salience_half_life_days=salience_half_life_days,
             now=checkout_now,
+            precomputed_states=salience_states,
         )
     else:
         ranked_contexts = sorted(
@@ -659,6 +671,7 @@ def build_memory_checkout(
         evidence=evidence,
         now=checkout_now,
         half_life_days=salience_half_life_days,
+        precomputed_states=salience_states,
     )
     if salience is not None:
         diagnostics = {**diagnostics, "salience": salience}
@@ -725,6 +738,7 @@ def _rank_cognitive_contexts(
     salience_floor: float,
     salience_half_life_days: float,
     now: datetime,
+    precomputed_states: dict[EventRef, SalienceState] | None = None,
 ) -> tuple[list[Context], dict[str, Any] | None]:
     """Rank checkout contexts under the cognitive retrieval profile.
 
@@ -753,9 +767,15 @@ def _rank_cognitive_contexts(
     payloads_by_seq = _payloads_by_seq(replay_events)
     states: dict[EventRef, SalienceState] = {}
     if retrieval_profile.salience_ranking:
-        states = SalienceLedger(half_life_days=salience_half_life_days).replay(
-            replay_events,
-            now=now,
+        # Reuse the caller's single salience fold when provided; only replay
+        # here (over the same events/now/half-life) when called standalone.
+        states = (
+            precomputed_states
+            if precomputed_states is not None
+            else SalienceLedger(half_life_days=salience_half_life_days).replay(
+                replay_events,
+                now=now,
+            )
         )
     query_cues = cue_pairs(cues) if retrieval_profile.cue_blending else frozenset()
     ranked: list[tuple[tuple[float, int, int, int, float, str, float], Context]] = []
@@ -866,6 +886,7 @@ def _checkout_salience_diagnostics(
     evidence: list[dict[str, Any]],
     now: datetime,
     half_life_days: float = SALIENCE_HALF_LIFE_DAYS,
+    precomputed_states: dict[EventRef, SalienceState] | None = None,
 ) -> dict[str, Any] | None:
     """Replay salience over the checkout's own replay for diagnostics only.
 
@@ -875,10 +896,18 @@ def _checkout_salience_diagnostics(
     None when nothing surfaced carries replayed salience, keeping the
     diagnostics payload byte-identical to the pre-salience contract until
     reinforcement events exist.
+
+    ``precomputed_states`` lets the caller pass the single per-checkout salience
+    fold so this diagnostic does not replay the whole log a second time; when
+    omitted the fold is computed here (identical inputs, identical result).
     """
     if not replay_events:
         return None
-    states = SalienceLedger(half_life_days=half_life_days).replay(replay_events, now=now)
+    states = (
+        precomputed_states
+        if precomputed_states is not None
+        else SalienceLedger(half_life_days=half_life_days).replay(replay_events, now=now)
+    )
     if not states:
         return None
     index = event_ref_index(replay_events)
