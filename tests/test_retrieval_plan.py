@@ -103,7 +103,7 @@ def test_preference_projection_surfaces_phone_accessory_profile() -> None:
     assert candidate["type"] == "preference"
     assert candidate["support_source_ids"] == ["phone-1", "phone-2"]
     assert "iPhone 13 Pro" in str(candidate["answer"])
-    assert "not compatible with Apple products" in str(candidate["answer"])
+    assert "generic, vague, unrelated, or incompatible suggestions" in str(candidate["answer"])
     assert projection.operations[0]["name"] == "select_preference_profile"
     assert projection.result and projection.result["answer_key"] == "preference_answer"
 
@@ -150,7 +150,12 @@ def test_preference_projection_falls_back_to_focus_when_no_surface_template_matc
 
 
 def test_preference_projection_reads_numbered_user_transcript_turns() -> None:
-    """Transcript-style numbered user turns should contribute preference facets."""
+    """Transcript-style numbered user turns should surface the query-relevant cited turn.
+
+    The general synthesis picks the single first-person span with the strongest
+    query/preference-term overlap (here, the dust/living-room turn mentioning
+    Luna) rather than merging every numbered turn's facets.
+    """
     projection = evidence_candidates.preference_candidate_projection(
         "I've been sneezing quite a bit lately. Do you think it might be my living room?",
         [
@@ -165,14 +170,23 @@ def test_preference_projection_reads_numbered_user_transcript_turns() -> None:
         ],
     )
 
-    answer = str(projection.answer_candidates[0]["answer"])
+    candidate = projection.answer_candidates[0]
+    answer = str(candidate["answer"])
+    assert candidate["support_source_ids"] == ["allergy"]
     assert "Luna" in answer
-    assert "deep clean" in answer
     assert "TV flickering" not in answer
+    assert "generic, vague, unrelated, or incompatible suggestions" in answer
 
 
-def test_preference_projection_preserves_multiple_relevant_facets_from_one_transcript() -> None:
-    """Long preference sessions should not collapse to a single relevant cue."""
+def test_preference_projection_surfaces_grounded_painting_facets_from_top_span() -> None:
+    """Long preference sessions surface the single highest-scoring cited span's keywords.
+
+    The general synthesis no longer merges every numbered turn's facets into one
+    answer; it selects the first-person span with the strongest query/preference
+    overlap (the Instagram flower-painting turn) and grounds the answer in that
+    span's own words, leaving the other turns' facets (acrylic brushes, palette
+    knife tutorials, the 30-day challenge) out of the answer.
+    """
     projection = evidence_candidates.preference_candidate_projection(
         "I've been feeling stuck with my paintings lately. Do you have ideas for inspiration?",
         [
@@ -190,16 +204,28 @@ def test_preference_projection_preserves_multiple_relevant_facets_from_one_trans
         ],
     )
 
-    answer = str(projection.answer_candidates[0]["answer"])
-    assert "Instagram" in answer
-    assert "online tutorials" in answer
-    assert "flowers" in answer
-    assert "30-day painting challenge" in answer
+    candidate = projection.answer_candidates[0]
+    answer = str(candidate["answer"])
+    assert candidate["support_source_ids"] == ["painting-session"]
+    assert "instagram" in answer
+    assert "flower" in answer
+    assert "tips" in answer
+    assert "realistic" in answer
     assert "acrylic brushes" not in answer
+    assert "online tutorials" not in answer
+    assert "30-day painting challenge" not in answer
+    assert "generic, vague, unrelated, or incompatible suggestions" in answer
 
 
-def test_preference_projection_does_not_apply_unrelated_domain_surface() -> None:
-    """A retrieved distractor profile should not override the query-supported domain."""
+def test_preference_projection_surfaces_grounded_theme_park_keywords() -> None:
+    """The general synthesis surfaces all cited spans' keywords, with no query-relevance filtering.
+
+    Unlike the removed template-matching synthesis, the current implementation does
+    not exclude a distractor profile just because it is a different domain from the
+    query: both cited spans (the evening-activities distractor and the theme-park
+    span) contribute keywords to the merged answer. The evening span's "before 9:30
+    pm" phrase is present alongside the theme-park keywords.
+    """
     projection = evidence_candidates.preference_candidate_projection(
         "I am planning another theme park weekend; do you have any suggestions?",
         [
@@ -216,171 +242,49 @@ def test_preference_projection_does_not_apply_unrelated_domain_surface() -> None
         ],
     )
 
-    answer = str(projection.answer_candidates[0]["answer"])
-    assert "theme park suggestions" in answer
-    assert "thrill rides and special events" in answer
-    assert "unique food experiences and nighttime shows" in answer
-    assert "before 9:30 pm" not in answer
+    candidate = projection.answer_candidates[0]
+    answer = str(candidate["answer"])
+    assert candidate["support_source_ids"] == ["evening", "parks"]
+    assert "thrill rides" in answer
+    assert "special events" in answer
+    assert "unique food experiences" in answer
+    assert "nighttime shows" in answer
+    assert "before 9:30 pm" in answer
+    assert "generic, vague, unrelated, or incompatible suggestions" in answer
 
 
-def test_preference_projection_uses_domain_surface_templates() -> None:
-    """Known preference profiles should render specific answer surfaces."""
+def test_preference_projection_answer_is_grounded_not_templated() -> None:
+    """Preference answers are grounded in the cited span's own words, not a memorized template.
+
+    This replaces a ~160-line table asserting per-domain hardcoded gold-answer
+    phrases (e.g. "Sony-compatible accessories", "hotels in Miami") that no longer
+    exist now that benchmark-answer memorization has been removed. The general
+    synthesis instead surfaces keywords that literally appear in the cited span.
+    """
     cases = [
-        (
-            "What video editing resources would I prefer?",
-            "source_id=video-1 user: I prefer Adobe Premiere Pro video editing resources, "
-            "especially advanced settings rather than general video editing software.",
-            "Adobe Premiere Pro",
-        ),
         (
             "What photography accessories would I prefer?",
             "source_id=photo-1 user: I prefer Sony photography accessories and camera gear "
             "that enhance my photography experience.",
+            "Sony",
             "Sony-compatible accessories",
-        ),
-        (
-            "What hotel recommendations would I prefer?",
-            "source_id=hotel-1 user: I prefer Miami hotel options with ocean views, "
-            "a rooftop pool, or a hot tub on the balcony.",
-            "hotels in Miami",
-        ),
-        (
-            "What language events would I prefer?",
-            "source_id=language-1 user: I prefer cultural language events where I can "
-            "practice Spanish and French with others.",
-            "Spanish and French",
-        ),
-        (
-            "What show should I watch based on my preferences?",
-            "source_id=comedy-1 user: I prefer stand-up comedy specials on Netflix, "
-            "especially shows known for storytelling like John Mulaney.",
-            "stand-up comedy specials on Netflix",
-        ),
-        (
-            "What relaxing activities would I prefer?",
-            "source_id=evening-1 user: I prefer evening activities before 9:30 pm "
-            "that avoid my phone and TV because they affect my sleep quality.",
-            "before 9:30 pm",
-        ),
-        (
-            "What kitchen organizing tips would I prefer?",
-            "source_id=kitchen-1 user: I prefer tips that use my utensil holder "
-            "to keep the granite counter around the sink organized.",
-            "utensil holder",
-        ),
-        (
-            "What slow cooker tips would I prefer?",
-            "source_id=cooker-1 user: I prefer slow cooker advice based on my "
-            "success with beef stew and interest in making yogurt.",
-            "slow cooker experiences",
-        ),
-        (
-            "What dinner suggestions would I prefer?",
-            "source_id=garden-1 user: I prefer dinner recipes that use my homegrown "
-            "cherry tomatoes with basil and mint.",
-            "homegrown cherry tomatoes",
-        ),
-        (
-            "What art inspiration would I prefer?",
-            "source_id=art-1 user: I prefer painting inspiration from Instagram "
-            "art accounts and online tutorials.",
-            "Instagram art accounts",
-        ),
-        (
-            "What cocktail suggestions would I prefer?",
-            "source_id=cocktail-1 user: I prefer mixology ideas and Pimm cup "
-            "variations that build on my class background.",
-            "mixology class",
-        ),
-        (
-            "What baking suggestions would I prefer?",
-            "source_id=baking-1 user: I prefer baking ideas that use turbinado sugar "
-            "because I like its richer flavor.",
-            "turbinado sugar",
-        ),
-        (
-            "What bedroom furniture suggestions would I prefer?",
-            "source_id=bedroom-1 user: I prefer replacing my bedroom dresser with "
-            "a mid century modern dresser.",
-            "mid-century modern",
-        ),
-        (
-            "What travel transportation tips would I prefer?",
-            "source_id=tokyo-1 user: I prefer Tokyo transit tips that use my Suica "
-            "card and TripIt app.",
-            "Suica card",
         ),
         (
             "What electric guitar advice would I prefer?",
             "source_id=guitar-1 user: I prefer comparing Fender Stratocaster and "
             "Gibson Les Paul electric guitars before upgrading.",
             "Fender Stratocaster and Gibson Les Paul",
-        ),
-        (
-            "What creamer recipe would I prefer?",
-            "source_id=creamer-1 user: I prefer almond milk, vanilla extract, and "
-            "honey creamer recipes that reduce sugar and save money.",
-            "almond milk",
-        ),
-        (
-            "What allergy advice would I prefer?",
-            "source_id=allergy-1 user: I prefer advice that accounts for Luna, "
-            "her shedding, and my sneezing after a deep clean.",
-            "Luna",
-        ),
-        (
-            "What personal reflection prompts would I prefer?",
-            "source_id=school-1 user: I prefer reflections that mention my debate "
-            "team and advanced placement courses.",
-            "debate team",
-        ),
-        (
-            "What storage advice would I prefer?",
-            "source_id=nas-1 user: I prefer NAS suggestions because I rely on "
-            "external hard drives for home network storage.",
-            "NAS device",
-        ),
-        (
-            "What theme park suggestions would I prefer?",
-            "source_id=parks-1 user: I prefer Disneyland, Knott, Six Flags, and "
-            "Universal suggestions that include thrill rides and special events.",
-            "theme park suggestions",
-        ),
-        (
-            "What meal prep recipes would I prefer?",
-            "source_id=meal-1 user: I prefer quinoa and roasted vegetables in "
-            "healthy meal prep recipes.",
-            "quinoa and roasted vegetables",
-        ),
-        (
-            "What Denver suggestions would I prefer?",
-            "source_id=denver-1 user: I prefer Denver live music suggestions "
-            "connected to seeing Brandon Flowers.",
-            "Brandon Flowers",
-        ),
-        (
-            "What documentaries would I prefer?",
-            "source_id=docs-1 user: I prefer documentaries like Our Planet, Free "
-            "Solo, and Tiger King.",
-            "Our Planet",
-        ),
-        (
-            "What bike performance explanation would I prefer?",
-            "source_id=bike-1 user: I prefer explanations that mention my chain, "
-            "cassette, and Garmin bike computer.",
-            "Garmin bike computer",
-        ),
-        (
-            "What commute suggestions would I prefer?",
-            "source_id=commute-1 user: I prefer commute suggestions involving "
-            "podcasts or audiobooks beyond true crime.",
-            "podcasts or audiobooks",
+            "electric guitar comparison",
         ),
     ]
 
-    for query, context, expected in cases:
+    for query, context, grounded_keyword, memorized_template in cases:
         projection = evidence_candidates.preference_candidate_projection(query, [context])
-        assert expected in str(projection.answer_candidates[0]["answer"])
+        answer = str(projection.answer_candidates[0]["answer"])
+        assert "The user would prefer" in answer
+        assert "generic, vague, unrelated, or incompatible suggestions" in answer
+        assert grounded_keyword in answer
+        assert memorized_template not in answer
 
 
 def test_retrieval_intent_allocates_event_slot_sources_for_personal_gifts() -> None:
@@ -448,7 +352,8 @@ def test_preference_profile_source_synthesis_emits_answer_candidate() -> None:
     assert result is not None
     assert "candidate_type=preference" in result.content
     assert "preference_answer=" in result.content
-    assert "hotels in Miami" in result.content
+    assert "rooftop pool" in result.content
+    assert "hot tub" in result.content
     assert result.packet["answer_candidates"][0]["type"] == "preference"
     assert set(result.packet["answer_candidates"][0]["support_source_ids"]) == {"hotel-1", "hotel-2"}
 

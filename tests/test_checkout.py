@@ -17,7 +17,6 @@ from zaxy.checkout import (
 from zaxy.context import Context, render_prompt_sections
 from zaxy.core import ContextAssembly, build_memory_checkout
 from zaxy.token_budget import estimate_tokens
-from zaxy_benchmarks.benchmark import BenchmarkCase, expected_terms_recall
 
 
 def test_answer_candidate_merge_prioritizes_specific_state_operations() -> None:
@@ -1335,8 +1334,13 @@ def test_checkout_builds_preference_answer_candidate_from_cited_evidence() -> No
     assert "For preference questions" in prompt
 
 
-def test_preference_answer_candidate_matches_longmemeval_preference_surface() -> None:
-    """Preference candidates should expose query-shaped first-sentence answers."""
+def test_preference_answer_candidate_is_grounded_in_cited_evidence() -> None:
+    """Preference candidates expose a query-shaped answer grounded in cited spans.
+
+    Regression guard against the removed benchmark contamination: the answer must
+    be synthesized from the cited evidence's own keywords, never a memorized
+    LongMemEval gold-answer template keyed on the query text.
+    """
     current_facts = [
         {
             "content": (
@@ -1352,12 +1356,6 @@ def test_preference_answer_candidate_matches_longmemeval_preference_surface() ->
         }
     ]
     query = "Can you recommend some recent publications or conferences that I might find interesting?"
-    expected = (
-        "The user would prefer suggestions related to recent research papers, articles, or conferences "
-        "that focus on artificial intelligence in healthcare, particularly those that involve deep "
-        "learning for medical image analysis. They would not be interested in general AI topics or "
-        "those unrelated to healthcare."
-    )
     diagnostics = build_checkout_diagnostics(
         query=query,
         source_lanes={"verbatim": 1},
@@ -1366,27 +1364,16 @@ def test_preference_answer_candidate_matches_longmemeval_preference_surface() ->
         retention={"policy": "current_only", "superseded_contexts_excluded": 0},
         warnings=[],
     )
-    compact = build_compact_answer_contexts(
-        query=query,
-        current_facts=current_facts,
-        evidence=current_facts,
-        diagnostics=diagnostics,
-        quality={"answerability": "answer_from_memory", "confidence": 0.9},
-    )
     candidate = diagnostics["synthesis"]["answer_candidates"][0]["answer"]
 
-    assert "recent research papers, articles, or conferences" in candidate
-    assert "artificial intelligence in healthcare" in candidate
-    assert "deep learning for medical image analysis" in candidate
-    assert expected_terms_recall(
-        BenchmarkCase(
-            name="preference",
-            query=query,
-            expected_terms=(expected,),
-            identity_terms=("answer-dl",),
-        ),
-        compact,
-    ) == 1.0
+    # Honest general synthesis: a query-shaped request phrase plus the subject
+    # keywords extracted from the cited span. No memorized LongMemEval gold
+    # answer (e.g. "artificial intelligence in healthcare") is fabricated.
+    assert candidate.startswith("The user would prefer")
+    assert "recommendations that match their cited interests" in candidate
+    # Grounded in the cited evidence's own words, not a template.
+    assert "deep" in candidate and "learning" in candidate and "medical" in candidate
+    assert "generic, vague, unrelated, or incompatible suggestions" in candidate
 
 
 def test_checkout_compact_contexts_put_evidence_before_control_only_metadata() -> None:
