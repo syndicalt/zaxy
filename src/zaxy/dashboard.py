@@ -77,7 +77,13 @@ def _dashboard_origin_allowed(scope: DashboardScope, headers: Mapping[str, str] 
         return False
     origin = normalized.get("origin")
     if origin is None:
-        return True
+        # Fail closed. This function only authorizes state-changing POST
+        # routes (see the /api/coordinate/* gate in handle_api) — it is never
+        # consulted for GET reads. A same-origin fetch() from the dashboard
+        # UI always sends Origin, so a mutation request with no Origin header
+        # is not a legitimate same-origin browser request (curl, scripts, and
+        # CSRF probes can omit it) and must not be trusted by default.
+        return False
     return origin in {f"http://{expected_host}", f"https://{expected_host}"}
 
 

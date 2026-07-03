@@ -59,6 +59,7 @@ def run_doctor(
         session_id=active.eventloom_thread,
     )
     checks = [
+        _check_version_consistency(root),
         _check_eventloom(active),
         _check_event_chain(active),
         _check_local_profile(),
@@ -530,6 +531,25 @@ def _check_cli_install(zaxy_executable: str | Path | None) -> dict[str, str]:
         "status": "ok",
         "message": f"Zaxy CLI executable resolved to {executable}",
     }
+
+
+def _check_version_consistency(workspace_root: Path) -> dict[str, Any]:
+    """Warn if the imported zaxy package drifts from the repo on disk.
+
+    Delegates to :func:`zaxy.release.check_version_consistency`, which compares
+    the repo's declared version against the installed dist version and import
+    path. This catches a stale site-packages copy shadowing the source tree —
+    the failure that once made tests import the wrong code.
+
+    The doctor's resolved ``workspace_root`` is passed through so the repo walk
+    starts from the tree the operator is actually inspecting (e.g. ``zaxy doctor
+    <path>``) rather than the process cwd — without it the check silently
+    compared against the wrong directory and could report ``ok`` for a drift it
+    never looked at.
+    """
+    from zaxy.release import check_version_consistency
+
+    return check_version_consistency(project_root=workspace_root)
 
 
 def _check_mcp_defaults(settings: Settings) -> dict[str, str]:

@@ -202,6 +202,29 @@ def test_dashboard_coordinate_post_allows_same_origin_request(tmp_path: Path) ->
     assert body["error"] != "forbidden_origin"
 
 
+def test_dashboard_coordinate_post_rejects_absent_origin(tmp_path: Path) -> None:
+    """Regression: a mutating request with no Origin header must fail closed.
+
+    Non-fetch clients (curl, scripts, CSRF probes) can omit Origin entirely;
+    only trusting an explicit same-origin match (and denying when Origin is
+    missing) keeps state-changing /api/coordinate/* routes CSRF-safe.
+    """
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    app = DashboardApp(resolve_dashboard_scope(DashboardConfig(workspace=workspace)))
+
+    status, _headers, body = app.handle_api(
+        "POST",
+        "/api/coordinate/apply-approval",
+        "",
+        body=json.dumps({"mission_id": "m1", "decisions": []}),
+        request_headers={"host": "127.0.0.1:8765"},
+    )
+
+    assert status == 403
+    assert body["error"] == "forbidden_origin"
+
+
 def test_dashboard_surfaces_memory_persistence_status(tmp_path: Path) -> None:
     workspace = tmp_path / "project"
     workspace.mkdir()
@@ -1219,6 +1242,7 @@ def test_dashboard_coordinate_review_route_requires_explicit_enablement(tmp_path
         "POST",
         "/api/coordinate/review",
         f"mission_id=auth-main&finding_id={finding.finding_id}&status=accepted&promote=true",
+        request_headers={"host": "127.0.0.1:8765", "origin": "http://127.0.0.1:8765"},
     )
 
     assert status_code == 403
@@ -1255,6 +1279,7 @@ def test_dashboard_coordinate_review_route_reviews_and_promotes_when_enabled(tmp
             f"mission_id=auth-main&finding_id={finding.finding_id}"
             "&status=accepted&promote=true&rationale=verified"
         ),
+        request_headers={"host": "127.0.0.1:8765", "origin": "http://127.0.0.1:8765"},
     )
 
     assert status_code == 200
@@ -1308,6 +1333,7 @@ def test_dashboard_coordinate_apply_approval_route_applies_json_decisions(tmp_pa
                 ],
             }
         ),
+        request_headers={"host": "127.0.0.1:8765", "origin": "http://127.0.0.1:8765"},
     )
 
     assert status_code == 200
@@ -1332,6 +1358,7 @@ def test_dashboard_coordinate_apply_approval_route_validates_json_decisions(tmp_
         "/api/coordinate/apply-approval",
         "",
         body=json.dumps({"mission_id": "auth-main", "decisions": {"finding_id": "x"}}),
+        request_headers={"host": "127.0.0.1:8765", "origin": "http://127.0.0.1:8765"},
     )
 
     assert status_code == 400
