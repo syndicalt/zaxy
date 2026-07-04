@@ -352,13 +352,15 @@ and do not combine them with the headline 500 or Harvey LAB numbers.
 
 ## Claim Boundaries
 
-- Use **LongMemEval-compatible checkout** for the headline 500 diagnostic.
+- The **LongMemEval-compatible checkout / headline 500** diagnostic is
+  withdrawn (see above); it is not a current claim boundary.
 - Use **Harvey LAB external** for the legal-agent work-product result.
-- Do not describe the LongMemEval-compatible checkout run as an official
+- Do not describe any LongMemEval-compatible checkout run as an official
   LongMemEval score.
 - Do not cite archived partial runs as current benchmark claims.
-- Before publishing a new full 500, update this page to point at one new
-  headline report and keep the previous headline under `reports/archive/`.
+- When a future full LongMemEval run is published, add a new report under
+  `reports/benchmarks/` with its own claim boundary, update this page to point
+  at it, and keep the retracted headline under `reports/archive/`.
 
 Related docs: [testing.md](testing.md), [external-validation.md](external-validation.md),
 the [Governed Active Memory thesis](research/governed-active-memory.md),

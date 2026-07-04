@@ -436,8 +436,9 @@ PATHLIGHT_ACCESS_TOKEN_FILE=/run/secrets/pathlight_access_token
   `pytest tests/test_competitive_benchmarks.py --benchmark-only --no-cov`
 - Review the active benchmark hub:
   `docs/benchmarks.md`
-- Re-run the benchmark report guard only against the current headline 500 or
-  Harvey LAB artifacts listed in that hub.
+- Re-run the benchmark report guard only against the current Harvey LAB
+  artifacts listed in that hub (the prior LongMemEval headline 500 report was
+  withdrawn; see docs/benchmarks.md).
 - Capacity planning review
 - Security audit (dependency updates, key rotation)
 

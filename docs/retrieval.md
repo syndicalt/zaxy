@@ -220,10 +220,11 @@ without requiring a graph sidecar or provider quota.
 
 The current public benchmark evidence is summarized in
 [benchmarks.md](benchmarks.md). Treat that page as the source of truth for
-retrieval-quality claims: the active public surface is the headline
-500-question LongMemEval-compatible checkout diagnostic plus the Harvey LAB
-external memory-ablation report. Older BM25 slices, backend comparisons, and
-suite/debug runs are archived development history, not current public claims.
+retrieval-quality claims: the active public surface is the Harvey LAB external
+memory-ablation report. The prior LongMemEval-compatible "headline 500" result
+is withdrawn; see benchmarks.md for the withdrawal note. Older BM25 slices,
+backend comparisons, and suite/debug runs are archived development history,
+not current public claims.
 
 The next retrieval-quality work should close the practical ergonomics gap with
 QMD-style search sidecars: richer assembly lifecycle hooks, stronger local

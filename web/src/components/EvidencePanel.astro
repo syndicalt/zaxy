@@ -12,14 +12,14 @@ const cards = [
     note: "Within-mission proxy on the coordination scaffold. Fleet-wide transfer is not yet measured at scale.",
   },
   {
-    label: "LongMemEval · 500q",
-    rows: [
-      { k: "Recall@5", v: "0.972" },
-      { k: "Answer@5", v: "0.628" },
-      { k: "checkout mean", v: "0.724" },
-      { k: "citation coverage", v: "1.000" },
+    label: "LongMemEval · withdrawn",
+    boundary: true,
+    items: [
+      "Prior LongMemEval numbers are retracted: the run was oracle-mode (~1.9 candidate sessions/question, so recall and citation were ~1.0 by construction, not by retrieval).",
+      "The preference-question answers came from a hardcoded gold-answer table (now removed).",
+      "No comparable LongMemEval score is currently published; a real full-haystack run is pending.",
     ],
-    note: "Run with the hash (non-semantic) embedding provider — this shows plumbing and recall parity, not semantic quality.",
+    note: "See docs/benchmarks.md for the full retraction.",
   },
   {
     label: "Current evidence boundary",
