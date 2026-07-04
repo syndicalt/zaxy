@@ -904,6 +904,28 @@ async def generate_longmembench_hypotheses(
                 latticedb_path=tmp_path / "latticedb",
                 embedding_dimension=settings.embedding_dimension,
             )
+            # Pre-warm the embedding cache in one batched pass. The projection
+            # ingestion and the source lane below each embed through this cached
+            # provider one text at a time; warming every corpus chunk plus every
+            # extracted-entity text up front turns thousands of sequential
+            # embedding API round trips into a handful of batched calls, which is
+            # the dominant cost of a hosted-embeddings run.
+            from zaxy.embedding import entity_embedding_text
+            from zaxy.extract import extract as _extract_for_prewarm
+
+            prewarm_texts: list[str] = [chunk.text for chunk in corpus]
+            for _event in eventlog.read_all():
+                try:
+                    _extraction = _extract_for_prewarm(_event)
+                except Exception:  # noqa: BLE001 - a malformed event just skips prewarm
+                    continue
+                prewarm_texts.extend(
+                    entity_embedding_text(entity) for entity in _extraction.entities
+                )
+            if prewarm_texts:
+                provider.embed_batch(prewarm_texts)
+                provider.flush()
+
             zaxy_retriever, graph = await build_live_zaxy_retriever(
                 eventlog,
                 provider,

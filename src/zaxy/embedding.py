@@ -209,6 +209,69 @@ class OpenAIEmbeddingProvider:
         response = await self._post_with_retries_async(text)
         return self._vector_from_response(response)
 
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        """Embed many texts in as few API calls as possible (input list).
+
+        The OpenAI embeddings endpoint accepts a list of inputs; this sends them
+        in chunks of 1024 and returns vectors in the original order — orders of
+        magnitude fewer round trips than calling :meth:`embed` per text.
+        """
+        out: list[list[float]] = []
+        index = 0
+        total = len(texts)
+        while index < total:
+            # Pack a request under the endpoint's per-call token ceiling (inputs
+            # can be long session chunks). Estimate tokens as chars/4; keep well
+            # under 300k tokens/request and 2048 inputs. Empty strings are
+            # rejected by the API, so substitute a single space.
+            batch: list[str] = []
+            budget = 0
+            while index < total and len(batch) < 256:
+                text = texts[index]
+                text = text if text and text.strip() else " "
+                estimate = len(text) // 4 + 2
+                if batch and budget + estimate > 250_000:
+                    break
+                batch.append(text)
+                budget += estimate
+                index += 1
+            response = self._post_batch_with_retries(batch)
+            rows = sorted(response.json()["data"], key=lambda row: row["index"])
+            for row in rows:
+                vector = [float(value) for value in row["embedding"]]
+                _validate_dimension(vector, self.dimension)
+                out.append(vector)
+        return out
+
+    def _post_batch_with_retries(self, texts: list[str]) -> httpx.Response:
+        last_error: Exception | None = None
+        for attempt in range(self._max_retries + 1):
+            try:
+                response = self._client.post(
+                    f"{self._base_url}/embeddings",
+                    headers={
+                        "Authorization": f"Bearer {self._api_key}",
+                        # Skip brotli: httpx's decoder can fail on large batched
+                        # responses ("can_accept_more_data() is False").
+                        "Accept-Encoding": "identity",
+                    },
+                    json={
+                        "model": self.model,
+                        "input": texts,
+                        "encoding_format": "float",
+                        "dimensions": self.dimension,
+                    },
+                )
+                response.raise_for_status()
+                return response
+            except (httpx.HTTPStatusError, httpx.TransportError) as exc:
+                last_error = exc
+                if not self._should_retry(exc) or attempt >= self._max_retries:
+                    raise
+                time.sleep(self._retry_delay(exc, attempt))
+        assert last_error is not None
+        raise last_error
+
     def _vector_from_response(self, response: Any) -> list[float]:
         payload = response.json()
         vector = [float(value) for value in payload["data"][0]["embedding"]]
