@@ -2,6 +2,44 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 3.0.2 - 2026-07-04
+
+Integrity and honesty patch. This release removes benchmark contamination from
+the checkout path, **retracts the previously published LongMemEval numbers**, and
+lands a batch of correctness/security fixes surfaced by an adversarial review.
+
+- **Benchmark answers were memorized — removed, and the numbers are retracted.**
+  The preference-answer synthesis on the live checkout path
+  (`evidence_candidates.py`) carried a hardcoded table of LongMemEval gold-answer
+  paragraphs plus scenario-keyed branches, matched by token overlap. It inflated
+  benchmark scores and could inject an irrelevant canned paragraph for real users
+  whose evidence happened to match. It is gone; preference answers are now
+  synthesized only from keywords present in the cited evidence. The prior
+  LongMemEval figures (mean `0.956`, Answer@5 `0.910`, Recall@5 `1.000`, citation
+  coverage `1.000`) are **withdrawn**: they were produced in *oracle* mode (~1.9
+  candidate sessions per question, so recall and citation were ~1.0 by
+  construction, not by retrieval) and the preference scores rested on the removed
+  table. No LongMemEval score is currently published; `README`,
+  `docs/benchmarks.md`, and the docs site are updated, and the RC.1 freeze gate no
+  longer requires a LongMemEval artifact.
+- **Integrity fixes.** `MemoryFabric.close()` now honors `owns_connections`, so a
+  shared server fabric is no longer dropped to disconnected and forced to reopen
+  an embedded store it already holds a lock on. `zaxy compact` writes a temp file
+  + fsync + `os.replace` instead of truncating the append-only log in place.
+  `verified_forget` raises a distinct `ForgetTombstoneUnauditedError` if the audit
+  tombstone fails to append after the key is destroyed, rather than leaving an
+  erased-but-unaudited memory silently.
+- **Security fixes.** The SSE transport refuses to bind a non-loopback host
+  without configured auth, regardless of `ZAXY_ENV`. The dashboard's CSRF origin
+  check fails closed on an absent `Origin` header. `export-keygen` creates the
+  private key pre-restricted to `0600` (no world-readable window) and gains a
+  `--force` guard. The LongMemEval benchmark harness shell-quotes its `--dataset`
+  input. The `doctor` version-consistency check inspects the workspace root it was
+  given rather than the process cwd.
+- **Performance.** Checkout folds the salience ledger once per call instead of
+  twice; the primary `append` offloads its blocking file I/O off the event loop.
+- ruff + mypy clean; full unit suite green.
+
 ## 3.0.1 - 2026-07-02
 
 Patch release that eliminates the indefinite `memory_checkout` hang observed
