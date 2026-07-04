@@ -224,7 +224,7 @@ zaxy longmembench-import \\
   --dataset path/to/LongMemEval/data/longmemeval_oracle.json \\
   --hypotheses path/to/zaxy-hypotheses.jsonl \\
   --official-eval-log path/to/zaxy-hypotheses.jsonl.eval-results-gpt-4o \\
-  --diagnostic-report reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.json \\
+  --diagnostic-report path/to/your-diagnostic-report/live-benchmark.json \\
   --sota-baseline reports/benchmarks/longmembench-external/sota-baseline.json \\
   --validator-evidence reports/benchmarks/longmembench-external/validator-evidence.json \\
   --output-dir reports/benchmarks/longmembench-external
@@ -865,8 +865,16 @@ async def generate_longmembench_hypotheses(
             base_url=settings.openai_base_url,
         )
         provider_label = f"openai:{settings.openai_embedding_model}"
+    elif provider_name in ("local", "sentence-transformers", "sentence_transformers"):
+        from zaxy.embedding import SentenceTransformersEmbeddingProvider
+
+        raw_provider = SentenceTransformersEmbeddingProvider(
+            model_name=settings.embedding_sentence_transformer_model,
+            dimension=settings.embedding_dimension,
+        )
+        provider_label = f"local:{settings.embedding_sentence_transformer_model}"
     else:
-        raise ValueError("embedding_provider must be 'hash' or 'openai'")
+        raise ValueError("embedding_provider must be 'hash', 'openai', or 'local'")
     provider = CachedEmbeddingProvider(raw_provider, cache_path=embedding_cache)
     generated: list[LongMemBenchGeneratedHypothesis] = []
     try:
