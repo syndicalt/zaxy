@@ -27,16 +27,15 @@ optional Neo4j sidecar, and `zaxy-memory[pathlight]` only for Pathlight tracing.
 - **Local-first runtime**: the default path uses embedded LadybugDB, no Neo4j sidecar.
 - **MCP-native integration**: Codex, Claude Code, Cursor, VS Code, Hermes Agent,
   LangGraph, CrewAI, and AutoGen can use the same memory interface.
-- **External benchmark evidence**: on the full Harvey LAB legal-agent memory
-  benchmark, Zaxy scored `0.788` mean criterion pass rate across `10/10` tasks,
-  `+0.184` vs regular/no-memory, `+0.081` vs the article-best task rows, and
-  won `9/10` task comparisons. See
-  [Benchmarks](docs/benchmarks.md#harvey-lab); the published
-  stats artifact is `reports/benchmarks/harvey-lab-memory-ablation/publishable-statistics.md`.
-- **Headline 500 evidence**: the current LongMemEval-compatible checkout
-  diagnostic is a full 500-question run with mean `0.956`, Answer@5 `0.910`,
-  Recall@5 `1.000`, and citation coverage `1.000`. See
-  [Benchmarks](docs/benchmarks.md#headline-500).
+
+> **Benchmark claims withdrawn (2026-07-03).** The prior LongMemEval numbers
+> were withdrawn: they were produced in *oracle* mode (mean ~1.9 candidate
+> sessions per question, so Recall@5/citation-coverage were ~1.0 by
+> construction, not by retrieval) and the preference-question scores rested on a
+> hardcoded answer table that has since been removed. Zaxy does not currently
+> publish a LongMemEval score. A real, full-haystack LongMemEval run is planned;
+> until it lands, treat the earlier `0.956`/`0.910`/`1.000` figures as retracted.
+> The Harvey LAB claim is pending the same audit.
 
 ## Quick Start
 
@@ -226,16 +225,11 @@ pytest -m integration --no-cov
 ruff check src tests
 mypy src
 
-# Current full-set LongMemEval-compatible checkout evidence:
-# reports/benchmarks/longmemeval-500-publish-20260607/
-# Mean 0.956, Answer@5 0.910, citation coverage 1.000, R@1/R@5/R@10 0.960/1.000/1.000.
-
-# Stage the next full 500 only after docs/report cleanup is complete.
-zaxy benchmark --output-dir reports/benchmarks/longmemeval-500-next \
-  --embedding-provider hash --workload longmemeval \
-  --dataset .cache/zaxy/benchmarks/longmemeval_oracle.json \
-  --runs 1 --limit 5 --baseline-backends bm25 \
-  --projection-backend embedded --zaxy-backend checkout
+# LongMemEval benchmark numbers are WITHDRAWN (see the note at the top of this
+# README). The `--dataset .cache/.../longmemeval_oracle.json` path only exercises
+# the answer step over pre-selected gold sessions (oracle mode) and does NOT
+# measure retrieval on the full LongMemEval haystack; do not publish figures from
+# it as a LongMemEval score. A real full-haystack harness is TBD.
 
 # Harvey LAB external memory-ablation comparison
 # Consumes externally generated Harvey normalized-result artifacts for Zaxy;

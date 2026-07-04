@@ -414,12 +414,6 @@ def _write_rc1_freeze_artifacts(root: Path) -> None:
             {
                 "release": "2.0.0-rc.1",
                 "schema_version": "zaxy.rc1-benchmark-freeze.v1",
-                "headline_500": {
-                    "artifact": "reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.json",
-                    "run_config": "reports/benchmarks/longmemeval-500-publish-20260607/run-config.md",
-                    "claim_scope": "longmemeval_compatible_checkout",
-                    "workload_sha256": "90fb2307195d7e16b963a2b8a30f03b375bd42a45d41aeaa55423029dd84e3fc",
-                },
                 "harvey_lab": {
                     "claim_scope": "external_anchor",
                     "harvey_commit": "29748828133dff83ad2263af353fb035504f8f77",
@@ -462,32 +456,6 @@ def _write_rc1_freeze_artifacts(root: Path) -> None:
         ),
         encoding="utf-8",
     )
-    headline_dir = root / "reports/benchmarks/longmemeval-500-publish-20260607"
-    headline_dir.mkdir(parents=True)
-    (headline_dir / "run-config.md").write_text("frozen config\n", encoding="utf-8")
-    (headline_dir / "live-benchmark.json").write_text(
-        json.dumps(
-            {
-                "generated_at": "2026-06-07T16:20:10Z",
-                "workload": {"sha256": "90fb2307195d7e16b963a2b8a30f03b375bd42a45d41aeaa55423029dd84e3fc"},
-                "summaries": [
-                    {
-                        "backend": "zaxy-checkout",
-                        "case_count": 500,
-                        "mean_score": 0.956,
-                        "mean_answer_recall_at_5": 0.91,
-                        "mean_recall_at_5": 1.0,
-                        "mean_citation_coverage": 1.0,
-                        "latency_ms_p95": 1966.65,
-                        "latency_ms_p99": 2495.07,
-                        "mean_approx_tokens": 10192,
-                    }
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
-
     harvey_dir = root / "reports/benchmarks/harvey-lab-memory-ablation"
     harvey_dir.mkdir(parents=True)
     (harvey_dir / "harvey-lab-benchmark.json").write_text(
@@ -709,7 +677,6 @@ def test_benchmark_freeze_json_passes_with_required_rc1_artifacts(tmp_path: Path
     report = json.loads(result.output)
     assert report["release"] == "2.0.0-rc.1"
     assert report["passed"] is True
-    assert report["headline_500"]["claim_scope"] == "longmemeval_compatible_checkout"
     assert report["harvey_lab"]["claim_scope"] == "external_anchor"
 
 
@@ -718,7 +685,7 @@ def test_benchmark_freeze_fails_when_required_rc1_artifact_is_missing(tmp_path: 
     _write_rc1_freeze_artifacts(tmp_path)
     (
         tmp_path
-        / "reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.json"
+        / "reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-status.json"
     ).unlink()
     runner = CliRunner()
 
@@ -728,7 +695,7 @@ def test_benchmark_freeze_fails_when_required_rc1_artifact_is_missing(tmp_path: 
     report = json.loads(result.output)
     assert report["passed"] is False
     assert any(
-        check["name"] == "headline_report" and check["passed"] is False
+        check["name"] == "harvey_artifact:harvey-lab-status.json" and check["passed"] is False
         for check in report["checks"]
     )
 

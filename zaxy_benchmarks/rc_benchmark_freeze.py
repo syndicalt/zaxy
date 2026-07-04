@@ -16,8 +16,6 @@ from typing import Any
 
 RC1_RELEASE = "2.0.0-rc.1"
 RC1_MANIFEST = Path("reports/benchmarks/2.0.0-rc.1/manifest.json")
-HEADLINE_REPORT = Path("reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.json")
-HEADLINE_RUN_CONFIG = Path("reports/benchmarks/longmemeval-500-publish-20260607/run-config.md")
 HARVEY_DIR = Path("reports/benchmarks/harvey-lab-memory-ablation")
 HARVEY_ARTIFACTS = (
     "harvey-lab-benchmark.json",
@@ -25,23 +23,9 @@ HARVEY_ARTIFACTS = (
     "harvey-lab-ready.json",
     "harvey-lab-status.json",
 )
-HEADLINE_BACKEND = "zaxy-checkout"
-
-HEADLINE_FLOORS = {
-    "case_count": 500,
-    "mean_score": 0.95,
-    "mean_answer_recall_at_5": 0.90,
-    "mean_recall_at_5": 0.99,
-    "mean_citation_coverage": 1.0,
-}
-HEADLINE_BUDGETS = {
-    "latency_ms_p95": 2500.0,
-    "latency_ms_p99": 3000.0,
-}
 
 INTERNAL_LANE_SCOPE = "project_defined_internal"
 EXTERNAL_ANCHOR_SCOPE = "external_anchor"
-HEADLINE_SCOPE = "longmemeval_compatible_checkout"
 REQUIRED_INTERNAL_LANES = ("causal", "consolidation", "procedural", "metacognition")
 
 
@@ -60,7 +44,6 @@ class RcBenchmarkFreezeReport:
 
     release: str
     passed: bool
-    headline_500: dict[str, Any]
     harvey_lab: dict[str, Any]
     project_benchmarks: dict[str, Any]
     internal_lanes: list[dict[str, Any]]
@@ -81,7 +64,6 @@ def build_rc1_benchmark_freeze_report(
     checks: list[RcBenchmarkFreezeCheck] = []
     git_tracking = _git_tracking_enabled(root_path)
     manifest = _manifest_evidence(root_path, checks)
-    headline_500 = _headline_evidence(root_path, checks, manifest)
     harvey_lab = _harvey_evidence(root_path, checks, manifest)
     internal_lanes = _internal_lanes(manifest, internal_lane_overrides)
     checks.extend(_check_internal_lanes(internal_lanes))
@@ -90,7 +72,6 @@ def build_rc1_benchmark_freeze_report(
         _check_tracked_release_artifacts(
             root_path,
             checks,
-            headline_500=headline_500,
             harvey_lab=harvey_lab,
             project_benchmarks=project_benchmarks,
         )
@@ -98,7 +79,6 @@ def build_rc1_benchmark_freeze_report(
     return RcBenchmarkFreezeReport(
         release=RC1_RELEASE,
         passed=all(check.passed for check in checks),
-        headline_500=headline_500,
         harvey_lab=harvey_lab,
         project_benchmarks=project_benchmarks,
         internal_lanes=internal_lanes,
@@ -110,15 +90,10 @@ def _check_tracked_release_artifacts(
     root: Path,
     checks: list[RcBenchmarkFreezeCheck],
     *,
-    headline_500: Mapping[str, Any],
     harvey_lab: Mapping[str, Any],
     project_benchmarks: Mapping[str, Any],
 ) -> None:
-    paths = {
-        RC1_MANIFEST,
-        Path(str(headline_500.get("artifact") or "")),
-        Path(str(headline_500.get("run_config") or "")),
-    }
+    paths = {RC1_MANIFEST}
     for artifact in harvey_lab.get("artifacts", []):
         if isinstance(artifact, Mapping):
             paths.add(Path(str(artifact.get("path") or "")))
@@ -148,7 +123,6 @@ def format_rc1_benchmark_freeze_report(report: RcBenchmarkFreezeReport) -> str:
         "",
         f"- Status: `{status}`",
         f"- Release: `{report.release}`",
-        f"- Headline scope: `{report.headline_500.get('claim_scope', '')}`",
         f"- Harvey LAB scope: `{report.harvey_lab.get('claim_scope', '')}`",
         f"- Internal lanes: `{len(report.internal_lanes)}`",
         "",
@@ -198,137 +172,6 @@ def _manifest_evidence(root: Path, checks: list[RcBenchmarkFreezeCheck]) -> Mapp
         )
     )
     return manifest
-
-
-def _headline_evidence(
-    root: Path,
-    checks: list[RcBenchmarkFreezeCheck],
-    manifest: Mapping[str, Any],
-) -> dict[str, Any]:
-    manifest_headline = manifest.get("headline_500")
-    manifest_headline = manifest_headline if isinstance(manifest_headline, Mapping) else {}
-    manifest_artifact = Path(str(manifest_headline.get("artifact") or HEADLINE_REPORT))
-    manifest_run_config = Path(str(manifest_headline.get("run_config") or HEADLINE_RUN_CONFIG))
-    report_path = root / manifest_artifact
-    run_config_path = root / manifest_run_config
-    checks.append(
-        RcBenchmarkFreezeCheck(
-            name="headline_manifest_artifact",
-            passed=manifest_artifact == HEADLINE_REPORT,
-            message=str(manifest_artifact),
-        )
-    )
-    checks.append(
-        RcBenchmarkFreezeCheck(
-            name="headline_manifest_run_config",
-            passed=manifest_run_config == HEADLINE_RUN_CONFIG,
-            message=str(manifest_run_config),
-        )
-    )
-    checks.append(
-        RcBenchmarkFreezeCheck(
-            name="headline_manifest_scope",
-            passed=manifest_headline.get("claim_scope") == HEADLINE_SCOPE,
-            message=f"{manifest_headline.get('claim_scope')!r} == {HEADLINE_SCOPE}",
-        )
-    )
-    checks.append(
-        RcBenchmarkFreezeCheck(
-            name="headline_report",
-            passed=report_path.is_file(),
-            message=str(manifest_artifact),
-        )
-    )
-    checks.append(
-        RcBenchmarkFreezeCheck(
-            name="headline_run_config",
-            passed=run_config_path.is_file(),
-            message=str(manifest_run_config),
-        )
-    )
-    evidence: dict[str, Any] = {
-        "claim_scope": HEADLINE_SCOPE,
-        "backend": HEADLINE_BACKEND,
-        "artifact": str(manifest_artifact),
-        "manifest": str(RC1_MANIFEST),
-        "run_config": str(manifest_run_config),
-        "floors": HEADLINE_FLOORS,
-        "budgets": HEADLINE_BUDGETS,
-    }
-    if not report_path.is_file():
-        return evidence
-
-    try:
-        report = _read_json(report_path)
-    except ValueError as exc:
-        checks.append(
-            RcBenchmarkFreezeCheck(
-                name="headline_report_json",
-                passed=False,
-                message=str(exc),
-            )
-        )
-        return evidence
-    summary = _summary_for_backend(report, HEADLINE_BACKEND)
-    checks.append(
-        RcBenchmarkFreezeCheck(
-            name="headline_backend",
-            passed=summary is not None,
-            message=f"required backend={HEADLINE_BACKEND}",
-        )
-    )
-    if summary is None:
-        return evidence
-    workload = report.get("workload")
-    workload_hash = workload.get("sha256") if isinstance(workload, Mapping) else None
-    manifest_workload_hash = manifest_headline.get("workload_sha256")
-    checks.append(
-        RcBenchmarkFreezeCheck(
-            name="headline_workload_hash",
-            passed=workload_hash == manifest_workload_hash,
-            message=f"{workload_hash!r} == {manifest_workload_hash!r}",
-        )
-    )
-    evidence.update(
-        {
-            "generated_at": report.get("generated_at"),
-            "workload": workload,
-            "metrics": {
-                key: summary.get(key)
-                for key in (
-                    "case_count",
-                    "mean_score",
-                    "mean_answer_recall_at_5",
-                    "mean_recall_at_5",
-                    "mean_citation_coverage",
-                    "latency_ms_p95",
-                    "latency_ms_p99",
-                    "mean_approx_tokens",
-                )
-            },
-        }
-    )
-    for metric, floor in HEADLINE_FLOORS.items():
-        value = summary.get(metric)
-        passed = _numeric(value) >= floor
-        checks.append(
-            RcBenchmarkFreezeCheck(
-                name=f"headline_floor:{metric}",
-                passed=passed,
-                message=f"{value!r} >= {floor}",
-            )
-        )
-    for metric, budget in HEADLINE_BUDGETS.items():
-        value = summary.get(metric)
-        passed = _numeric(value) <= budget
-        checks.append(
-            RcBenchmarkFreezeCheck(
-                name=f"headline_budget:{metric}",
-                passed=passed,
-                message=f"{value!r} <= {budget}",
-            )
-        )
-    return evidence
 
 
 def _harvey_evidence(
@@ -929,16 +772,6 @@ def _read_json(path: Path) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise ValueError(f"{path} must contain a JSON object")
     return value
-
-
-def _summary_for_backend(report: Mapping[str, Any], backend: str) -> Mapping[str, Any] | None:
-    summaries = report.get("summaries")
-    if not isinstance(summaries, list):
-        return None
-    for summary in summaries:
-        if isinstance(summary, Mapping) and summary.get("backend") == backend:
-            return summary
-    return None
 
 
 def _numeric(value: Any) -> float:

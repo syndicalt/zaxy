@@ -115,15 +115,15 @@ operation gates.
 
 ## Benchmark Artifact Schemas
 
-Benchmark claims must be reproducible from tracked inputs. The current public
-benchmark surface is intentionally limited to the headline 500-question
-LongMemEval-compatible checkout report and the Harvey LAB external
-memory-ablation report. Older suite, backend, state-recovery, purpose, and debug
-artifacts are archived development history.
+Benchmark claims must be reproducible from tracked inputs. Zaxy does not
+currently publish a LongMemEval score; see [benchmarks.md](benchmarks.md) for
+the withdrawal note on the retracted headline 500-question result. The
+remaining public benchmark surface is the Harvey LAB external memory-ablation
+report. Older suite, backend, state-recovery, purpose, and debug artifacts are
+archived development history.
 
 | Artifact | Status | Contract authority |
 | --- | --- | --- |
-| `reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.json` | `Beta` | Current headline 500-question checkout diagnostic. |
 | `reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-benchmark.json` | `Beta` | Harvey LAB external legal-agent memory-ablation report. |
 | `reports/benchmarks/harvey-lab-memory-ablation/publishable-statistics.md` | `Beta` | Publishable Harvey LAB statistics summary. |
 | `reports/archive/**` and `docs/archive/**` | `Internal` | Archived development history; do not cite as current public benchmark claims. |

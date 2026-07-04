@@ -151,10 +151,10 @@ query latency, and retrieval harness behavior. Benchmarks are useful for
 detecting large regressions, but correctness tests decide release readiness.
 
 The current public benchmark evidence is intentionally narrow and is documented
-in [benchmarks.md](benchmarks.md). Active public claims should point only to:
-
-- the headline 500-question LongMemEval-compatible checkout report; and
-- the Harvey LAB external legal-agent memory-ablation report.
+in [benchmarks.md](benchmarks.md). Zaxy does not currently publish a
+LongMemEval score — the prior headline 500-question result was retracted; see
+benchmarks.md for the withdrawal note. Active public claims should point only
+to the Harvey LAB external legal-agent memory-ablation report.
 
 Older benchmark suites, backend shootouts, StateRecoveryBench, PurposeBench,
 LongMemBench adapter artifacts, debug runs, and partial LongMemEval iterations
@@ -166,9 +166,10 @@ artifacts under `reports/benchmarks/` are active RC release guardrails, but
 remain project-defined internal evidence unless a future release publishes a
 separate external validation boundary for them.
 
-When staging the next full 500-question run, write it to a new report directory
-under `reports/benchmarks/`, update [benchmarks.md](benchmarks.md) to select one
-headline report, and move the superseded headline into `reports/archive/`.
+When a future full LongMemEval run is published, write it to a new report
+directory under `reports/benchmarks/`, update [benchmarks.md](benchmarks.md)
+with the run's own claim boundary, and keep any retracted report under
+`reports/archive/`.
 
 For the 2.0 RC.1 release candidate, run:
 
@@ -176,11 +177,10 @@ For the 2.0 RC.1 release candidate, run:
 zaxy benchmark-freeze --json
 ```
 
-This validates the frozen headline LongMemEval-compatible 500 report, Harvey
-LAB external-anchor artifacts, StateRecoveryBench, CoordinationBench,
-PurposeBench, and project-defined 2.0 internal lanes. It is a release evidence
-and claim-boundary gate; it must not be used to tune answers or
-mix internal guardrail lanes into public benchmark claims.
+This validates Harvey LAB external-anchor artifacts, StateRecoveryBench,
+CoordinationBench, PurposeBench, and project-defined 2.0 internal lanes. It is
+a release evidence and claim-boundary gate; it must not be used to tune answers
+or mix internal guardrail lanes into public benchmark claims.
 
 For consolidation safety checks, use the identity-collapse workload. It creates
 near-duplicate source records with distinct durable identifiers and adds an

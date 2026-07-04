@@ -1,53 +1,28 @@
 # Benchmarks
 
-Zaxy keeps the public benchmark surface intentionally small. Active benchmark
-evidence is limited to:
+Zaxy does not currently publish a LongMemEval score.
 
-- the current headline 500-question LongMemEval-compatible checkout report; and
-- the Harvey LAB external legal-agent memory-ablation report.
+## Headline 500 — WITHDRAWN
 
-Older backend shootouts, partial slices, experimental LongMemEval iterations,
-LongMemBench adapter artifacts, and debug reports are archived under
-`reports/archive/` and `docs/archive/`. They are development history, not
-current public claims.
+The prior "headline 500" LongMemEval-compatible result (mean `0.956`, Answer@5
+`0.910`, Recall@5 `1.000`, citation coverage `1.000`) has been **retracted**. It
+was not a comparable benchmark result for two independent reasons:
 
-## Headline 500
+1. **Oracle mode, not retrieval.** It ran against `longmemeval_oracle.json`,
+   where each question carries a mean of ~1.9 candidate sessions (99.4% have ≤5)
+   and the answer session is always in that pool. Recall@5 and citation coverage
+   are therefore ~1.0 *by construction* — retrieving 5 items from a bag of ~2 —
+   and say nothing about retrieval on the real LongMemEval haystack (~40 sessions
+   for LongMemEval_S, ~500 for LongMemEval_M).
+2. **Memorized answers.** The preference-question answers came from a hardcoded
+   gold-answer table on the checkout path (removed 2026-07-03). With it gone, the
+   preference category scores `0.000` — its previous credit was memorization, not
+   memory.
 
-The current headline LongMemEval-compatible result is:
-
-[reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.md](../reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.md)
-
-Frozen run config:
-[reports/benchmarks/longmemeval-500-publish-20260607/run-config.md](../reports/benchmarks/longmemeval-500-publish-20260607/run-config.md)
-
-This is a Zaxy same-harness checkout diagnostic over the cleaned
-LongMemEval-compatible workload. It is not an official LongMemEval end-to-end
-assistant score.
-
-| Metric | Value |
-|--------|------:|
-| Generated | `2026-06-07T16:20:10Z` |
-| Workload SHA-256 | `90fb2307195d7e16b963a2b8a30f03b375bd42a45d41aeaa55423029dd84e3fc` |
-| Events | `5,372` |
-| Questions | `500` |
-| Sessions | `948` |
-| Backend | `zaxy-checkout` |
-| Mean score | `0.956` |
-| Answer@5 | `0.910` |
-| Recall@1 | `0.960` |
-| Recall@5 | `1.000` |
-| Recall@10 | `1.000` |
-| Identity recall | `0.980` |
-| Citation coverage | `1.000` |
-| p50 latency | `881.01 ms` |
-| p95 latency | `1,966.65 ms` |
-| p99 latency | `2,495.07 ms` |
-| Approx tokens | `10,192` |
-
-Interpretation: retrieval and citation are at ceiling in this adapted checkout
-protocol. The remaining reported misses are synthesis-side (`45`
-`synthesis_miss` cases). The same report includes a BM25 baseline with mean
-`0.520`, Answer@5 `0.520`, Recall@5 `0.770`, and citation coverage `1.000`.
+A real, full-haystack LongMemEval run — official dataset, an LLM reader over
+Zaxy-retrieved context, and the official GPT-4o judge — is the only thing that
+would support a comparable claim. Until that exists, there is no LongMemEval
+number to cite.
 
 ## Harvey LAB
 
@@ -94,23 +69,21 @@ The tracked freeze manifest is
 [reports/benchmarks/2.0.0-rc.1/manifest.json](../reports/benchmarks/2.0.0-rc.1/manifest.json).
 
 The gate is a claim-boundary and artifact-integrity check. It requires the
-headline 500-question LongMemEval-compatible checkout report, the frozen
-headline run config, Harvey LAB external-anchor artifacts, and the
-project-defined RC lanes for StateRecoveryBench, CoordinationBench,
-PurposeBench, causal, consolidation, procedural, and metacognitive behavior.
+Harvey LAB external-anchor artifacts and the project-defined RC lanes for
+StateRecoveryBench, CoordinationBench, PurposeBench, causal, consolidation,
+procedural, and metacognitive behavior. It no longer requires or evaluates any
+LongMemEval headline artifact: the prior "headline 500" result was retracted
+(see above) and its report was removed, so the gate makes no LongMemEval claim.
 
-RC.1 evidence is interpreted in three separate buckets:
+RC.1 evidence is interpreted in two separate buckets:
 
-- `longmemeval_compatible_checkout`: the same-harness 500-question checkout
-  diagnostic listed above. It is the headline public benchmark artifact, not an
-  official LongMemEval end-to-end assistant score.
 - `external_anchor`: Harvey LAB legal-agent memory-ablation evidence. It is
   external downstream work-product evidence, not a general outside-user
   validation report.
 - `project_defined_internal`: StateRecoveryBench, CoordinationBench,
   PurposeBench, causal, consolidation, procedural, and metacognitive
   guardrails. These lanes protect product contracts and must not be merged into
-  the headline 500 or Harvey LAB numbers.
+  the Harvey LAB numbers or any future LongMemEval claim.
 
 The active RC.1 project-defined artifacts are:
 
@@ -136,8 +109,7 @@ claims and they do not establish competitor performance. The active PurposeBench
 report proves Zaxy's purpose profiles and evidence policies on tracked internal
 lanes, while the holdout pack documents source boundaries and claim status.
 
-The RC.1 gate fails closed when required artifacts are missing, when the
-headline 500 falls below the frozen quality or latency floors, or when a 2.0
+The RC.1 gate fails closed when required artifacts are missing or when a 2.0
 internal or project-defined lane is classified as external validation. This is
 intentionally a release-readiness gate, not a reward function.
 
