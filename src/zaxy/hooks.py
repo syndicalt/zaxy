@@ -34,31 +34,65 @@ def _command_hook_config(
     eventloom_path: str,
     session_id: str,
     source: str,
+    extra_commands: dict[str, list[str]] | None = None,
 ) -> str:
     """Render a Claude-Code/Codex-style hooks JSON for the given (event, trigger, matcher) set.
 
     Both Claude Code and Codex consume the same `{"hooks": {Event: [{"hooks": [...]}]}}`
-    schema, including `UserPromptSubmit` with `additionalContext` injection.
+    schema, including `UserPromptSubmit` with `additionalContext` injection. Any command
+    strings in ``extra_commands[event_name]`` are appended to that event's hook list (used
+    to run deterministic transcript capture alongside the lifecycle handler).
     """
+    extra = extra_commands or {}
     hooks: dict[str, Any] = {}
     for event_name, trigger, matcher in events:
+        commands = [
+            _hook_command(
+                trigger,
+                eventloom_path=eventloom_path,
+                session_id=session_id,
+                source=source,
+            ),
+            *extra.get(event_name, []),
+        ]
         group: dict[str, Any] = {
-            "hooks": [
-                {
-                    "type": "command",
-                    "command": _hook_command(
-                        trigger,
-                        eventloom_path=eventloom_path,
-                        session_id=session_id,
-                        source=source,
-                    ),
-                }
-            ]
+            "hooks": [{"type": "command", "command": command} for command in commands]
         }
         if matcher is not None:
             group["matcher"] = matcher
         hooks[event_name] = [group]
     return json.dumps({"hooks": hooks}, indent=2, sort_keys=True)
+
+
+def _capture_command(
+    kind: str,
+    *,
+    eventloom_path: str,
+    session_id: str,
+    source: str,
+    workspace: str = ".",
+) -> str:
+    """Render the deterministic transcript-capture command for a client's Stop hook.
+
+    Ingests the client's own session logs (transcript turns, tool calls, commands, file
+    edits) into Eventloom so checkout has substantive facts, not just lifecycle telemetry.
+    Capture is idempotent and ~1s incremental, so it is safe to run on every Stop.
+    """
+    return " ".join(
+        [
+            "zaxy",
+            "capture",
+            shlex.quote(kind),
+            "--workspace",
+            shlex.quote(workspace),
+            "--eventloom-path",
+            shlex.quote(eventloom_path),
+            "--session-id",
+            shlex.quote(session_id),
+            "--source",
+            shlex.quote(source),
+        ]
+    )
 
 
 def render_hook_config(
@@ -74,6 +108,8 @@ def render_hook_config(
     session_id = domain_default_session(resolved_domain)
     hook_source = source or normalized
     if normalized == "claude-code":
+        # Stop also runs deterministic transcript capture so checkout gets substantive
+        # facts (turns, tool calls, commands, edits), not just lifecycle telemetry.
         return _command_hook_config(
             [
                 ("UserPromptSubmit", "user-prompt-submit", None),
@@ -83,12 +119,23 @@ def render_hook_config(
             eventloom_path=eventloom_path,
             session_id=session_id,
             source=hook_source,
+            extra_commands={
+                "Stop": [
+                    _capture_command(
+                        "claude",
+                        eventloom_path=eventloom_path,
+                        session_id=session_id,
+                        source=hook_source,
+                    )
+                ]
+            },
         )
     if normalized == "codex":
         # Codex ships Claude-parity hooks: its UserPromptSubmit accepts the same
         # additionalContext schema, so the deterministic per-turn recall injection
         # works here too. Config lives in .codex/hooks.json or a [hooks] table in
-        # config.toml. SessionStart/Stop/PreCompact add lifecycle capture boundaries.
+        # config.toml. SessionStart/Stop/PreCompact add lifecycle capture boundaries,
+        # and Stop additionally ingests the Codex session transcript.
         return _command_hook_config(
             [
                 ("UserPromptSubmit", "user-prompt-submit", None),
@@ -99,6 +146,16 @@ def render_hook_config(
             eventloom_path=eventloom_path,
             session_id=session_id,
             source=hook_source,
+            extra_commands={
+                "Stop": [
+                    _capture_command(
+                        "codex",
+                        eventloom_path=eventloom_path,
+                        session_id=session_id,
+                        source=hook_source,
+                    )
+                ]
+            },
         )
     # NOTE: per-turn recall injection (UserPromptSubmit -> additionalContext) needs a
     # client that fires a pre-prompt hook and re-injects the hook's output -- Claude
