@@ -1,7 +1,7 @@
 #!/bin/sh
 # Zaxy installer — governed active memory for agent fleets.
 #
-#   curl -fsSL https://zaxy.com/install.sh | sh
+#   curl -fsSL https://zaxy.io/install.sh | sh
 #
 # Installs the `zaxy` CLI and registers its MCP server with every agent harness
 # it detects on this machine (Claude Code, Codex, opencode, OpenClaw, Hermes,
@@ -67,7 +67,7 @@ else
       if has uv || has curl; then install_with_uv
       elif has pipx; then install_with_pipx
       elif has python3; then install_with_pip
-      else die "need one of: uv, pipx, or python3+pip. See https://zaxy.com/docs"
+      else die "need one of: uv, pipx, or python3+pip. See https://zaxy.io/docs"
       fi ;;
     *) die "unknown ZAXY_INSTALLER='$ZAXY_INSTALLER' (use uv|pipx|pip)" ;;
   esac
@@ -94,4 +94,4 @@ fi
 info ""
 info "${G}Done.${D} Restart your agent(s), then in any project run:"
 info "  ${B}zaxy checkout${D}    # see the memory your agent will use"
-info "Docs: https://zaxy.com/docs"
+info "Docs: https://zaxy.io/docs"

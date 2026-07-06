@@ -11,7 +11,7 @@ honest LongMemEval re-baseline, and the integrity/security fixes.
 
 ### Added
 
-- **One-command installer.** `curl -fsSL https://zaxy.com/install.sh | sh`
+- **One-command installer.** `curl -fsSL https://zaxy.io/install.sh | sh`
   installs the `zaxy` CLI and registers its MCP server with every agent harness
   it detects — Claude Code, Codex, opencode, OpenClaw, Hermes, Z.ai ZCode, and
   Pi (Pi only when its MCP adapter is present). Env overrides (`ZAXY_VERSION`,
