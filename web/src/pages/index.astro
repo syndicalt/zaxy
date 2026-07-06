@@ -24,11 +24,19 @@ import InstallTabs from "../components/InstallTabs.astro";
           <a class="tlink" href="/#system">How it works →</a>
         </div>
         <div class="cmd">
-          <span><span class="dollar">$</span>uvx zaxy-memory@3.1.0</span>
-          <button class="copy" type="button" data-copy="uvx zaxy-memory@3.1.0"
-            >COPY</button
+          <span
+            ><span class="dollar">$</span>curl -fsSL https://zaxy.com/install.sh | sh</span
+          >
+          <button
+            class="copy"
+            type="button"
+            data-copy="curl -fsSL https://zaxy.com/install.sh | sh">COPY</button
           >
         </div>
+        <p class="cmd-note muted">
+          Installs the CLI and wires up every agent harness it detects. Prefer a
+          package? <a class="tlink" href="/install.html">uvx / pip / MCP config →</a>
+        </p>
       </div>
 
       <figure class="hero__fig figure">
@@ -188,7 +196,12 @@ import InstallTabs from "../components/InstallTabs.astro";
     flex-wrap: wrap;
   }
   .cmd {
-    max-width: 24em;
+    max-width: 34em;
+  }
+  .cmd-note {
+    margin: 0.7em 0 0;
+    font-size: 0.82rem;
+    max-width: 34em;
   }
   .hero__fig {
     position: relative;
