@@ -2342,3 +2342,10 @@ def packet_project(
 # Phase 2: hidden deprecated aliases for the packet family.
 register_deprecated_alias("packet-analyzer", "packet analyze", packet_analyzer)
 register_deprecated_alias("packet-project", "packet project", packet_project)
+
+
+# Phase 3: promote the daily read/write loop to top-level. These are visible
+# aliases of the `memory` verbs run every turn by an agent; `zaxy memory
+# checkout`/`append` keep working unchanged.
+app.command("checkout")(memory_checkout)
+app.command("append")(memory_append)

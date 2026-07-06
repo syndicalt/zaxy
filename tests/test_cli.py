@@ -9116,6 +9116,21 @@ def test_flat_families_are_grouped_with_deprecated_aliases() -> None:
         assert runner.invoke(app, [old, "--help"]).exit_code == 0
 
 
+def test_daily_loop_promoted_to_top_level() -> None:
+    """Phase 3: checkout/append/bootstrap are visible top-level Essentials aliases
+    of the `memory` verbs, which keep working."""
+    runner = CliRunner()
+    output = runner.invoke(app, ["--help"]).output
+    for name in ("checkout", "append", "bootstrap"):
+        assert name in output, name
+        assert cli_runtime._COMMAND_PANEL[name] == "Essentials"
+        assert runner.invoke(app, [name, "--help"]).exit_code == 0, name
+        assert runner.invoke(app, ["memory", name, "--help"]).exit_code == 0, name
+    # dashboard moved out of Essentials but stays runnable.
+    assert cli_runtime._COMMAND_PANEL["dashboard"] == "Setup & integrations"
+    assert runner.invoke(app, ["dashboard", "--help"]).exit_code == 0
+
+
 def test_memory_evolution_gate_default_auto_applies(tmp_path: Path) -> None:
     """Under the default auto_with_rollback tier a high-confidence op auto-applies."""
     workspace = tmp_path / "ws"
