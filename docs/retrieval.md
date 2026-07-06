@@ -221,7 +221,7 @@ without requiring a graph sidecar or provider quota.
 The current public benchmark evidence is summarized in
 [benchmarks.md](benchmarks.md). Treat that page as the source of truth for
 retrieval-quality claims: the active public surface is the full-haystack,
-held-out LongMemEval-S result (`0.898` gpt-5 full-500 / `0.777` gpt-4o held-out answer accuracy,
+held-out LongMemEval-S result (`0.90` gpt-5 full-500 / `0.777` gpt-4o held-out answer accuracy,
 Recall@5 `0.99`) in benchmarks.md. The prior oracle-mode "headline 500" stays
 retracted; see benchmarks.md. Older BM25 slices, backend comparisons, and
 suite/debug runs are archived development history, not current public claims.

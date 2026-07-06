@@ -152,7 +152,7 @@ detecting large regressions, but correctness tests decide release readiness.
 
 The current public benchmark evidence is documented in
 [benchmarks.md](benchmarks.md): a full-haystack, held-out LongMemEval-S result
-(`0.898` gpt-5 full-500 / `0.777` gpt-4o held-out answer accuracy, Recall@5
+(`0.90` gpt-5 full-500 / `0.777` gpt-4o held-out answer accuracy, Recall@5
 `0.99`). The prior oracle-mode "headline 500" stays retracted; see
 benchmarks.md. Active public claims should point only
 to the Harvey LAB external legal-agent memory-ablation report.
