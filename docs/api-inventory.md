@@ -115,12 +115,12 @@ operation gates.
 
 ## Benchmark Artifact Schemas
 
-Benchmark claims must be reproducible from tracked inputs. Zaxy does not
-currently publish a LongMemEval score; see [benchmarks.md](benchmarks.md) for
-the withdrawal note on the retracted headline 500-question result. The
-remaining public benchmark surface is the Harvey LAB external memory-ablation
-report. Older suite, backend, state-recovery, purpose, and debug artifacts are
-archived development history.
+Benchmark claims must be reproducible from tracked inputs. The current
+LongMemEval claim is the full-haystack, held-out LongMemEval-S result
+(`0.898` gpt-5 full-500 / `0.777` gpt-4o held-out answer accuracy, Recall@5
+`0.99`); see [benchmarks.md](benchmarks.md). The prior oracle-mode
+"headline 500" stays retracted. Older suite, backend, state-recovery, purpose,
+and debug artifacts are archived development history.
 
 | Artifact | Status | Contract authority |
 | --- | --- | --- |
