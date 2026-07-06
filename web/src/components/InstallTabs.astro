@@ -3,6 +3,15 @@
 // copy affordance (wired by the shared [data-copy] handler).
 const tabs = [
   {
+    id: "install",
+    label: "Install",
+    copy: "curl -fsSL https://zaxy.com/install.sh | sh",
+    lines: [
+      { t: "# one command: CLI + every detected harness", c: "dim" },
+      { t: "curl -fsSL https://zaxy.com/install.sh | sh" },
+    ],
+  },
+  {
     id: "uvx",
     label: "uvx",
     copy: "uvx zaxy-memory@3.1.0 serve",
@@ -14,10 +23,10 @@ const tabs = [
   {
     id: "pip",
     label: "pip",
-    copy: "pip install -U zaxy-memory && zaxy init --preset local-claude",
+    copy: "pip install -U zaxy-memory && zaxy install",
     lines: [
       { t: "pip install -U zaxy-memory" },
-      { t: "zaxy init --preset local-claude", c: "dim" },
+      { t: "zaxy install  # register detected harnesses", c: "dim" },
     ],
   },
   {

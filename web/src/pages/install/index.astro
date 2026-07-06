@@ -5,14 +5,14 @@ import InstallTabs from "../../components/InstallTabs.astro";
 const steps = [
   {
     n: "01",
-    t: "Install & bootstrap",
-    b: "One command writes a local MCP config, an embedded store, and the onboarding profile — no external service.",
-    cmd: "zaxy init --preset local-claude",
+    t: "Install",
+    b: "One command installs the CLI and registers Zaxy's MCP server with every agent harness it detects — embedded store, no external service.",
+    cmd: "curl -fsSL https://zaxy.com/install.sh | sh",
   },
   {
     n: "02",
-    t: "Point your agent at it",
-    b: "Add the server to any MCP client. The memory loop — checkout, capture, feedback — becomes the default for the session.",
+    t: "Restart your agent",
+    b: "The installer already wrote your client's MCP config at user scope. Restart the agent and the cited memory loop — checkout, capture, feedback — is on by default.",
     cmd: null,
   },
   {
@@ -23,11 +23,15 @@ const steps = [
   },
 ];
 
+// The installer auto-configures these; commands shown for anyone wiring a
+// client by hand or re-registering just one.
 const clients = [
-  { name: "Claude Code", cmd: "zaxy init --preset local-claude" },
-  { name: "Codex", cmd: "codex mcp add zaxy -- uvx zaxy-memory@3.1.0 serve" },
-  { name: "Cursor", cmd: "zaxy init --client cursor" },
-  { name: "VS Code", cmd: "zaxy init --client vscode" },
+  { name: "Claude Code", cmd: "claude mcp add zaxy -s user -- zaxy serve" },
+  { name: "Codex", cmd: "codex mcp add zaxy -- zaxy serve" },
+  { name: "opencode", cmd: "zaxy install --clients opencode" },
+  { name: "OpenClaw", cmd: "openclaw mcp add zaxy --command zaxy --arg serve" },
+  { name: "Hermes", cmd: "zaxy install --clients hermes" },
+  { name: "any / all", cmd: "zaxy install" },
 ];
 ---
 
@@ -48,9 +52,10 @@ const clients = [
     <div class="wrap inst-tabs-wrap">
       <InstallTabs />
       <p class="muted inst-foot">
-        Optional <code>Neo4j</code> / <code>pgGraph</code> /
-        <code>LatticeDB</code> backends via <code>PROJECTION_BACKEND</code>. Neo4j
-        remains the release default and quality-control backend.
+        <strong>Embedded LadybugDB is the zero-setup default</strong> — file-based,
+        in-process, one store per project. Optional <code>Neo4j</code> /
+        <code>pgGraph</code> / <code>LatticeDB</code> sidecar backends via
+        <code>PROJECTION_BACKEND</code> for control runs or existing-infra interop.
       </p>
     </div>
   </section>
