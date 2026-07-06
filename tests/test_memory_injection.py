@@ -61,6 +61,11 @@ def test_render_hook_config_emits_user_prompt_submit() -> None:
     assert "zaxy-default" in cmd  # canonical session derived from domain
     # UserPromptSubmit takes no matcher.
     assert "matcher" not in hooks["UserPromptSubmit"][0]
+    # Stop runs the lifecycle handler AND deterministic transcript capture, so
+    # checkout gets substantive facts, not just lifecycle telemetry.
+    stop_cmds = [h["command"] for h in hooks["Stop"][0]["hooks"]]
+    assert any("hook-event stop" in c for c in stop_cmds)
+    assert any("capture claude" in c and "--session-id zaxy-default" in c for c in stop_cmds)
 
 
 def test_render_hook_config_emits_user_prompt_submit_for_codex() -> None:
@@ -77,6 +82,10 @@ def test_render_hook_config_emits_user_prompt_submit_for_codex() -> None:
     assert "matcher" not in hooks["UserPromptSubmit"][0]
     # Lifecycle capture boundaries also present.
     assert {"SessionStart", "Stop", "PreCompact"} <= set(hooks)
+    # Stop also ingests the Codex session transcript deterministically.
+    stop_cmds = [h["command"] for h in hooks["Stop"][0]["hooks"]]
+    assert any("hook-event stop" in c for c in stop_cmds)
+    assert any("capture codex" in c for c in stop_cmds)
 
 
 def test_cli_emits_additional_context_when_stale(tmp_path) -> None:  # type: ignore[no-untyped-def]

@@ -2,6 +2,18 @@
 
 All notable Zaxy release changes are recorded here.
 
+## Unreleased
+
+### Fixed
+
+- **Claude Code and Codex now capture substantive work automatically.** The
+  generated `Stop` hook runs deterministic transcript capture (`zaxy capture
+  claude` / `zaxy capture codex`) alongside the lifecycle handler, so checkout
+  gets real facts — transcript turns, tool calls, commands, file edits — instead
+  of only lifecycle telemetry (`hook.stop`, reminders). Previously the hook
+  config wired only lifecycle events and the transcript-capture command, though
+  it existed, was never triggered. Capture is idempotent and ~1s incremental.
+
 ## 3.1.0 - 2026-07-06
 
 Onboarding and CLI ergonomics: a one-command install, a much smaller everyday
