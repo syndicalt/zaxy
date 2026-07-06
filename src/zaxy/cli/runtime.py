@@ -143,7 +143,7 @@ def resolve_zaxy_executable(*args: Any, **kwargs: Any) -> str:
 _COMMAND_PANELS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
         "Essentials",
-        ("init", "serve", "dashboard", "activate", "doctor", "status"),
+        ("init", "serve", "checkout", "append", "bootstrap", "activate", "doctor", "status"),
     ),
     (
         "Memory",
@@ -163,6 +163,7 @@ _COMMAND_PANELS: tuple[tuple[str, tuple[str, ...]], ...] = (
         "Setup & integrations",
         (
             "setup",
+            "dashboard",
             "ide-config",
             "integrations",
             "integration-template",
@@ -1847,6 +1848,10 @@ def memory_bootstrap(
         typer.echo(json.dumps(bootstrap, indent=2, sort_keys=True))
     else:
         typer.echo(format_memory_bootstrap(bootstrap))
+
+
+# Phase 3: promote session-start bootstrap to top-level alongside checkout/append.
+app.command("bootstrap")(memory_bootstrap)
 
 
 def _parse_source_event(value: str) -> dict[str, object]:
