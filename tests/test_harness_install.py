@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 import tomlkit
 import yaml
 
@@ -104,3 +105,33 @@ def test_install_for_detected_only_list(tmp_path: Path) -> None:
     regs = hi.install_for_detected(executable=EXE, home=tmp_path, only=["opencode", "codex"])
     assert {r.harness for r in regs} == {"opencode", "codex"}
     assert all(r.status == "configured" for r in regs)
+
+
+def test_normalize_harness_rejects_unknown() -> None:
+    with pytest.raises(ValueError, match="unknown harness"):
+        hi.normalize_harness("not-a-real-harness")
+
+
+def test_dry_run_reports_target_but_writes_nothing(tmp_path: Path) -> None:
+    """dry_run must resolve the config path for every harness type without writing."""
+    for name, rel in (
+        ("claude-code", ".claude.json"),  # JSON merge path
+        ("codex", ".codex/config.toml"),  # codex integration path
+        ("hermes", ".hermes/config.yaml"),  # hermes integration path
+    ):
+        reg = hi.register_harness(name, executable=EXE, home=tmp_path, dry_run=True)
+        assert reg.status == "configured", name
+        assert reg.method.startswith("file:"), name
+        assert not (tmp_path / rel).exists(), f"{name} wrote a file during dry-run"
+
+
+def test_register_reports_error_without_aborting(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A harness-specific failure becomes an error Registration, not an exception."""
+    monkeypatch.setattr(
+        hi,
+        "write_codex_mcp_config",
+        lambda **_k: (_ for _ in ()).throw(RuntimeError("disk full")),
+    )
+    reg = hi.register_harness("codex", executable=EXE, home=tmp_path)
+    assert reg.status == "error"
+    assert "disk full" in reg.detail
