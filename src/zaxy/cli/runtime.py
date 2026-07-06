@@ -260,6 +260,25 @@ for _panel_index, (_panel_name, _panel_cmds) in enumerate(_COMMAND_PANELS):
         _COMMAND_PANEL[_cmd_name] = _panel_name
         _COMMAND_RANK[_cmd_name] = (_panel_index, _cmd_index)
 
+# Panels whose commands are benchmark/evaluation/experimental internals: they
+# stay fully runnable but are hidden from the root ``zaxy --help`` so the everyday
+# surface stays small. A newcomer sees the essentials and the everyday groups,
+# not ~55 benchmark and release-gate commands. Reach them via the command name
+# directly (e.g. ``zaxy benchmark --help``) — they are omitted from the listing,
+# not removed.
+_HIDDEN_PANELS: frozenset[str] = frozenset(
+    {"Benchmarks & evaluation", "Internal & experimental lanes"}
+)
+# Individual power/maintenance commands hidden from the root listing while their
+# everyday panel stays visible.
+_HIDDEN_EXTRA_COMMANDS: frozenset[str] = frozenset(
+    {"crystallize", "reproject", "capture-soak", "offload-get"}
+)
+_HIDDEN_COMMANDS: frozenset[str] = (
+    frozenset(name for name, panel in _COMMAND_PANEL.items() if panel in _HIDDEN_PANELS)
+    | _HIDDEN_EXTRA_COMMANDS
+)
+
 
 class _PanelOrderedGroup(TyperGroup):
     """Render top-level ``zaxy`` help in ordered, labeled command panels.
@@ -284,6 +303,10 @@ class _PanelOrderedGroup(TyperGroup):
             command = self.commands.get(name)
             if command is not None:
                 cast(Any, command).rich_help_panel = _COMMAND_PANEL.get(name, _FALLBACK_PANEL)
+                # Hidden commands stay runnable (invocation does not consult
+                # ``hidden``); they are only dropped from the rendered help and
+                # shell completion.
+                cast(Any, command).hidden = name in _HIDDEN_COMMANDS
         return ordered
 
 
