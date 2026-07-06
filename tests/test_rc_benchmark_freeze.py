@@ -18,8 +18,6 @@ def test_rc1_benchmark_freeze_passes_with_required_evidence(tmp_path: Path) -> N
 
     assert report.passed is True
     assert report.release == "2.0.0-rc.1"
-    assert report.headline_500["manifest"] == "reports/benchmarks/2.0.0-rc.1/manifest.json"
-    assert report.headline_500["claim_scope"] == "longmemeval_compatible_checkout"
     assert report.harvey_lab["claim_scope"] == "external_anchor"
     assert report.project_benchmarks["state_recovery"]["claim_scope"] == "project_defined_internal"
     assert report.project_benchmarks["coordination"]["claim_scope"] == "project_defined_internal"
@@ -37,22 +35,6 @@ def test_rc1_benchmark_freeze_passes_with_required_evidence(tmp_path: Path) -> N
     assert "# Zaxy 2.0 RC.1 Benchmark Freeze" in rendered
     assert "- Status: `PASS`" in rendered
     assert "`rc1_manifest`" in rendered
-
-
-def test_rc1_benchmark_freeze_fails_when_headline_run_config_missing(tmp_path: Path) -> None:
-    _write_required_artifacts(tmp_path)
-    (
-        tmp_path
-        / "reports/benchmarks/longmemeval-500-publish-20260607/run-config.md"
-    ).unlink()
-
-    report = build_rc1_benchmark_freeze_report(tmp_path)
-
-    assert report.passed is False
-    assert any(
-        check["name"] == "headline_run_config" and check["passed"] is False
-        for check in report.checks
-    )
 
 
 def test_rc1_benchmark_freeze_fails_when_internal_lane_claims_external_scope(
@@ -130,39 +112,17 @@ def test_rc1_benchmark_freeze_fails_on_malformed_manifest_json(tmp_path: Path) -
 
     assert report.passed is False
     assert any(check["name"] == "rc1_manifest_json" for check in report.checks)
-    assert report.headline_500["artifact"] == (
-        "reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.json"
-    )
 
 
 def test_rc1_benchmark_freeze_fails_on_non_object_json_artifacts(tmp_path: Path) -> None:
     _write_required_artifacts(tmp_path)
-    headline = tmp_path / "reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.json"
-    headline.write_text("[]", encoding="utf-8")
     harvey = tmp_path / "reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-status.json"
     harvey.write_text("[]", encoding="utf-8")
 
     report = build_rc1_benchmark_freeze_report(tmp_path)
 
     assert report.passed is False
-    assert any(check["name"] == "headline_report_json" for check in report.checks)
     assert any(check["name"] == "harvey_json:harvey-lab-status.json" for check in report.checks)
-
-
-def test_rc1_benchmark_freeze_fails_when_headline_backend_is_missing(tmp_path: Path) -> None:
-    _write_required_artifacts(tmp_path)
-    headline = tmp_path / "reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.json"
-    payload = json.loads(headline.read_text(encoding="utf-8"))
-    payload["summaries"] = [{"backend": "bm25", "mean_score": 0.1}]
-    headline.write_text(json.dumps(payload), encoding="utf-8")
-
-    report = build_rc1_benchmark_freeze_report(tmp_path)
-
-    assert report.passed is False
-    assert any(
-        check["name"] == "headline_backend" and check["passed"] is False
-        for check in report.checks
-    )
 
 
 def test_rc1_benchmark_freeze_fails_malformed_harvey_result_rows(tmp_path: Path) -> None:
@@ -194,31 +154,6 @@ def test_rc1_benchmark_freeze_fails_malformed_harvey_result_rows(tmp_path: Path)
 def _write_required_artifacts(root: Path) -> None:
     _write_rc1_manifest(root)
     _write_project_benchmark_artifacts(root)
-    headline_dir = root / "reports/benchmarks/longmemeval-500-publish-20260607"
-    headline_dir.mkdir(parents=True)
-    (headline_dir / "run-config.md").write_text("frozen config\n", encoding="utf-8")
-    (headline_dir / "live-benchmark.json").write_text(
-        json.dumps(
-            {
-                "generated_at": "2026-06-07T16:20:10Z",
-                "workload": {"sha256": "90fb2307195d7e16b963a2b8a30f03b375bd42a45d41aeaa55423029dd84e3fc"},
-                "summaries": [
-                    {
-                        "backend": "zaxy-checkout",
-                        "case_count": 500,
-                        "mean_score": 0.956,
-                        "mean_answer_recall_at_5": 0.91,
-                        "mean_recall_at_5": 1.0,
-                        "mean_citation_coverage": 1.0,
-                        "latency_ms_p95": 1966.65,
-                        "latency_ms_p99": 2495.07,
-                        "mean_approx_tokens": 10192,
-                    }
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
 
 
 def _write_rc1_manifest(root: Path) -> None:
@@ -229,12 +164,6 @@ def _write_rc1_manifest(root: Path) -> None:
             {
                 "release": "2.0.0-rc.1",
                 "schema_version": "zaxy.rc1-benchmark-freeze.v1",
-                "headline_500": {
-                    "artifact": "reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.json",
-                    "run_config": "reports/benchmarks/longmemeval-500-publish-20260607/run-config.md",
-                    "claim_scope": "longmemeval_compatible_checkout",
-                    "workload_sha256": "90fb2307195d7e16b963a2b8a30f03b375bd42a45d41aeaa55423029dd84e3fc",
-                },
                 "harvey_lab": {
                     "claim_scope": "external_anchor",
                     "harvey_commit": "29748828133dff83ad2263af353fb035504f8f77",

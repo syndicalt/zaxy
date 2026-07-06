@@ -12,14 +12,24 @@ const cards = [
     note: "Within-mission proxy on the coordination scaffold. Fleet-wide transfer is not yet measured at scale.",
   },
   {
-    label: "LongMemEval · 500q",
+    label: "LongMemEval-S · full-haystack",
+    primary: true,
     rows: [
-      { k: "Recall@5", v: "0.972" },
-      { k: "Answer@5", v: "0.628" },
-      { k: "checkout mean", v: "0.724" },
-      { k: "citation coverage", v: "1.000" },
+      { k: "answer accuracy · gpt-5 (full 500)", v: "0.898" },
+      { k: "answer accuracy · gpt-4o (held-out)", v: "0.777" },
+      { k: "retrieval recall@5", v: "0.99" },
     ],
-    note: "Run with the hash (non-semantic) embedding provider — this shows plumbing and recall parity, not semantic quality.",
+    note: "Full-haystack (~48 sessions/question, no oracle), official gpt-4o judge. gpt-5 is the full 500-question set; a 130-question never-tuned held-out subset scored 0.892, confirming no overfit. At the same reader tier the gpt-4o result leads the one apples-to-apples peer, Zep (0.712); higher self-reported scores use stronger readers or report recall, not answer accuracy.",
+  },
+  {
+    label: "LongMemEval · what we corrected",
+    boundary: true,
+    items: [
+      "Our earlier LongMemEval numbers were retracted: that run was oracle-mode (~1.9 candidate sessions/question, so recall/citation were ~1.0 by construction), and preference answers came from a hardcoded gold-answer table (both removed).",
+      "The numbers above are the honest re-baseline: full-haystack retrieval, official judge, general reader prompt with no answer hints.",
+      "The held-out subset (never used to tune the prompt) scored within a point of the full set, which is the evidence the result generalizes.",
+    ],
+    note: "See docs/benchmarks.md for methodology and the full retraction.",
   },
   {
     label: "Current evidence boundary",

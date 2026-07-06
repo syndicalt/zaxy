@@ -456,6 +456,24 @@ class CachedEmbeddingProvider:
                 self.flush()
         return list(cached)
 
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        """Embed many texts, computing all cache misses in one batched call.
+
+        Falls back to per-text embedding when the wrapped provider has no
+        ``embed_batch``. Used to pre-warm the cache so downstream per-text
+        ``embed`` calls become cache hits.
+        """
+        missing = [text for text in dict.fromkeys(texts) if text not in self._cache]
+        if missing:
+            batch = getattr(self._provider, "embed_batch", None)
+            vectors = batch(missing) if batch else [self._provider.embed(t) for t in missing]
+            for text, vector in zip(missing, vectors, strict=True):
+                self._cache[text] = vector
+                self._dirty_count += 1
+            if self._dirty_count >= self._flush_every:
+                self.flush()
+        return [list(self._cache[text]) for text in texts]
+
     def flush(self) -> None:
         """Persist pending cache misses to disk."""
         if self._dirty_count == 0:

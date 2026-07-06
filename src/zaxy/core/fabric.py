@@ -112,6 +112,7 @@ from zaxy.forgetting import (
 )
 from zaxy.inference import build_inferred_edge_events
 from zaxy.lifecycle import build_subagent_completed_event
+from zaxy.log import get_logger
 from zaxy.long_horizon import build_long_horizon_plan
 from zaxy.metacognition import (
     build_confidence_assessment_event,
@@ -244,6 +245,30 @@ def _inferred_edge_candidate_ref(payload: dict[str, Any]) -> dict[str, Any]:
     if not ref:
         ref["name"] = "inferred_edge"
     return ref
+
+
+class ForgetTombstoneUnauditedError(RuntimeError):
+    """Verified forgetting destroyed a DEK but failed to append its tombstone.
+
+    Raised by :meth:`MemoryFabric.verified_forget` when the out-of-log key
+    erasure has already succeeded (the plaintext is permanently unrecoverable)
+    but the cited ``memory.forgotten`` tombstone could not be appended. The log
+    is now missing the audit record for an erasure that really happened, so this
+    must not be swallowed: callers should treat it as an integrity alert and
+    re-append the tombstone. The forget spec is deterministic, so replaying it
+    is safe. ``cell_id``, ``target``, and ``forget_id`` carry everything needed
+    to reconstruct that tombstone.
+    """
+
+    def __init__(self, *, cell_id: str, target: dict[str, Any], forget_id: str) -> None:
+        self.cell_id = cell_id
+        self.target = target
+        self.forget_id = forget_id
+        super().__init__(
+            f"erased DEK cell_id={cell_id} (seq={target.get('seq')}) but the "
+            f"memory.forgotten tombstone (forget_id={forget_id}) failed to append; "
+            "memory is erased-but-unaudited and the tombstone must be re-appended"
+        )
 
 
 class MemoryFabric:
@@ -412,13 +437,19 @@ class MemoryFabric:
     async def close(self) -> None:
         """Close all connections. Idempotent.
 
-        When components are injected (``owns_connections=False``) the shared
-        graph/tracer/retrieval-cache are left untouched — the host owns them.
+        When components are injected (``owns_connections=False``) the host owns
+        their lifecycle, so this is a no-op: the shared graph/tracer/retrieval
+        cache stay open and this fabric stays connected and warm across calls.
+        Tearing down here would drop ``_connected`` to ``False`` and force the
+        next call to reopen an embedded store the process already holds a lock
+        on — the contention this guard exists to prevent. Symmetric with
+        :meth:`connect`, which is likewise a no-op once connected.
         """
-        if self._owns_connections:
-            await self.graph.close()
-            await self.tracer.close()
-            self._retrieval_cache.invalidate()
+        if not self._owns_connections:
+            return
+        await self.graph.close()
+        await self.tracer.close()
+        self._retrieval_cache.invalidate()
         self._event_ref_index_cache = {}
         self._session_cue_index_cache = {}
         self._query_page_cache = {}
@@ -1194,7 +1225,14 @@ class MemoryFabric:
                 # the tag rides inside the sealed payload so it is replayable.
                 safe_payload = {**safe_payload, "encoding": encoding.tag_payload()}
 
-        event = eventlog.append(
+        # Offload the blocking write to a worker thread: eventlog.append does a
+        # synchronous open + exclusive flock + fsync, which would otherwise stall
+        # the whole event loop (and every concurrently in-flight MCP request) for
+        # the duration of the disk write and any lock wait. The exclusive flock
+        # inside append still serializes concurrent writers correctly. Mirrors
+        # the to_thread offload already used by query_verbatim/replay.
+        event = await asyncio.to_thread(
+            eventlog.append,
             event_type,
             actor=actor,
             payload=safe_payload,
@@ -1625,9 +1663,27 @@ class MemoryFabric:
         spec = build_memory_forgotten_event(
             actor=actor, session_id=sid, target=target, cell_id=cell_id, reason=reason
         )
-        event = await self.append(
-            spec["event_type"], spec["actor"], payload=spec["payload"], session_id=sid
-        )
+        try:
+            event = await self.append(
+                spec["event_type"], spec["actor"], payload=spec["payload"], session_id=sid
+            )
+        except Exception as exc:
+            # The DEK is already destroyed, so the memory is permanently
+            # unrecoverable — but the audit tombstone did not land. Do not let
+            # this surface as a routine error: it is an erased-but-unaudited
+            # integrity gap that an operator must see and repair by re-appending
+            # the (deterministic, replay-safe) tombstone spec.
+            get_metrics().record_degraded_operation("forget", "tombstone_append_failed")
+            get_logger(__name__).error(
+                "verified_forget erased DEK cell_id=%s (seq=%s) but the "
+                "memory.forgotten tombstone append failed: %s",
+                cell_id,
+                target_seq,
+                exc,
+            )
+            raise ForgetTombstoneUnauditedError(
+                cell_id=cell_id, target=target, forget_id=spec["payload"]["forget_id"]
+            ) from exc
         self._invalidate_query_page_cache(sid)
         return {
             "forget_id": spec["payload"]["forget_id"],

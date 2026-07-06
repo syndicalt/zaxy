@@ -715,16 +715,27 @@ class Settings(BaseSettings):
                     raise ValueError("NEO4J_URI must use TLS or NEO4J_CA_CERT in production")
             if not self.mcp_admin_token:
                 raise ValueError("MCP_ADMIN_TOKEN must be configured in production")
-            has_static_remote_auth = bool(self.mcp_remote_auth_token)
-            has_oidc_remote_auth = all(
-                (self.mcp_oidc_issuer, self.mcp_oidc_audience, self.mcp_oidc_jwks_url)
-            )
-            if not has_static_remote_auth and not has_oidc_remote_auth:
+            if not self.remote_transport_auth_configured:
                 raise ValueError(
                     "MCP_REMOTE_AUTH_TOKEN or complete MCP_OIDC_ISSUER/"
                     "MCP_OIDC_AUDIENCE/MCP_OIDC_JWKS_URL must be configured in production"
                 )
         return self
+
+    @property
+    def remote_transport_auth_configured(self) -> bool:
+        """Whether the remote MCP transport has authentication configured.
+
+        True when either a static bearer token (``mcp_remote_auth_token``) or a
+        complete OIDC configuration (issuer + audience + JWKS URL) is present.
+        Used both by production-settings validation and by the CLI, which
+        refuses to bind a non-loopback SSE host when this is False.
+        """
+        has_static = bool(self.mcp_remote_auth_token)
+        has_oidc = all(
+            (self.mcp_oidc_issuer, self.mcp_oidc_audience, self.mcp_oidc_jwks_url)
+        )
+        return has_static or has_oidc
 
     # ------------------------------------------------------------------
     # Derived paths

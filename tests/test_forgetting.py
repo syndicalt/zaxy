@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from zaxy.config import Settings
-from zaxy.core.fabric import MemoryFabric
+from zaxy.core.fabric import ForgetTombstoneUnauditedError, MemoryFabric
 from zaxy.event import EventLog
 from zaxy.forgetting import (
     CIPHER_PAYLOAD_KEY,
@@ -257,6 +257,67 @@ async def test_fabric_forgettable_append_then_verified_forget(tmp_path: Path) ->
         assert tomb.payload["target"] == {"seq": event.seq, "hash": event.hash}
         assert tomb.payload["cell_id"] == cell["cell_id"]
         assert tomb.payload["authority_status"] == "non_authoritative"
+    finally:
+        await fabric.close()
+
+
+@pytest.mark.asyncio
+async def test_verified_forget_tombstone_failure_is_flagged_not_swallowed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If the DEK is destroyed but the tombstone append fails, surface it loudly.
+
+    The erasure is irreversible, so a failed tombstone append leaves an
+    erased-but-unaudited memory. That must raise a distinguishable
+    ``ForgetTombstoneUnauditedError`` (carrying the ids needed to re-append the
+    tombstone) rather than a generic error or a silent swallow.
+    """
+    fabric = _fabric(tmp_path)
+    await fabric.connect()
+    try:
+        event = await fabric.append(
+            "memory.note",
+            actor="user",
+            payload={"content": _SECRET, "title": "sensitive"},
+            session_id="agent-1",
+            forgettable=True,
+        )
+        eventlog = fabric.session_manager.get("agent-1").eventlog
+        cell = cipher_cell(eventlog.read_all()[event.seq - 1].payload)
+        assert cell is not None
+
+        # Fail ONLY the tombstone append; the gate-audit append (a different
+        # event type, appended before the key erasure) must still succeed so the
+        # erasure actually happens and we exercise the erased-but-unaudited path.
+        original_append = fabric.append
+
+        async def failing_append(event_type: str, *args: object, **kwargs: object) -> object:
+            if event_type == MEMORY_FORGOTTEN_EVENT_TYPE:
+                raise RuntimeError("simulated disk-full during tombstone append")
+            return await original_append(event_type, *args, **kwargs)
+
+        monkeypatch.setattr(fabric, "append", failing_append)
+
+        with pytest.raises(ForgetTombstoneUnauditedError) as excinfo:
+            await fabric.verified_forget(
+                target_seq=event.seq,
+                target_hash=event.hash,
+                reason="gdpr erasure request",
+                session_id="agent-1",
+            )
+
+        # The alert carries what an operator needs to re-append the tombstone.
+        assert excinfo.value.cell_id == cell["cell_id"]
+        assert excinfo.value.target == {"seq": event.seq, "hash": event.hash}
+        assert excinfo.value.forget_id
+        # The original failure is chained, not hidden.
+        assert isinstance(excinfo.value.__cause__, RuntimeError)
+
+        # The key really was destroyed (plaintext is gone) ...
+        forgotten = eventlog.read_all_decrypted()[event.seq - 1].payload
+        assert is_forgotten_payload(forgotten)
+        # ... but no tombstone landed: this is exactly the gap the error flags.
+        assert MEMORY_FORGOTTEN_EVENT_TYPE not in [e.type for e in eventlog.read_all()]
     finally:
         await fabric.close()
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
@@ -224,7 +225,7 @@ zaxy longmembench-import \\
   --dataset path/to/LongMemEval/data/longmemeval_oracle.json \\
   --hypotheses path/to/zaxy-hypotheses.jsonl \\
   --official-eval-log path/to/zaxy-hypotheses.jsonl.eval-results-gpt-4o \\
-  --diagnostic-report reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.json \\
+  --diagnostic-report path/to/your-diagnostic-report/live-benchmark.json \\
   --sota-baseline reports/benchmarks/longmembench-external/sota-baseline.json \\
   --validator-evidence reports/benchmarks/longmembench-external/validator-evidence.json \\
   --output-dir reports/benchmarks/longmembench-external
@@ -810,6 +811,7 @@ async def generate_longmembench_hypotheses(
     dataset_path: Path,
     output_path: Path,
     report_path: Path | None = None,
+    diagnostic_path: Path | None = None,
     questions: int | None = None,
     limit: int = 10,
     answer_mode: str = "extractive",
@@ -825,6 +827,9 @@ async def generate_longmembench_hypotheses(
     provider_retries: int = 3,
     prefer_checkout_candidate: bool = False,
     filter_answer_contexts: bool = False,
+    pure_reader: bool = False,
+    reader_context_limit: int = 12,
+    contexts_path: Path | None = None,
 ) -> LongMemBenchHypothesisReport:
     """Generate official LongMemEval hypothesis JSONL rows using Zaxy checkout."""
     from zaxy.config import get_settings
@@ -865,8 +870,16 @@ async def generate_longmembench_hypotheses(
             base_url=settings.openai_base_url,
         )
         provider_label = f"openai:{settings.openai_embedding_model}"
+    elif provider_name in ("local", "sentence-transformers", "sentence_transformers"):
+        from zaxy.embedding import SentenceTransformersEmbeddingProvider
+
+        raw_provider = SentenceTransformersEmbeddingProvider(
+            model_name=settings.embedding_sentence_transformer_model,
+            dimension=settings.embedding_dimension,
+        )
+        provider_label = f"local:{settings.embedding_sentence_transformer_model}"
     else:
-        raise ValueError("embedding_provider must be 'hash' or 'openai'")
+        raise ValueError("embedding_provider must be 'hash', 'openai', or 'local'")
     provider = CachedEmbeddingProvider(raw_provider, cache_path=embedding_cache)
     generated: list[LongMemBenchGeneratedHypothesis] = []
     try:
@@ -896,6 +909,28 @@ async def generate_longmembench_hypotheses(
                 latticedb_path=tmp_path / "latticedb",
                 embedding_dimension=settings.embedding_dimension,
             )
+            # Pre-warm the embedding cache in one batched pass. The projection
+            # ingestion and the source lane below each embed through this cached
+            # provider one text at a time; warming every corpus chunk plus every
+            # extracted-entity text up front turns thousands of sequential
+            # embedding API round trips into a handful of batched calls, which is
+            # the dominant cost of a hosted-embeddings run.
+            from zaxy.embedding import entity_embedding_text
+            from zaxy.extract import extract as _extract_for_prewarm
+
+            prewarm_texts: list[str] = [chunk.text for chunk in corpus]
+            for _event in eventlog.read_all():
+                try:
+                    _extraction = _extract_for_prewarm(_event)
+                except Exception:  # noqa: BLE001 - a malformed event just skips prewarm
+                    continue
+                prewarm_texts.extend(
+                    entity_embedding_text(entity) for entity in _extraction.entities
+                )
+            if prewarm_texts:
+                provider.embed_batch(prewarm_texts)
+                provider.flush()
+
             zaxy_retriever, graph = await build_live_zaxy_retriever(
                 eventlog,
                 provider,
@@ -940,7 +975,22 @@ async def generate_longmembench_hypotheses(
                             )
                         )
                 file_mode = "a" if resume else "w"
-                with output_path.open(file_mode, encoding="utf-8") as handle:
+                if diagnostic_path is not None:
+                    diagnostic_path.parent.mkdir(parents=True, exist_ok=True)
+                if contexts_path is not None:
+                    contexts_path.parent.mkdir(parents=True, exist_ok=True)
+                with contextlib.ExitStack() as stack:
+                    handle = stack.enter_context(output_path.open(file_mode, encoding="utf-8"))
+                    diagnostic_handle = (
+                        stack.enter_context(diagnostic_path.open(file_mode, encoding="utf-8"))
+                        if diagnostic_path is not None
+                        else None
+                    )
+                    contexts_handle = (
+                        stack.enter_context(contexts_path.open(file_mode, encoding="utf-8"))
+                        if contexts_path is not None
+                        else None
+                    )
                     for case in cases:
                         contexts = await checkout_retriever.query_async(
                             case.query,
@@ -952,11 +1002,17 @@ async def generate_longmembench_hypotheses(
                             continue
                         answer_session_ids = case.identity_terms
                         expected_terms = case.expected_terms
-                        deterministic_answer = _deterministic_temporal_order_answer(
-                            case.query,
-                            contexts,
-                        )
-                        answer_ready_candidate = _answer_ready_preference_candidate(case.query, contexts)
+                        if pure_reader:
+                            deterministic_answer = None
+                            answer_ready_candidate = None
+                        else:
+                            deterministic_answer = _deterministic_temporal_order_answer(
+                                case.query,
+                                contexts,
+                            )
+                            answer_ready_candidate = _answer_ready_preference_candidate(
+                                case.query, contexts
+                            )
                         checkout_candidate = answer_ready_candidate if prefer_checkout_candidate else None
                         hypothesis = deterministic_answer or checkout_candidate or answer_ready_candidate or (
                             _openai_compatible_answer(
@@ -970,6 +1026,8 @@ async def generate_longmembench_hypotheses(
                                 base_url=base_url,
                                 api_key=api_key or "",
                                 max_retries=provider_retries,
+                                pure_reader=pure_reader,
+                                reader_context_limit=reader_context_limit,
                             )
                             if mode == "openai-compatible"
                             else _extractive_answer(case.query, contexts)
@@ -984,11 +1042,58 @@ async def generate_longmembench_hypotheses(
                         handle.flush()
                         if fsync_rows:
                             os.fsync(handle.fileno())
+                        if contexts_handle is not None:
+                            contexts_handle.write(
+                                json.dumps(
+                                    {
+                                        "question_id": question_id,
+                                        "question": case.query,
+                                        "question_type": case.category.removeprefix(
+                                            "longmemeval:"
+                                        ),
+                                        "answer_session_ids": list(answer_session_ids),
+                                        "contexts": list(contexts),
+                                    },
+                                    ensure_ascii=False,
+                                )
+                                + "\n"
+                            )
+                            contexts_handle.flush()
+                            if fsync_rows:
+                                os.fsync(contexts_handle.fileno())
                         context_audit = _longmembench_context_audit(
                             contexts,
                             expected_terms=expected_terms,
                             answer_session_ids=answer_session_ids,
                         )
+                        answer_session_hits = _longmembench_answer_session_hits(
+                            contexts,
+                            answer_session_ids,
+                        )
+                        expected_answer_hit = any(
+                            item.contains_expected_answer for item in context_audit
+                        )
+                        if diagnostic_handle is not None:
+                            diagnostic_handle.write(
+                                json.dumps(
+                                    {
+                                        "question_id": question_id,
+                                        "question_type": case.category.removeprefix(
+                                            "longmemeval:"
+                                        ),
+                                        "answer_session_ids": list(answer_session_ids),
+                                        "answer_session_hits_top5": list(answer_session_hits),
+                                        "retrieval_hit": bool(answer_session_hits),
+                                        "expected_answer_hit_top5": expected_answer_hit,
+                                        "context_count": len(contexts),
+                                    },
+                                    ensure_ascii=False,
+                                )
+                                + "\n"
+                            )
+                            diagnostic_handle.flush()
+                            if fsync_rows:
+                                os.fsync(diagnostic_handle.fileno())
                         generated.append(
                             LongMemBenchGeneratedHypothesis(
                                 question_id=question_id,
@@ -996,14 +1101,8 @@ async def generate_longmembench_hypotheses(
                                 context_count=len(contexts),
                                 answer_mode=mode,
                                 answer_session_ids=answer_session_ids,
-                                answer_session_hits_top5=_longmembench_answer_session_hits(
-                                    contexts,
-                                    answer_session_ids,
-                                ),
-                                expected_answer_hit_top5=any(
-                                    item.contains_expected_answer
-                                    for item in context_audit
-                                ),
+                                answer_session_hits_top5=answer_session_hits,
+                                expected_answer_hit_top5=expected_answer_hit,
                                 context_audit=context_audit,
                             )
                         )
@@ -2209,6 +2308,7 @@ def _longmembench_plan_script(manifest: dict[str, object]) -> str:
         "VALIDATOR_EVIDENCE_URL=${VALIDATOR_EVIDENCE_URL:-}",
         "VALIDATOR_RUN_ID=${VALIDATOR_RUN_ID:-}",
         "VALIDATOR_RELATION=${VALIDATOR_RELATION:-}",
+        f"DATASET_PATH={shlex.quote(dataset)}",
         'if [[ -z "${RUN_OUTPUT_DIR:-}" ]]; then',
         '  if [[ "${RUN_OFFICIAL_EVAL}" == "0" ]]; then',
         f"    RUN_OUTPUT_DIR={shlex.quote(output_dir)}/smoke",
@@ -2217,9 +2317,9 @@ def _longmembench_plan_script(manifest: dict[str, object]) -> str:
         "  fi",
         "fi",
         'OFFICIAL_EVAL_COMMAND="python3 evaluate_qa.py ${EVALUATOR_MODEL} ${RUN_OUTPUT_DIR}/zaxy-hypotheses.jsonl ${LONGMEMEVAL_WORKTREE}/'
-        f'{dataset}"',
+        '${DATASET_PATH}"',
         'PRINT_METRICS_COMMAND="python3 ${LONGMEMEVAL_WORKTREE}/src/evaluation/print_qa_metrics.py ${RUN_OUTPUT_DIR}/zaxy-hypotheses.jsonl.eval-results-${EVALUATOR_MODEL} ${LONGMEMEVAL_WORKTREE}/'
-        f'{dataset}"',
+        '${DATASET_PATH}"',
         "",
         "if [[ \"${RUN_OFFICIAL_EVAL}\" != \"0\" && \"${ANSWER_MODE}\" == \"openai-compatible\" && -z \"${OPENAI_API_KEY:-}\" ]]; then",
         "  echo 'OPENAI_API_KEY is required for official openai-compatible LongMemBench runs.' >&2",
@@ -2431,40 +2531,60 @@ def _openai_compatible_answer(
     base_url: str,
     api_key: str,
     max_retries: int = 3,
+    pure_reader: bool = False,
+    reader_context_limit: int = 12,
+    system_prompt: str | None = None,
+    max_tokens: int = 96,
 ) -> str:
     """Generate a concise answer from checkout evidence through chat completions."""
-    if answer_candidate := _answer_ready_preference_candidate(question, contexts):
-        return answer_candidate
-    prompt = "\n\n".join(contexts[:12])
-    payload = {
-        "model": model,
-        "temperature": 0,
-        "max_tokens": 96,
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "Answer the LongMemEval question using only the supplied Zaxy "
-                    "Memory Checkout evidence. Return only the answer, with no "
-                    "explanation. If the evidence is insufficient, answer exactly: "
-                    "I do not have enough information to answer. Prefer cited "
-                    "source snippets and checkout facts over diagnostic counters. "
-                    "Do not use checkout metrics such as week_total, month_total, "
-                    "source_count, or candidate_rank as the answer unless the "
-                    "same value is supported by a cited source snippet. For "
-                    "questions asking which item happened first, compare the "
-                    "dated or relative-time evidence for the named alternatives "
-                    "and return the earlier alternative."
-                ),
-            },
-            {
-                "role": "user",
-                "content": f"Question:\n{question}\n\nZaxy Memory Checkout evidence:\n{prompt}",
-            },
-        ],
-    }
+    if not pure_reader:
+        if answer_candidate := _answer_ready_preference_candidate(question, contexts):
+            return answer_candidate
+    prompt = "\n\n".join(contexts[:reader_context_limit])
+    default_system_prompt = (
+        "Answer the LongMemEval question using only the supplied Zaxy "
+        "Memory Checkout evidence. Return only the answer, with no "
+        "explanation. If the evidence is insufficient, answer exactly: "
+        "I do not have enough information to answer. Prefer cited "
+        "source snippets and checkout facts over diagnostic counters. "
+        "Do not use checkout metrics such as week_total, month_total, "
+        "source_count, or candidate_rank as the answer unless the "
+        "same value is supported by a cited source snippet. For "
+        "questions asking which item happened first, compare the "
+        "dated or relative-time evidence for the named alternatives "
+        "and return the earlier alternative."
+    )
+    messages = [
+        {"role": "system", "content": system_prompt or default_system_prompt},
+        {
+            "role": "user",
+            "content": f"Question:\n{question}\n\nZaxy Memory Checkout evidence:\n{prompt}",
+        },
+    ]
+    # Reasoning models (gpt-5.x, o-series) reject temperature!=1 and use
+    # max_completion_tokens; their hidden reasoning also consumes the budget, so
+    # give them substantial headroom on top of the visible-answer allowance.
+    is_reasoning = model.startswith(("gpt-5", "o1", "o3", "o4"))
+    if is_reasoning:
+        payload = {
+            "model": model,
+            "max_completion_tokens": max(max_tokens, 8192),
+            "messages": messages,
+        }
+    else:
+        payload = {
+            "model": model,
+            "temperature": 0,
+            "max_tokens": max_tokens,
+            "messages": messages,
+        }
     response: httpx.Response | None = None
-    for attempt in range(max_retries + 1):
+    # 429 (TPM rate limit) gets its own patient budget so a sustained burst does
+    # not exhaust the general server-error retries and crash a long run.
+    server_attempts = 0
+    rate_limit_attempts = 0
+    max_rate_limit_retries = 20
+    while True:
         response = httpx.post(
             f"{base_url.rstrip('/')}/chat/completions",
             headers={"Authorization": f"Bearer {api_key}"},
@@ -2480,17 +2600,24 @@ def _openai_compatible_answer(
                 error = {}
             if error.get("code") == "insufficient_quota":
                 break
-        if attempt >= max_retries:
+            if rate_limit_attempts >= max_rate_limit_retries:
+                break
+            rate_limit_attempts += 1
+            retry_after = response.headers.get("retry-after")
+            if retry_after is not None:
+                try:
+                    delay = float(retry_after)
+                except ValueError:
+                    delay = 20.0
+            else:
+                # TPM windows reset each minute; wait a full window, backing off.
+                delay = 20.0 + 10.0 * rate_limit_attempts
+            time.sleep(min(75.0, max(20.0, delay)))
+            continue
+        if server_attempts >= max_retries:
             break
-        retry_after = response.headers.get("retry-after")
-        if retry_after is not None:
-            try:
-                delay = float(retry_after)
-            except ValueError:
-                delay = 15.0
-        else:
-            delay = 10.0 * (attempt + 1)
-        time.sleep(min(90.0, delay))
+        server_attempts += 1
+        time.sleep(min(90.0, 10.0 * server_attempts))
     if response is None:
         raise ValueError("OpenAI-compatible request was not attempted")
     response.raise_for_status()
@@ -2506,6 +2633,11 @@ def _openai_compatible_answer(
         raise ValueError("OpenAI-compatible response choice missing message")
     content = message.get("content")
     if not isinstance(content, str) or not content.strip():
+        # Reasoning models occasionally spend the whole budget on hidden reasoning
+        # and return no visible answer (finish_reason "length"). Treat that as an
+        # honest non-answer rather than crashing a 500-question batch.
+        if is_reasoning:
+            return "I do not have enough information to answer."
         raise ValueError("OpenAI-compatible response message content is empty")
     return content.strip()
 

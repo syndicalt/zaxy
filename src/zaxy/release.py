@@ -49,6 +49,147 @@ def pyproject_version(project_root: Path) -> str:
     return version
 
 
+def installed_package_version() -> str | None:
+    """Return the version of the imported ``zaxy-memory`` distribution, or None.
+
+    This is the version recorded at install time (``importlib.metadata``), which
+    stays stale when the on-disk ``pyproject.toml`` is bumped without reinstalling
+    — exactly the drift :func:`check_version_consistency` detects.
+    """
+    try:
+        return cast(str, _metadata().version(PACKAGE_NAME))
+    except Exception:  # noqa: BLE001 - metadata unavailable in some source-tree runs
+        return None
+
+
+def zaxy_import_path() -> str | None:
+    """Return the resolved location of the imported ``zaxy`` package, or None."""
+    try:
+        import zaxy
+
+        return getattr(zaxy, "__file__", None)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _resolve_repo_root(project_root: Path | None) -> Path | None:
+    """Locate a zaxy repo root from an explicit path or the cwd, on disk only.
+
+    Walks parents of the explicit ``project_root`` (or cwd) looking for a
+    ``pyproject.toml`` whose project name is ``zaxy-memory``. Deliberately does
+    NOT follow the import, so a stale site-packages install cannot masquerade as
+    the repo.
+    """
+    start = Path(project_root) if project_root is not None else Path.cwd()
+    for candidate in (start, *start.parents):
+        pyproject_path = candidate / "pyproject.toml"
+        if not pyproject_path.is_file():
+            continue
+        try:
+            pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+        except (OSError, tomllib.TOMLDecodeError):
+            continue
+        project = pyproject.get("project")
+        if isinstance(project, dict) and project.get("name") == PACKAGE_NAME:
+            return candidate
+    return None
+
+
+def check_version_consistency(*, project_root: Path | None = None) -> dict[str, Any]:
+    """Doctor check: warn if the imported zaxy drifts from the repo on disk.
+
+    Compares the version declared in the repo's ``pyproject.toml`` (read from
+    disk) against the imported package's recorded version and resolved import
+    path. Two independent drift signals:
+
+    1. Version mismatch — the installed dist version != the repo's declared
+       version (a bumped ``pyproject.toml`` without ``pip install -e .``).
+    2. Import-path drift — the imported ``zaxy`` resolves outside the repo,
+       i.e. a foreign/stale copy is shadowing the source tree.
+
+    Either yields a ``warning`` with the remediation. This is the exact drift
+    that once made the test suite import the wrong code and sent a diagnosis
+    after the wrong PID. Returns a doctor-compatible check dict.
+    """
+    root = _resolve_repo_root(project_root)
+    installed = installed_package_version()
+    import_path = zaxy_import_path()
+    details: dict[str, Any] = {
+        "installed": installed or "unknown",
+        "import_path": import_path or "unknown",
+        "repo_root": str(root) if root is not None else "unknown",
+    }
+    if root is None:
+        # Not run from a zaxy repo: cannot detect drift, just report posture.
+        return {
+            "name": "version_consistency",
+            "status": "ok",
+            "message": (
+                f"imported zaxy {installed or 'unknown'} (no zaxy repo found to "
+                "compare; run from the repository root to detect drift)"
+            ),
+            "details": details,
+        }
+    try:
+        declared = pyproject_version(root)
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "name": "version_consistency",
+            "status": "error",
+            "message": f"could not read declared version from {root}: {exc}",
+            "details": details,
+        }
+    details["declared"] = declared
+
+    if installed is None:
+        return {
+            "name": "version_consistency",
+            "status": "warning",
+            "message": (
+                f"imported zaxy version could not be resolved; declared {declared}"
+            ),
+            "details": details,
+            "action": "ensure zaxy is installed (`pip install -e .`) so its version is resolvable",
+        }
+
+    version_drift = installed != declared
+    path_drift = (
+        import_path is not None
+        and not Path(import_path).resolve().is_relative_to(root.resolve())
+    )
+
+    if not version_drift and not path_drift:
+        return {
+            "name": "version_consistency",
+            "status": "ok",
+            "message": f"imported zaxy {declared} matches the repository",
+            "details": details,
+        }
+
+    if version_drift and path_drift:
+        message = (
+            f"imported zaxy {installed} is stale vs declared {declared} and "
+            f"resolves from outside the repo ({import_path})"
+        )
+    elif version_drift:
+        message = f"imported zaxy {installed} is stale vs declared {declared}"
+    else:
+        message = (
+            f"zaxy imports from {import_path}, outside the repo at {root} "
+            f"(versions match: {declared})"
+        )
+    return {
+        "name": "version_consistency",
+        "status": "warning",
+        "message": message,
+        "details": details,
+        "action": (
+            "run `pip install -e .` to point the imported package at this repository "
+            "(or `pip install -U zaxy-memory==" + declared + "` for a clean install)"
+        ),
+    }
+
+
 def _source_project_root() -> Path | None:
     """Find the package source-tree root without depending on the caller cwd."""
     for candidate in Path(__file__).resolve().parents:

@@ -1,53 +1,51 @@
 # Benchmarks
 
-Zaxy keeps the public benchmark surface intentionally small. Active benchmark
-evidence is limited to:
+## LongMemEval-S — full-haystack, held-out
 
-- the current headline 500-question LongMemEval-compatible checkout report; and
-- the Harvey LAB external legal-agent memory-ablation report.
+Zaxy's current, honestly-measured LongMemEval-S result:
 
-Older backend shootouts, partial slices, experimental LongMemEval iterations,
-LongMemBench adapter artifacts, and debug reports are archived under
-`reports/archive/` and `docs/archive/`. They are development history, not
-current public claims.
+| Reader | Answer accuracy | Scope | Retrieval Recall@5 |
+|--------|----------------:|-------|-------------------:|
+| gpt-5  | `0.898` | full 500 questions | `0.99` |
+| gpt-4o | `0.777` | 130-question held-out | `0.99` |
 
-## Headline 500
+**Method.** Full-haystack LongMemEval-S — ~48 sessions / ~490 turns per question,
+no oracle candidate pool. Zaxy retrieves and assembles the context; an LLM reader
+answers over that context using a general reasoning prompt (no answer hints, no
+memorized answers); the **official LongMemEval GPT-4o judge** scores answer
+accuracy. Retrieval Recall@5 is gold-answer-session recall on the real haystack.
 
-The current headline LongMemEval-compatible result is:
+**Scope and no-overfit check.** The gpt-5 number is the **full 500-question
+LongMemEval-S**. A deterministic 130-question held-out subset — questions never
+used to tune the reader prompt — scored `0.892` with the same reader, essentially
+identical to the full `0.898`, which is the evidence that the result generalizes
+rather than fitting the prompt to specific questions. The gpt-4o number is
+reported on that held-out subset (`0.777`).
 
-[reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.md](../reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.md)
+**Where this sits.** At the same reader tier, the gpt-4o result (`0.777`) leads
+the one independently-published, apples-to-apples peer — Zep / Graphiti at
+`0.712` (gpt-4o, full-haystack). Higher self-reported figures in the field
+generally use stronger reader models (GPT-4.1 / GPT-5-class) or report retrieval
+recall rather than answer accuracy; the gpt-5 result (`0.898`, full 500) is
+competitive with that tier while staying a full-haystack, official-judge number.
 
-Frozen run config:
-[reports/benchmarks/longmemeval-500-publish-20260607/run-config.md](../reports/benchmarks/longmemeval-500-publish-20260607/run-config.md)
+### The prior "headline 500" is still retracted
 
-This is a Zaxy same-harness checkout diagnostic over the cleaned
-LongMemEval-compatible workload. It is not an official LongMemEval end-to-end
-assistant score.
+The earlier "headline 500" result (mean `0.956`, Answer@5 `0.910`, Recall@5
+`1.000`, citation coverage `1.000`) remains **retracted**. It was not a
+comparable benchmark result for two independent reasons:
 
-| Metric | Value |
-|--------|------:|
-| Generated | `2026-06-07T16:20:10Z` |
-| Workload SHA-256 | `90fb2307195d7e16b963a2b8a30f03b375bd42a45d41aeaa55423029dd84e3fc` |
-| Events | `5,372` |
-| Questions | `500` |
-| Sessions | `948` |
-| Backend | `zaxy-checkout` |
-| Mean score | `0.956` |
-| Answer@5 | `0.910` |
-| Recall@1 | `0.960` |
-| Recall@5 | `1.000` |
-| Recall@10 | `1.000` |
-| Identity recall | `0.980` |
-| Citation coverage | `1.000` |
-| p50 latency | `881.01 ms` |
-| p95 latency | `1,966.65 ms` |
-| p99 latency | `2,495.07 ms` |
-| Approx tokens | `10,192` |
+1. **Oracle mode, not retrieval.** It ran against `longmemeval_oracle.json`,
+   where each question carries a mean of ~1.9 candidate sessions (99.4% have ≤5)
+   and the answer session is always in that pool. Recall@5 and citation coverage
+   are therefore ~1.0 *by construction* — retrieving 5 items from a bag of ~2 —
+   and say nothing about retrieval on the real LongMemEval haystack.
+2. **Memorized answers.** The preference-question answers came from a hardcoded
+   gold-answer table on the checkout path (removed 2026-07-03). With it gone, the
+   honest preference number is measured, not memorized.
 
-Interpretation: retrieval and citation are at ceiling in this adapted checkout
-protocol. The remaining reported misses are synthesis-side (`45`
-`synthesis_miss` cases). The same report includes a BM25 baseline with mean
-`0.520`, Answer@5 `0.520`, Recall@5 `0.770`, and citation coverage `1.000`.
+The numbers at the top of this page are the honest re-baseline that replaces it:
+full-haystack retrieval, held-out questions, official judge, no answer hints.
 
 ## Harvey LAB
 
@@ -94,23 +92,21 @@ The tracked freeze manifest is
 [reports/benchmarks/2.0.0-rc.1/manifest.json](../reports/benchmarks/2.0.0-rc.1/manifest.json).
 
 The gate is a claim-boundary and artifact-integrity check. It requires the
-headline 500-question LongMemEval-compatible checkout report, the frozen
-headline run config, Harvey LAB external-anchor artifacts, and the
-project-defined RC lanes for StateRecoveryBench, CoordinationBench,
-PurposeBench, causal, consolidation, procedural, and metacognitive behavior.
+Harvey LAB external-anchor artifacts and the project-defined RC lanes for
+StateRecoveryBench, CoordinationBench, PurposeBench, causal, consolidation,
+procedural, and metacognitive behavior. It no longer requires or evaluates any
+LongMemEval headline artifact: the prior "headline 500" result was retracted
+(see above) and its report was removed, so the gate makes no LongMemEval claim.
 
-RC.1 evidence is interpreted in three separate buckets:
+RC.1 evidence is interpreted in two separate buckets:
 
-- `longmemeval_compatible_checkout`: the same-harness 500-question checkout
-  diagnostic listed above. It is the headline public benchmark artifact, not an
-  official LongMemEval end-to-end assistant score.
 - `external_anchor`: Harvey LAB legal-agent memory-ablation evidence. It is
   external downstream work-product evidence, not a general outside-user
   validation report.
 - `project_defined_internal`: StateRecoveryBench, CoordinationBench,
   PurposeBench, causal, consolidation, procedural, and metacognitive
   guardrails. These lanes protect product contracts and must not be merged into
-  the headline 500 or Harvey LAB numbers.
+  the Harvey LAB numbers or any future LongMemEval claim.
 
 The active RC.1 project-defined artifacts are:
 
@@ -136,8 +132,7 @@ claims and they do not establish competitor performance. The active PurposeBench
 report proves Zaxy's purpose profiles and evidence policies on tracked internal
 lanes, while the holdout pack documents source boundaries and claim status.
 
-The RC.1 gate fails closed when required artifacts are missing, when the
-headline 500 falls below the frozen quality or latency floors, or when a 2.0
+The RC.1 gate fails closed when required artifacts are missing or when a 2.0
 internal or project-defined lane is classified as external validation. This is
 intentionally a release-readiness gate, not a reward function.
 
@@ -380,13 +375,19 @@ and do not combine them with the headline 500 or Harvey LAB numbers.
 
 ## Claim Boundaries
 
-- Use **LongMemEval-compatible checkout** for the headline 500 diagnostic.
-- Use **Harvey LAB external** for the legal-agent work-product result.
-- Do not describe the LongMemEval-compatible checkout run as an official
+- The current LongMemEval claim is the **full-haystack LongMemEval-S** result at
+  the top of this page: `0.898` (gpt-5, full 500 questions) / `0.777` (gpt-4o,
+  130-question held-out), Recall@5 `0.99`. The held-out gpt-5 subset scored
+  `0.892`, confirming the full-set number is not overfit. The prior oracle-mode
+  "headline 500" stays **retracted**.
+- Report the reader tier (gpt-4o vs gpt-5) and scope with any LongMemEval number;
+  tiers are not interchangeable and cross-tier comparisons are not apples-to-apples.
+- Do not describe any LongMemEval-compatible checkout run as an official
   LongMemEval score.
 - Do not cite archived partial runs as current benchmark claims.
-- Before publishing a new full 500, update this page to point at one new
-  headline report and keep the previous headline under `reports/archive/`.
+- When a future full LongMemEval run is published, add a new report under
+  `reports/benchmarks/` with its own claim boundary, update this page to point
+  at it, and keep the retracted headline under `reports/archive/`.
 
 Related docs: [testing.md](testing.md), [external-validation.md](external-validation.md),
 the [Governed Active Memory thesis](research/governed-active-memory.md),

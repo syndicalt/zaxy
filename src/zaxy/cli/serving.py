@@ -3,9 +3,11 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import sys
+import tempfile
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import asdict
@@ -187,9 +189,24 @@ def compact(
         raise typer.Exit(0)
 
     out_path = output or log_path
-    with open(out_path, "w", encoding="utf-8") as fh:
-        for ev in events:
-            fh.write(ev.model_dump_json() + "\n")
+    # Write atomically. The default target is the canonical append-only log, so
+    # a crash, disk-full, or serialization error must never leave it truncated:
+    # write a sibling temp file, fsync it, then os.replace() onto the target so
+    # the log is only ever replaced by a complete rewrite.
+    tmp_fd, tmp_name = tempfile.mkstemp(
+        dir=out_path.parent, prefix=f"{out_path.name}.", suffix=".compact.tmp"
+    )
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as fh:
+            for ev in events:
+                fh.write(ev.model_dump_json() + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp_name, out_path)
+    except BaseException:
+        with suppress(OSError):
+            os.unlink(tmp_name)
+        raise
 
     typer.echo(f"Compacted {total} events -> {out_path}")
 
@@ -1930,6 +1947,23 @@ def dashboard(
     run_dashboard(scope)
 
 
+def _host_is_loopback(host: str) -> bool:
+    """Return True when binding to ``host`` only exposes the loopback interface.
+
+    ``localhost`` and any loopback IP literal (``127.0.0.0/8``, ``::1``) are
+    loopback. A non-literal hostname could resolve to any interface, so it is
+    treated as non-loopback: the SSE guard fails closed rather than assuming an
+    unresolved name is safe.
+    """
+    normalized = host.strip().lower()
+    if normalized == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(normalized).is_loopback
+    except ValueError:
+        return False
+
+
 @app.command()
 def serve(
     eventloom_path: str | None = typer.Option(None, help="Directory for event logs"),
@@ -2013,6 +2047,19 @@ def serve(
     )
 
     if transport == "sse":
+        # Fail closed: never expose the read/write memory surface on a
+        # non-loopback interface without authentication. This holds regardless
+        # of ZAXY_ENV — development is exactly where an operator is most likely
+        # to run `--transport sse --host 0.0.0.0` and unknowingly publish the
+        # whole tool surface unauthenticated.
+        if not _host_is_loopback(host) and not settings.remote_transport_auth_configured:
+            raise typer.BadParameter(
+                f"refusing to bind the SSE transport to non-loopback host {host!r} "
+                "without authentication. Configure MCP_REMOTE_AUTH_TOKEN or a complete "
+                "MCP_OIDC_ISSUER/MCP_OIDC_AUDIENCE/MCP_OIDC_JWKS_URL, or bind to "
+                "127.0.0.1 / localhost for local-only use.",
+                param_hint="--host",
+            )
         asyncio.run(mcp_server.main_sse(port=port, host=host))
     else:
         asyncio.run(mcp_server.main(owner_claim=owner_claim))

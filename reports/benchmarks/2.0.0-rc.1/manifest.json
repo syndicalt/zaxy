@@ -2,17 +2,9 @@
   "claim_boundary": {
     "external_validation": "No 2.0.0-rc.1 outside-validator report is claimed by this manifest.",
     "harvey_lab": "external_anchor",
-    "headline_500": "longmemeval_compatible_checkout",
     "internal_lanes": "project_defined_internal"
   },
   "generated_at": "2026-06-08T00:00:00Z",
-  "headline_500": {
-    "artifact": "reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.json",
-    "backend": "zaxy-checkout",
-    "claim_scope": "longmemeval_compatible_checkout",
-    "run_config": "reports/benchmarks/longmemeval-500-publish-20260607/run-config.md",
-    "workload_sha256": "90fb2307195d7e16b963a2b8a30f03b375bd42a45d41aeaa55423029dd84e3fc"
-  },
   "harvey_lab": {
     "artifact_dir": "reports/benchmarks/harvey-lab-memory-ablation",
     "claim_scope": "external_anchor",

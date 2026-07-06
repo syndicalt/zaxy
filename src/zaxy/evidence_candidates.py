@@ -1185,10 +1185,6 @@ def _preference_answer(query: str, rows: list[dict[str, Any]]) -> str:
     values = [str(row.get("value", "")).strip() for row in rows if row.get("value")]
     merged = _merge_preference_values(values)
     raw_spans = [str(row.get("raw_span", "")) for row in rows if row.get("raw_span")]
-    context_texts = [str(row.get("context_text", "")) for row in rows if row.get("context_text")]
-    if surface := _preference_surface_sentence(query, [*raw_spans, *context_texts]):
-        first_sentence, negative = surface
-        return f"{first_sentence} {negative}"
     request = _preference_request_phrase(query, raw_spans)
     topic = _preference_topic_phrase(query, merged, raw_spans)
     negative = _preference_negative_phrase(query, raw_spans)
@@ -1222,199 +1218,14 @@ def _merge_preference_values(values: list[str]) -> str:
     return ", ".join(tokens)
 
 
-def _preference_surface_sentence(query: str, raw_spans: list[str]) -> tuple[str, str] | None:
-    text = " ".join(raw_spans)
-    tokens = set(_answer_tokens(" ".join([query, text])))
-
-    def has(*required: str) -> bool:
-        return set(required) <= tokens
-
-    query_tokens = set(_answer_tokens(query))
-    if has("adobe", "premiere", "pro") and (query_tokens & {"video", "editing", "resources"}):
-        return (
-            "The user would prefer responses that suggest resources specifically tailored to Adobe Premiere Pro, especially those that delve into its advanced settings.",
-            "They might not prefer general video editing resources or resources related to other video editing software.",
-        )
-    if "sony" in tokens and ("photography" in tokens or "camera" in tokens):
-        return (
-            "The user would prefer suggestions of Sony-compatible accessories or high-quality photography gear that can enhance their photography experience.",
-            "They may not prefer suggestions of other brands' equipment or low-quality gear.",
-        )
-    if "miami" in tokens and "hotel" in tokens:
-        return (
-            "The user would prefer suggestions of hotels in Miami that offer great views, possibly of the ocean or the city skyline, and have unique features such as a rooftop pool or a hot tub on the balcony.",
-            "They may not prefer suggestions of basic or budget hotels without these features.",
-        )
-    if {"spanish", "french"} <= tokens and "language" in tokens:
-        return (
-            "The user would prefer responses that suggest cultural events where they can practice their language skills, particularly Spanish and French.",
-            "They would not prefer events that do not provide opportunities for language practice or cultural exchange.",
-        )
-    if has("stand", "comedy", "netflix") or has("mulaney", "netflix"):
-        return (
-            "The user would prefer recommendations for stand-up comedy specials on Netflix, especially those that are known for their storytelling.",
-            "They may not prefer recommendations for other genres or platforms.",
-        )
-    if (
-        {"relaxing", "activities"} & query_tokens
-        and "evening" in tokens
-        and ("9" in tokens or "30" in tokens)
-        and ({"phone", "tv"} & tokens)
-    ):
-        return (
-            "The user would prefer suggestions that involve relaxing activities that can be done in the evening, preferably before 9:30 pm.",
-            "They would not prefer suggestions that involve using their phone or watching TV, as these activities have been affecting their sleep quality.",
-        )
-    if has("utensil", "holder") and "granite" in tokens:
-        return (
-            "The user would prefer responses that acknowledge and build upon their existing efforts to organize their kitchen, such as utilizing their new utensil holder to keep countertops clutter-free.",
-            "They might not prefer generic or vague suggestions that do not take into account their specific kitchen setup or concerns.",
-        )
-    if has("slow", "cooker") and ({"beef", "stew"} <= tokens or "yogurt" in tokens):
-        return (
-            "The user would prefer responses that provide tips and advice specifically tailored to their slow cooker experiences, utilizing their recent success with beef stew and interest in making yogurt in the slow cooker.",
-            "They might not prefer general slow cooker recipes or advice unrelated to their specific experiences and interests.",
-        )
-    if {"remote", "colleagues"} <= tokens or {"company", "initiatives", "collaboration"} <= tokens:
-        return (
-            "The user would prefer responses that acknowledge their desire for social interaction and collaboration while working remotely, utilizing their previous experiences with company initiatives and team collaborations.",
-            "They might prefer suggestions of virtual team-building activities, regular check-ins, or joining interest-based groups within the company.",
-        )
-    if {"cherry", "tomatoes", "basil", "mint"} <= tokens:
-        return (
-            "The user would prefer dinner suggestions that incorporate their homegrown cherry tomatoes and herbs like basil and mint, highlighting recipes that showcase their garden produce.",
-            "They might not prefer suggestions that do not utilize these specific ingredients or do not emphasize the use of homegrown elements.",
-        )
-    if "painting" in tokens and ("instagram" in tokens or "tutorials" in tokens):
-        facets = []
-        if "instagram" in tokens:
-            facets.append("revisiting Instagram art accounts")
-        if "tutorials" in tokens or "tutorial" in tokens:
-            facets.append("exploring new techniques from online tutorials")
-        if {"flower", "flowers"} & tokens:
-            facets.append("revisiting prior painting themes such as flowers")
-        if {"challenge", "30"} <= tokens or {"challenge", "thirty"} <= tokens:
-            facets.append("using their recent 30-day painting challenge experience")
-        return (
-            "The user would prefer responses that build upon their existing sources of inspiration, such as "
-            f"{_join_preference_facets(facets)}.",
-            "The user would not prefer generic or vague suggestions for finding inspiration.",
-        )
-    if "mixology" in tokens or ("pimm" in tokens and "cup" in tokens):
-        return (
-            "Considering their mixology class background, the user would prefer cocktail suggestions that build upon their existing skills and interests, such as creative variations of classic cocktails or innovative twists on familiar flavors.",
-            "The user would not prefer overly simplistic or basic cocktail recipes.",
-        )
-    if "iphone" in tokens and ({"screen", "protector"} <= tokens or {"wallet", "case"} <= tokens):
-        return (
-            "The user would prefer suggestions of accessories that are compatible with an iPhone 13 Pro, such as high-quality screen protectors, durable cases, portable power banks, or phone wallet cases.",
-            "They may not prefer suggestions of accessories that are not compatible with Apple products or do not enhance the functionality or protection of their phone.",
-        )
-    if has("portable", "power", "bank") and "phone" in tokens:
-        return (
-            "The user would prefer responses that build upon their previous mention of purchasing a portable power bank, such as suggestions on how to optimize its use, like ensuring it's fully charged before use.",
-            "The user may not prefer responses that suggest alternative solutions or unrelated advice.",
-        )
-    if has("turbinado", "sugar"):
-        return (
-            "The user would prefer responses that build upon their previous experimentation with turbinado sugar, suggesting ingredients or techniques that complement its richer flavor.",
-            "They might not prefer generic cookie-making advice or suggestions that don't take into account their existing use of turbinado sugar.",
-        )
-    if has("lemon", "poppyseed", "cake"):
-        return (
-            "The user would prefer baking suggestions that take into account their previous success with the lemon poppyseed cake, such as variations of that recipe or other desserts that share similar qualities.",
-            "They might prefer suggestions that balance impressiveness with manageability, considering their previous experience.",
-        )
-    if "dresser" in tokens and {"mid", "century", "modern"} <= tokens:
-        return (
-            "The user would prefer responses that take into account their existing plans to replace the bedroom dresser and their interest in mid-century modern style, suggesting furniture layouts that accommodate the new dresser and incorporate elements of this design aesthetic.",
-            "They might not prefer general furniture arrangement tips or suggestions that do not consider their specific design preferences.",
-        )
-    if {"fender", "stratocaster", "gibson", "les", "paul"} <= tokens:
-        return (
-            "The user would prefer responses that highlight the differences between Fender Stratocaster and Gibson Les Paul electric guitars, such as the feel of the neck, weight, and sound profile.",
-            "They might not prefer general tips on buying an electric guitar or suggestions that do not take into account their current guitar and desired upgrade.",
-        )
-    if {"almond", "milk", "vanilla", "honey"} <= tokens:
-        return (
-            "The user would prefer responses that suggest variations on their existing almond milk, vanilla extract, and honey creamer recipe or new ideas that align with their goals of reducing sugar intake and saving money.",
-            "They might not prefer responses that recommend commercial creamer products or recipes that are high in sugar or expensive.",
-        )
-    if (
-        query_tokens & {"sneezing", "sneez", "allergy", "allergies", "dust", "living", "room"}
-        and "luna" in tokens
-        and ("shedding" in tokens or "sneezing" in tokens)
-    ):
-        return (
-            "The user would prefer responses that consider the potential impact of their cat, Luna, and her shedding on their sneezing, as well as the recent deep clean of the living room and its possible effect on stirring up dust.",
-            "They might not prefer responses that fail to take into account these specific details previously mentioned.",
-        )
-    if {"debate", "team"} <= tokens and {"advanced", "placement"} <= tokens:
-        return (
-            "The user would prefer responses that draw upon their personal experiences and memories, specifically their positive high school experiences such as being part of the debate team and taking advanced placement courses.",
-            "The user might not prefer generic or vague responses that do not take into account their individual experiences and interests.",
-        )
-    if "nas" in tokens and {"external", "hard", "drives"} <= tokens:
-        return (
-            "The user would prefer responses that take into account their current home network storage capacity issues and recent reliance on external hard drives, highlighting the potential benefits of a NAS device in addressing these specific needs.",
-            "They might not prefer responses that ignore their current storage challenges or fail to consider their recent tech upgrades and priorities.",
-        )
-    if (
-        query_tokens & {"theme", "park", "parks", "weekend"}
-        and {"disneyland", "knott", "six", "flags", "universal"} <= tokens
-    ):
-        return (
-            "The user would prefer theme park suggestions that cater to their interest in both thrill rides and special events, utilizing their previous experiences at Disneyland, Knott's Berry Farm, Six Flags Magic Mountain, and Universal Studios Hollywood as a reference point.",
-            "They would also appreciate recommendations that highlight unique food experiences and nighttime shows.",
-        )
-    if {"quinoa", "roasted", "vegetables"} <= tokens:
-        return (
-            "The user would prefer responses that suggest healthy meal prep recipes, especially those that incorporate quinoa and roasted vegetables, and offer variations in protein sources.",
-            "The user may not prefer responses that suggest unhealthy or high-calorie meal prep options.",
-        )
-    if "denver" in tokens and {"brandon", "flowers"} <= tokens:
-        return (
-            "The user would prefer responses that take into account their previous experience in Denver, specifically their interest in live music and memorable encounter with Brandon Flowers.",
-            "They might appreciate suggestions that revisit or build upon this experience, such as revisiting the same bar or exploring similar music venues in the area.",
-        )
-    if {"our", "planet", "free", "solo", "tiger", "king"} <= tokens:
-        return (
-            "The user would prefer documentary recommendations that are similar in style and theme to 'Our Planet', 'Free Solo', and 'Tiger King', which they have previously enjoyed.",
-            "They might not prefer recommendations of documentaries that are vastly different in tone or subject matter from these titles.",
-        )
-    if {"chain", "cassette", "garmin"} <= tokens:
-        return (
-            "The user would prefer responses that reference specific details from their previous interactions, such as the replacement of the bike's chain and cassette, and the use of a new Garmin bike computer.",
-            "They might prefer explanations that connect these details to the observed improvement in bike performance.",
-        )
-    if "commute" in tokens and ("podcasts" in tokens or "audiobooks" in tokens):
-        return (
-            "The user would prefer suggestions related to listening to new podcasts or audiobooks, especially the genre beyond true crime or self-improvement, such as history.",
-            "They may not be interested in activities that require visual attention, such as reading or watching videos, as they are commuting.",
-        )
-    if {"suica", "tripit"} <= tokens:
-        return (
-            "The user would prefer responses that utilize their existing resources, such as their Suica card and TripIt app, to provide personalized tips for navigating Tokyo's public transportation.",
-            "They might not prefer general tips or recommendations that do not take into account their prior preparations.",
-        )
-    return None
-
-
 def _preference_request_phrase(query: str, raw_spans: list[str]) -> str:
+    """Classify the query's request intent from generic verbs, never scenarios.
+
+    Deliberately holds no topic- or scenario-specific phrasing: the concrete
+    subject comes from the cited evidence via :func:`_preference_topic_phrase`,
+    not from a memorized answer keyed on the query text.
+    """
     query_tokens = set(_answer_tokens(query))
-    evidence_tokens = set(_answer_tokens(" ".join(raw_spans)))
-    if {"publication", "publications", "conference", "conferences", "article", "articles"} & query_tokens:
-        return "suggestions related to recent research papers, articles, or conferences"
-    if {"show", "movie", "watch"} & query_tokens and {"stand", "comedy", "netflix"} <= evidence_tokens:
-        return "recommendations for stand-up comedy specials on Netflix, especially those known for storytelling"
-    if "accessories" in query_tokens and "phone" in query_tokens:
-        if "iphone" in evidence_tokens:
-            return "suggestions of accessories compatible with an iPhone 13 Pro"
-        return "suggestions of compatible phone accessories"
-    if "battery" in query_tokens and "phone" in query_tokens and {"power", "bank"} <= evidence_tokens:
-        return "responses that build upon their portable power bank and include phone battery-saving tips"
-    if "kitchen" in query_tokens and {"clean", "mess", "organize", "organizing"} & query_tokens:
-        return "responses that acknowledge and build upon their existing efforts to organize their kitchen"
     if {"tip", "tips", "clean", "organize", "organizing"} & query_tokens:
         return "practical and actionable tips that build upon their cited setup"
     if {"recommend", "recommendations", "suggest", "suggestions"} & query_tokens:
@@ -1426,65 +1237,20 @@ def _preference_request_phrase(query: str, raw_spans: list[str]) -> str:
 
 
 def _preference_topic_phrase(query: str, merged: str, raw_spans: list[str]) -> str:
-    text = " ".join([merged, *raw_spans])
-    tokens = set(_answer_tokens(text))
-    query_tokens = set(_answer_tokens(query))
-    facets: list[str] = []
-    if {"deep", "learning", "medical", "image", "analysis"} <= tokens:
-        facets.append(
-            "artificial intelligence in healthcare, particularly those that involve deep learning for medical image analysis"
-        )
-    if {"stand", "comedy", "specials", "netflix"} <= tokens or {"stand", "comedy", "netflix"} <= tokens:
-        facets.append("stand-up comedy specials on Netflix with strong storytelling")
-    if {"utensil", "holder"} <= tokens:
-        facets.append("their new utensil holder to keep countertops clutter-free")
-    if {"granite", "sink"} <= tokens:
-        facets.append("maintaining their granite surface around the sink area")
-    if {"portable", "power", "bank"} <= tokens:
-        facets.append("their portable power bank and keeping it fully charged")
-    if "battery" in query_tokens and "phone" in query_tokens:
-        facets.append("battery-saving features on their phone")
-    if "iphone" in tokens:
-        iphone = _iphone_model_phrase(text) or "iPhone"
-        phone_facets = [
-            f"high-quality screen protectors for {iphone}",
-            "durable cases",
-            "portable power banks",
-        ]
-        if {"wallet", "case"} <= tokens:
-            phone_facets.append("phone wallet cases")
-        facets.append(", ".join(phone_facets))
-    if "cat" in tokens and ({"dust", "living", "room"} & tokens or {"sheds", "shedding"} & tokens):
-        cat_facets = ["the cat's shedding"]
-        if {"living", "room"} <= tokens:
-            cat_facets.append("keeping the living room dust-free")
-        if {"deep", "clean"} <= tokens or {"cleaned", "dust"} <= tokens:
-            cat_facets.append("dust stirred up by recent cleaning")
-        facets.append(_join_preference_facets(cat_facets))
-    if not facets and merged:
-        facets.append(merged)
-    if not facets:
-        facets.append(_preference_query_focus(query) or "the cited prior context")
-    return _join_preference_facets(facets)
+    """Describe the preference subject from the actual cited evidence.
+
+    The subject is the deduplicated set of keywords extracted from the cited
+    spans (``merged``), falling back to the query focus. It is never a memorized
+    scenario phrase — whatever the cited memory actually says is what surfaces.
+    """
+    if merged:
+        return _join_preference_facets([merged])
+    return _join_preference_facets([_preference_query_focus(query) or "the cited prior context"])
 
 
 def _preference_negative_phrase(query: str, raw_spans: list[str]) -> str:
-    tokens = set(_answer_tokens(" ".join([query, *raw_spans])))
-    if {"deep", "learning", "medical", "image", "analysis"} <= tokens:
-        return "general AI topics or topics unrelated to healthcare"
-    if {"stand", "comedy", "netflix"} <= tokens:
-        return "recommendations for unrelated genres or platforms"
-    if "iphone" in tokens:
-        return "accessories that are not compatible with Apple products or do not improve phone protection or functionality"
+    """The generic anti-preference. No scenario-specific memorized phrasing."""
     return "generic, vague, unrelated, or incompatible suggestions"
-
-
-def _iphone_model_phrase(text: str) -> str:
-    match = re.search(r"\biPhone\s+\d+(?:\s+Pro(?:\s+Max)?|\s+Plus|\s+Mini)?\b", text, flags=re.IGNORECASE)
-    if not match:
-        return ""
-    words = match.group(0).split()
-    return " ".join(word if word.lower() != "iphone" else "iPhone" for word in words)
 
 
 def _join_preference_facets(facets: list[str]) -> str:

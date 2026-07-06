@@ -828,13 +828,29 @@ def export_keygen(
     out_private: Path = typer.Option(..., "--out-private", help="Write PKCS8 PEM private key here (chmod 600)"),  # noqa: B008
     out_public: Path = typer.Option(..., "--out-public", help="Write hex public key here"),  # noqa: B008
     algorithm: str | None = typer.Option(None, "--algorithm", help="ml-dsa-65 (default if available) or ed25519"),  # noqa: B008
+    force: bool = typer.Option(False, "--force", help="Overwrite an existing keypair"),  # noqa: B008
 ) -> None:
     """Generate a self-sovereign signing keypair for portable memory export."""
     from zaxy.portable import generate_keypair
 
+    if not force and (out_private.exists() or out_public.exists()):
+        existing = out_private if out_private.exists() else out_public
+        raise typer.BadParameter(f"{existing} already exists (use --force to overwrite)")
+    if force and out_private.exists():
+        # Drop any pre-existing file (which may carry a stale, permissive
+        # mode) so the create-below always starts from a fresh inode.
+        out_private.unlink()
+
     keypair = generate_keypair(algorithm)
-    out_private.write_bytes(keypair["private_pem"])
-    out_private.chmod(0o600)
+    # Create the private key file pre-restricted to 0600 via the mode on
+    # O_CREAT, so the plaintext signing key is never briefly world/group
+    # readable at the process umask between write and chmod (TOCTOU window).
+    fd = os.open(out_private, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(keypair["private_pem"])
+    finally:
+        out_private.chmod(0o600)  # belt-and-suspenders if the inode above wasn't freshly created
     out_public.write_text(keypair["public_key"].hex(), encoding="utf-8")
     typer.echo(
         f"keypair {keypair['algorithm']}: private -> {out_private} (chmod 600); public -> {out_public}"

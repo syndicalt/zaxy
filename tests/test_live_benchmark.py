@@ -154,24 +154,6 @@ def test_cli_exposes_live_benchmark_command() -> None:
     assert "zaxy benchmark" in script
 
 
-def test_public_benchmark_guardrail_script_is_reproducible_from_clean_checkout() -> None:
-    """Public benchmark guardrails should be runnable without hidden manual steps."""
-    script = Path("scripts/benchmark-guardrails.sh").read_text(encoding="utf-8")
-
-    assert ".cache/zaxy/benchmarks/longmemeval_oracle.json" in script
-    assert ".cache/zaxy/longmemeval-embeddings.json" in script
-    assert "reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.json" in script
-    assert "reports/benchmarks/longmemeval-500-publish-20260607/run-config.md" in script
-    assert "reports/benchmarks/longmemeval-500-hash/live-benchmark.json" not in script
-    assert "benchmark-inventory" in script
-    assert "benchmark-freeze" in script
-    assert "benchmark-compare" in script
-    assert "--min-mean-score 0.95" in script
-    assert "--min-answer-recall-at-5 0.90" in script
-    assert "--min-recall-at-5 0.99" in script
-    assert "--min-citation-coverage 1.0" in script
-
-
 def test_benchmark_checkout_contexts_prioritize_synthesis_evidence() -> None:
     """Answer-bearing synthesis evidence should stay inside Answer@5."""
     checkout = SimpleNamespace(

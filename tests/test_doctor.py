@@ -14,6 +14,16 @@ from zaxy.event import EventLog
 def test_run_doctor_reports_local_setup_ok(tmp_path: Path, monkeypatch) -> None:
     """Doctor should validate local-only setup with the embedded projection default."""
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
+    # Version drift is environment-dependent (installed vs declared); pin it so the
+    # exact status map is deterministic regardless of the local install state.
+    monkeypatch.setattr(
+        "zaxy.release.check_version_consistency",
+        lambda **_: {
+            "name": "version_consistency",
+            "status": "ok",
+            "message": "imported zaxy matches the repository",
+        },
+    )
     settings = Settings(
         _env_file=None,
         eventloom_path=str(tmp_path / ".eventloom"),
@@ -31,6 +41,7 @@ def test_run_doctor_reports_local_setup_ok(tmp_path: Path, monkeypatch) -> None:
 
     assert report["status"] == "warning"
     assert {check["name"]: check["status"] for check in report["checks"]} == {
+        "version_consistency": "ok",
         "eventloom": "ok",
         "event_chain": "ok",
         "local_profile": "ok",
@@ -891,3 +902,28 @@ def test_run_doctor_skips_embedding_versions_without_projection(tmp_path: Path) 
     check = next(check for check in report["checks"] if check["name"] == "embedding_versions")
     assert check["status"] == "ok"
     assert "no embedded projection yet" in check["message"]
+
+
+def test_doctor_version_check_uses_workspace_root(tmp_path: Path, monkeypatch) -> None:
+    """The version-consistency check must inspect the doctor's workspace root.
+
+    Regression: run_doctor previously called check_version_consistency() with no
+    argument, so the repo walk started from the process cwd instead of the tree
+    the operator asked about — reporting against the wrong directory.
+    """
+    captured: dict[str, object] = {}
+
+    def _capture(**kwargs: object) -> dict[str, str]:
+        captured.update(kwargs)
+        return {"name": "version_consistency", "status": "ok", "message": "pinned"}
+
+    monkeypatch.setattr("zaxy.release.check_version_consistency", _capture)
+    settings = _local_settings(
+        tmp_path,
+        projection_backend="embedded",
+        embedded_graph_path=str(tmp_path / ".eventloom" / "projections" / "embedded.kuzu"),
+    )
+
+    run_doctor(settings=settings, workspace_root=tmp_path)
+
+    assert captured.get("project_root") == tmp_path

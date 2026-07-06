@@ -115,15 +115,15 @@ operation gates.
 
 ## Benchmark Artifact Schemas
 
-Benchmark claims must be reproducible from tracked inputs. The current public
-benchmark surface is intentionally limited to the headline 500-question
-LongMemEval-compatible checkout report and the Harvey LAB external
-memory-ablation report. Older suite, backend, state-recovery, purpose, and debug
-artifacts are archived development history.
+Benchmark claims must be reproducible from tracked inputs. The current
+LongMemEval claim is the full-haystack, held-out LongMemEval-S result
+(`0.898` gpt-5 full-500 / `0.777` gpt-4o held-out answer accuracy, Recall@5
+`0.99`); see [benchmarks.md](benchmarks.md). The prior oracle-mode
+"headline 500" stays retracted. Older suite, backend, state-recovery, purpose,
+and debug artifacts are archived development history.
 
 | Artifact | Status | Contract authority |
 | --- | --- | --- |
-| `reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.json` | `Beta` | Current headline 500-question checkout diagnostic. |
 | `reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-benchmark.json` | `Beta` | Harvey LAB external legal-agent memory-ablation report. |
 | `reports/benchmarks/harvey-lab-memory-ablation/publishable-statistics.md` | `Beta` | Publishable Harvey LAB statistics summary. |
 | `reports/archive/**` and `docs/archive/**` | `Internal` | Archived development history; do not cite as current public benchmark claims. |
