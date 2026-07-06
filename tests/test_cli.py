@@ -9034,17 +9034,34 @@ def test_panel_map_has_no_stale_command_names() -> None:
     assert not stale, f"panel map references unregistered commands: {stale}"
 
 
-def test_top_level_help_renders_panel_titles_in_order() -> None:
-    """The rendered help text should show the ordered panel titles."""
+def test_top_level_help_renders_visible_panels_in_order() -> None:
+    """The rendered help shows the everyday panels in order and omits the hidden
+    benchmark/internal panels (which stay runnable)."""
     result = CliRunner().invoke(app, ["--help"])
     assert result.exit_code == 0
     output = result.output
-    positions = [output.find(panel) for panel, _ in cli_runtime._COMMAND_PANELS]
+
+    visible_panels = [
+        panel
+        for panel, _ in cli_runtime._COMMAND_PANELS
+        if panel not in cli_runtime._HIDDEN_PANELS
+    ]
+    positions = [output.find(panel) for panel in visible_panels]
     assert all(pos != -1 for pos in positions), positions
     assert positions == sorted(positions)
-    # Benchmark/internal panels render below the Essentials panel.
-    assert output.find("Essentials") < output.find("Benchmarks & evaluation")
-    assert output.find("Benchmarks & evaluation") < output.find("Internal & experimental lanes")
+    assert visible_panels[0] == "Essentials"
+
+    # Hidden panels and their commands do not appear in the root help.
+    for panel in cli_runtime._HIDDEN_PANELS:
+        assert panel not in output
+    assert "harvey-lab-benchmark" not in output
+    assert "longmembench-generate-hypotheses" not in output
+    assert "crystallize" not in output
+
+    # ...but hidden commands remain fully runnable.
+    assert CliRunner().invoke(app, ["benchmark", "--help"]).exit_code == 0
+    assert CliRunner().invoke(app, ["crystallize", "--help"]).exit_code == 0
+    assert CliRunner().invoke(app, ["capture-soak", "--help"]).exit_code == 0
 
 
 def test_memory_evolution_gate_default_auto_applies(tmp_path: Path) -> None:
