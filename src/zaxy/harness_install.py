@@ -19,8 +19,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import tomlkit
-
 from zaxy.install import resolve_zaxy_executable
 from zaxy.integrations import (
     codex_mcp_config_path,
@@ -119,21 +117,6 @@ def _merge_json(path: Path, keys: tuple[str, ...], entry: dict[str, Any], *, dry
     if not dry_run:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
-
-
-def _merge_codex_toml(path: Path, executable: str, *, dry_run: bool) -> None:
-    document = tomlkit.parse(path.read_text(encoding="utf-8")) if path.exists() else tomlkit.document()
-    servers = document.get("mcp_servers")
-    if not isinstance(servers, dict):
-        servers = tomlkit.table()
-        document["mcp_servers"] = servers
-    table = tomlkit.table()
-    table["command"] = executable
-    table["args"] = ["serve"]
-    servers[SERVER_NAME] = table
-    if not dry_run:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(tomlkit.dumps(document), encoding="utf-8")
 
 
 # JSON harnesses: (home-relative path, nested keys, entry builder from executable).

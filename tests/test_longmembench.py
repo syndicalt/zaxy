@@ -1682,6 +1682,38 @@ def test_openai_compatible_answer_retries_provider_then_returns_message(monkeypa
     assert "Project Kestrel" in payload["messages"][1]["content"]
 
 
+def test_openai_compatible_answer_5xx_backs_off_when_retry_after_absent_or_invalid(monkeypatch) -> None:
+    """5xx backoff: honor a numeric Retry-After, else fall back to linear backoff.
+
+    Covers the non-numeric Retry-After (``except ValueError``) and missing-header
+    (``else``) branches of the server-error retry path.
+    """
+    sleeps: list[float] = []
+    request = httpx.Request("POST", "https://api.example.test/v1/chat/completions")
+    responses = [
+        # Non-numeric Retry-After -> linear backoff (10.0 * attempt=1).
+        httpx.Response(503, headers={"retry-after": "soon"}, json={"error": {}}, request=request),
+        # No Retry-After header -> linear backoff (10.0 * attempt=2).
+        httpx.Response(500, json={"error": {}}, request=request),
+        httpx.Response(200, json={"choices": [{"message": {"content": "Project Kestrel"}}]}, request=request),
+    ]
+
+    monkeypatch.setattr("zaxy_benchmarks.longmembench.httpx.post", lambda *a, **k: responses.pop(0))
+    monkeypatch.setattr("zaxy_benchmarks.longmembench.time.sleep", lambda delay: sleeps.append(delay))
+
+    answer = _openai_compatible_answer(
+        question="What is the project codename?",
+        contexts=["checkout_fact=true citation=eventloom://agent/events/1#aa user: Project Kestrel."],
+        model="gpt-4o-mini",
+        base_url="https://api.example.test/v1/",
+        api_key="test-key",
+        max_retries=2,
+    )
+
+    assert answer == "Project Kestrel"
+    assert sleeps == [10.0, 20.0]
+
+
 def test_openai_compatible_answer_rejects_malformed_provider_responses(monkeypatch) -> None:
     """Malformed provider responses should fail before producing unsupported hypotheses."""
     request = httpx.Request("POST", "https://api.example.test/v1/chat/completions")
