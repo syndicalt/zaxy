@@ -21,10 +21,15 @@ from zaxy.cli.runtime import (
     app,
     apply_onboarding_preset,
     capture_app,
+    export_app,
     format_onboarding_result,
     memory_app,
     onboarding_result_payload,
+    packet_app,
+    register_deprecated_alias,
     resolve_zaxy_executable,
+    schema_app,
+    setup_app,
 )
 
 
@@ -35,7 +40,7 @@ def _shell_join(command: list[str]) -> str:
     return shlex.join(command)
 
 
-@app.command("ide-config")
+@setup_app.command("ide-config")
 def ide_config(
     client: str = typer.Argument(..., help="MCP client: claude-desktop, claude-code, codex, cursor, hermes, or vscode"),  # noqa: B008
     eventloom_path: str = typer.Option(".eventloom", help="Eventloom directory for this client"),
@@ -135,7 +140,7 @@ def ide_config(
     typer.echo(json.dumps(config, indent=2, sort_keys=True))
 
 
-@app.command("integration-template")
+@setup_app.command("integration-template")
 def integration_template(
     framework: str = typer.Argument(..., help="Agent framework: langgraph, crewai, or autogen"),
     session_id: str = typer.Option("default", help="Session ID used by the template"),
@@ -162,7 +167,7 @@ def integration_template(
     typer.echo(template, nl=False)
 
 
-@app.command("integrations")
+@setup_app.command("integrations")
 def integrations(
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable framework metadata"),
     recommendation: bool = typer.Option(False, "--recommendation", help="Print the next maintained integration target"),
@@ -213,7 +218,7 @@ def integrations(
         )
 
 
-@app.command("hooks")
+@setup_app.command("hooks")
 def hooks(
     client: str = typer.Argument(..., help="Hook client: claude-code, codex, or generic"),  # noqa: B008
     eventloom_path: str = typer.Option(".eventloom", help="Eventloom directory for hook events"),
@@ -336,7 +341,7 @@ def _checkout_fallback_embedded_graph_path(*, eventloom_path: Path, session_id: 
     return base / "projections" / f"checkout-{sid}-{os.getpid()}.kuzu"
 
 
-@app.command("capture-soak")
+@capture_app.command("soak")
 def capture_soak(
     eventloom_path: str = typer.Option(".eventloom", help="Eventloom directory or JSONL log to inspect"),
     workspace_root: Path = typer.Option(Path("."), help="Workspace root to scan for capture config"),  # noqa: B008
@@ -361,7 +366,7 @@ def capture_soak(
         raise typer.Exit(1)
 
 
-@app.command("codex-capture")
+@capture_app.command("codex")
 def codex_capture(
     workspace: Path = typer.Option(Path("."), help="Workspace root whose Codex sessions should be captured"),  # noqa: B008
     codex_home: Path | None = typer.Option(None, help="Codex home directory; defaults to CODEX_HOME or ~/.codex"),  # noqa: B008
@@ -445,7 +450,7 @@ def codex_capture(
         typer.echo("Stopped Codex capture.")
 
 
-@app.command("claude-capture")
+@capture_app.command("claude")
 def claude_capture(
     workspace: Path = typer.Option(Path("."), help="Workspace root whose Claude Code sessions should be captured"),  # noqa: B008
     claude_home: Path | None = typer.Option(None, help="Claude config home; defaults to CLAUDE_CONFIG_DIR or ~/.claude"),  # noqa: B008
@@ -823,7 +828,7 @@ def offload_get(
         typer.echo(content, nl=False)
 
 
-@app.command("export-keygen")
+@export_app.command("keygen")
 def export_keygen(
     out_private: Path = typer.Option(..., "--out-private", help="Write PKCS8 PEM private key here (chmod 600)"),  # noqa: B008
     out_public: Path = typer.Option(..., "--out-public", help="Write hex public key here"),  # noqa: B008
@@ -857,7 +862,7 @@ def export_keygen(
     )
 
 
-@app.command("export")
+@export_app.command("bundle")
 def export_memory(
     out: Path = typer.Option(..., "--out", help="Write the bundle JSON here"),  # noqa: B008
     private_key: Path | None = typer.Option(None, "--private-key", help="PKCS8 PEM private key file (omit for an unsigned bundle)"),  # noqa: B008
@@ -927,7 +932,7 @@ def export_memory(
         )
 
 
-@app.command("verify-export")
+@export_app.command("verify")
 def verify_export_cmd(
     bundle: Path = typer.Argument(..., help="signed bundle JSON file"),  # noqa: B008
     expect_public_key: str | None = typer.Option(None, "--expect-public-key", help="pin: hex public key the bundle must be signed by"),  # noqa: B008
@@ -944,7 +949,7 @@ def verify_export_cmd(
         raise typer.Exit(code=1)
 
 
-@app.command("export-disclose")
+@export_app.command("disclose")
 def export_disclose(
     bundle: Path = typer.Argument(..., help="signed bundle JSON file"),  # noqa: B008
     out: Path = typer.Option(..., "--out", help="Write the disclosed subset JSON here"),  # noqa: B008
@@ -978,7 +983,7 @@ def export_disclose(
     )
 
 
-@app.command("verify-export-subset")
+@export_app.command("verify-subset")
 def verify_export_subset_cmd(
     subset: Path = typer.Argument(..., help="disclosed subset JSON file"),  # noqa: B008
     expect_public_key: str | None = typer.Option(None, "--expect-public-key", help="pin: hex public key the subset must be signed by"),  # noqa: B008
@@ -995,7 +1000,7 @@ def verify_export_subset_cmd(
         raise typer.Exit(code=1)
 
 
-@app.command("export-push")
+@export_app.command("push")
 def export_push(
     sink: str = typer.Option(..., "--sink", help="destination type: file or webhook"),
     dest: str = typer.Option(..., "--dest", help="file path (file sink) or http(s) URL (webhook sink)"),
@@ -1094,7 +1099,7 @@ def _resolve_cli_projection_backend(
     return settings.projection_backend.casefold().strip()
 
 
-@app.command("local-profile")
+@setup_app.command("local-profile")
 def local_profile(
     output: Path | None = typer.Option(None, "--output", "-o", help="Write profile to this file"),  # noqa: B008
     projection_backend: str = typer.Option("embedded", "--projection-backend", help="Projection backend: embedded, neo4j, pggraph, or latticedb"),  # noqa: B008
@@ -1206,7 +1211,7 @@ def doctor(
         typer.echo(format_doctor_report(report))
 
 
-@app.command("packet-status")
+@packet_app.command("status")
 def packet_status(
     eventloom_path: Path = typer.Option(  # noqa: B008
         Path(".eventloom"),
@@ -1337,7 +1342,7 @@ def index_codebase(
     typer.echo(f"Indexed {count} codebase events into session {session_id}")
 
 
-@app.command("init-session")
+@setup_app.command("init-session")
 def init_session(
     path: Path = typer.Argument(..., help="Workspace root to initialize"),  # noqa: B008
     session_id: str = typer.Option("default", help="Session ID to append genesis into"),  # noqa: B008
@@ -1711,7 +1716,7 @@ def viewer(
     typer.echo(f"Wrote Eventloom viewer: {written}")
 
 
-@app.command("schema-plan")
+@schema_app.command("plan")
 def schema_plan() -> None:
     """Print the current Neo4j schema migration plan."""
     from zaxy.schema import render_schema_plan
@@ -1719,7 +1724,10 @@ def schema_plan() -> None:
     typer.echo(render_schema_plan())
 
 
-@app.command("schema-recovery-plan")
+register_deprecated_alias("schema-plan", "schema plan", schema_plan)
+
+
+@schema_app.command("recovery-plan")
 def schema_recovery_plan() -> None:
     """Inspect Neo4j migration records and print recovery guidance."""
     import asyncio
@@ -1754,7 +1762,10 @@ def schema_recovery_plan() -> None:
     typer.echo(asyncio.run(_run()))
 
 
-@app.command("extractor-template")
+register_deprecated_alias("schema-recovery-plan", "schema recovery-plan", schema_recovery_plan)
+
+
+@setup_app.command("extractor-template")
 def extractor_template(
     event_type: str = typer.Argument(..., help="Typed Eventloom event, e.g. decision.recorded"),  # noqa: B008
     entity_type: str = typer.Option(..., "--entity-type", help="Graph entity type to extract"),
@@ -1780,6 +1791,9 @@ def extractor_template(
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(render_extractor_template(spec))
+
+
+register_deprecated_alias("extractor-template", "setup extractor-template", extractor_template)
 
 
 @app.command()
@@ -1827,3 +1841,24 @@ def replay(
     typer.echo(f"  Goals: {summary['goals']}")
     typer.echo(f"  Open tasks: {len(summary['open_tasks'])}")
     typer.echo(f"  Last actor: {summary['last_actor']}")
+
+
+# Phase 2: hidden deprecated aliases forwarding old flat names to grouped commands.
+register_deprecated_alias("ide-config", "setup ide-config", ide_config)
+register_deprecated_alias("integration-template", "setup integration-template", integration_template)
+register_deprecated_alias("integrations", "setup integrations", integrations)
+register_deprecated_alias("hooks", "setup hooks", hooks)
+register_deprecated_alias("local-profile", "setup local-profile", local_profile)
+register_deprecated_alias("init-session", "setup init-session", init_session)
+register_deprecated_alias("codex-capture", "capture codex", codex_capture)
+register_deprecated_alias("claude-capture", "capture claude", claude_capture)
+register_deprecated_alias("capture-soak", "capture soak", capture_soak)
+register_deprecated_alias("packet-status", "packet status", packet_status)
+
+
+# Phase 2: export family aliases (bare `export` is now the group -> use `export bundle`).
+register_deprecated_alias("export-keygen", "export keygen", export_keygen)
+register_deprecated_alias("verify-export", "export verify", verify_export_cmd)
+register_deprecated_alias("export-disclose", "export disclose", export_disclose)
+register_deprecated_alias("verify-export-subset", "export verify-subset", verify_export_subset_cmd)
+register_deprecated_alias("export-push", "export push", export_push)
