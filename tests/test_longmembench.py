@@ -1460,7 +1460,9 @@ def test_generate_openai_hypotheses_uses_answer_ready_candidate_before_filtering
     assert calls == []
     assert report.question_count == 1
     assert rows[0]["question_id"] == "q-preference-1"
-    assert "hotels in Miami" in rows[0]["hypothesis"]
+    # Honest candidate reflects the cited evidence ("hotels with ocean views, a
+    # rooftop pool, ...") — never the gold `answer` field's "hotels in Miami".
+    assert "hotels with ocean views" in rows[0]["hypothesis"]
     assert "ocean" in rows[0]["hypothesis"]
 
 
@@ -1629,7 +1631,9 @@ def test_openai_compatible_answer_uses_preference_candidate_without_provider(mon
     )
 
     assert calls == []
-    assert "hotels in Miami" in answer
+    # Honest candidate quotes the cited preference ("Miami hotel options with
+    # ocean views, a rooftop pool, ...") rather than a gold-answer string.
+    assert "Miami hotel options" in answer
     assert "ocean" in answer
     assert "rooftop pool" in answer
 
@@ -1676,6 +1680,38 @@ def test_openai_compatible_answer_retries_provider_then_returns_message(monkeypa
     payload = calls[0]["kwargs"]["json"]
     assert payload["model"] == "gpt-4o-mini"
     assert "Project Kestrel" in payload["messages"][1]["content"]
+
+
+def test_openai_compatible_answer_5xx_backs_off_when_retry_after_absent_or_invalid(monkeypatch) -> None:
+    """5xx backoff: honor a numeric Retry-After, else fall back to linear backoff.
+
+    Covers the non-numeric Retry-After (``except ValueError``) and missing-header
+    (``else``) branches of the server-error retry path.
+    """
+    sleeps: list[float] = []
+    request = httpx.Request("POST", "https://api.example.test/v1/chat/completions")
+    responses = [
+        # Non-numeric Retry-After -> linear backoff (10.0 * attempt=1).
+        httpx.Response(503, headers={"retry-after": "soon"}, json={"error": {}}, request=request),
+        # No Retry-After header -> linear backoff (10.0 * attempt=2).
+        httpx.Response(500, json={"error": {}}, request=request),
+        httpx.Response(200, json={"choices": [{"message": {"content": "Project Kestrel"}}]}, request=request),
+    ]
+
+    monkeypatch.setattr("zaxy_benchmarks.longmembench.httpx.post", lambda *a, **k: responses.pop(0))
+    monkeypatch.setattr("zaxy_benchmarks.longmembench.time.sleep", lambda delay: sleeps.append(delay))
+
+    answer = _openai_compatible_answer(
+        question="What is the project codename?",
+        contexts=["checkout_fact=true citation=eventloom://agent/events/1#aa user: Project Kestrel."],
+        model="gpt-4o-mini",
+        base_url="https://api.example.test/v1/",
+        api_key="test-key",
+        max_retries=2,
+    )
+
+    assert answer == "Project Kestrel"
+    assert sleeps == [10.0, 20.0]
 
 
 def test_openai_compatible_answer_rejects_malformed_provider_responses(monkeypatch) -> None:

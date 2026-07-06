@@ -223,6 +223,7 @@ def test_cli_export_decrypts_forgettable_not_ciphertext(
             app,
             [
                 "export",
+                "bundle",
                 "--out",
                 str(out),
                 "--eventloom-path",

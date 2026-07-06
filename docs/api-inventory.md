@@ -117,7 +117,7 @@ operation gates.
 
 Benchmark claims must be reproducible from tracked inputs. The current
 LongMemEval claim is the full-haystack, held-out LongMemEval-S result
-(`0.898` gpt-5 full-500 / `0.777` gpt-4o held-out answer accuracy, Recall@5
+(`0.90` gpt-5 full-500 / `0.777` gpt-4o held-out answer accuracy, Recall@5
 `0.99`); see [benchmarks.md](benchmarks.md). The prior oracle-mode
 "headline 500" stays retracted. Older suite, backend, state-recovery, purpose,
 and debug artifacts are archived development history.

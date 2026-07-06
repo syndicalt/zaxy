@@ -9116,7 +9116,7 @@ def test_flat_families_are_grouped_with_deprecated_aliases() -> None:
         assert runner.invoke(app, [old, "--help"]).exit_code == 0
 
 
-def test_install_command_registers_harnesses(tmp_path: Path, monkeypatch: "pytest.MonkeyPatch") -> None:
+def test_install_command_registers_harnesses(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """`zaxy install` writes user-scope MCP config for the named harnesses."""
     monkeypatch.setenv("HOME", str(tmp_path))
     result = CliRunner().invoke(app, ["install", "--clients", "opencode,codex", "--json"])
@@ -9126,6 +9126,39 @@ def test_install_command_registers_harnesses(tmp_path: Path, monkeypatch: "pytes
     assert status == {"opencode": "configured", "codex": "configured"}
     assert (tmp_path / ".config/opencode/opencode.json").exists()
     assert (tmp_path / ".codex/config.toml").exists()
+
+
+def test_install_command_human_output_lists_registrations(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without --json, `zaxy install` prints a per-harness summary and a restart hint."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    result = CliRunner().invoke(app, ["install", "--clients", "opencode"])
+    assert result.exit_code == 0, result.output
+    assert "Zaxy MCP registered with" in result.output
+    assert "opencode" in result.output
+    assert "Restart your agent" in result.output
+    assert (tmp_path / ".config/opencode/opencode.json").exists()
+
+
+def test_install_command_dry_run_writes_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """--dry-run reports intended changes without writing config or a restart hint."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    result = CliRunner().invoke(app, ["install", "--clients", "opencode", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "Would configure" in result.output
+    assert "Restart" not in result.output
+    assert not (tmp_path / ".config/opencode/opencode.json").exists()
+
+
+def test_install_command_reports_when_no_harness_detected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With nothing detected, the command explains what is supported instead of erroring."""
+    import zaxy.harness_install as hi
+
+    monkeypatch.setattr(hi, "install_for_detected", lambda **_k: [])
+    monkeypatch.setattr(hi, "detect_harnesses", lambda *_a, **_k: [])
+    result = CliRunner().invoke(app, ["install"])
+    assert result.exit_code == 0, result.output
+    assert "No supported agent harness detected" in result.output
+    assert "Supported:" in result.output
 
 
 def test_daily_loop_promoted_to_top_level() -> None:

@@ -6,7 +6,7 @@ Zaxy's current, honestly-measured LongMemEval-S result:
 
 | Reader | Answer accuracy | Scope | Retrieval Recall@5 |
 |--------|----------------:|-------|-------------------:|
-| gpt-5  | `0.898` | full 500 questions | `0.99` |
+| gpt-5  | `0.90` | full 500 questions | `0.99` |
 | gpt-4o | `0.777` | 130-question held-out | `0.99` |
 
 **Method.** Full-haystack LongMemEval-S — ~48 sessions / ~490 turns per question,
@@ -15,10 +15,16 @@ answers over that context using a general reasoning prompt (no answer hints, no
 memorized answers); the **official LongMemEval GPT-4o judge** scores answer
 accuracy. Retrieval Recall@5 is gold-answer-session recall on the real haystack.
 
+**Why two significant figures.** The official judge is itself an LLM; at
+temperature 0 it is near- but not perfectly deterministic. Re-scoring the
+identical gpt-5 hypotheses produced 449/500 and 451/500 across runs (~±0.4%), so
+we report **`0.90`** rather than a spurious third decimal. Figures quoted
+elsewhere to 0.01% exceed this metric's precision.
+
 **Scope and no-overfit check.** The gpt-5 number is the **full 500-question
 LongMemEval-S**. A deterministic 130-question held-out subset — questions never
 used to tune the reader prompt — scored `0.892` with the same reader, essentially
-identical to the full `0.898`, which is the evidence that the result generalizes
+identical to the full `0.90`, which is the evidence that the result generalizes
 rather than fitting the prompt to specific questions. The gpt-4o number is
 reported on that held-out subset (`0.777`).
 
@@ -26,7 +32,7 @@ reported on that held-out subset (`0.777`).
 the one independently-published, apples-to-apples peer — Zep / Graphiti at
 `0.712` (gpt-4o, full-haystack). Higher self-reported figures in the field
 generally use stronger reader models (GPT-4.1 / GPT-5-class) or report retrieval
-recall rather than answer accuracy; the gpt-5 result (`0.898`, full 500) is
+recall rather than answer accuracy; the gpt-5 result (`0.90`, full 500) is
 competitive with that tier while staying a full-haystack, official-judge number.
 
 ### The prior "headline 500" is still retracted
@@ -376,7 +382,7 @@ and do not combine them with the headline 500 or Harvey LAB numbers.
 ## Claim Boundaries
 
 - The current LongMemEval claim is the **full-haystack LongMemEval-S** result at
-  the top of this page: `0.898` (gpt-5, full 500 questions) / `0.777` (gpt-4o,
+  the top of this page: `0.90` (gpt-5, full 500 questions) / `0.777` (gpt-4o,
   130-question held-out), Recall@5 `0.99`. The held-out gpt-5 subset scored
   `0.892`, confirming the full-set number is not overfit. The prior oracle-mode
   "headline 500" stays **retracted**.
