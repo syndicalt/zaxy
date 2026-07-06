@@ -4949,7 +4949,7 @@ def test_integrations_command_lists_framework_registry() -> None:
 def test_integrations_command_can_emit_json() -> None:
     runner = CliRunner()
 
-    result = runner.invoke(app, ["integrations", "--json"])
+    result = runner.invoke(app, ["setup", "integrations", "--json"])
 
     assert result.exit_code == 0
     payload = json.loads(result.output)
@@ -4962,7 +4962,7 @@ def test_integrations_command_can_emit_json() -> None:
 def test_integrations_command_can_emit_recommendation_json() -> None:
     runner = CliRunner()
 
-    result = runner.invoke(app, ["integrations", "--recommendation", "--json"])
+    result = runner.invoke(app, ["setup", "integrations", "--recommendation", "--json"])
 
     assert result.exit_code == 0
     payload = json.loads(result.output)
@@ -9062,6 +9062,58 @@ def test_top_level_help_renders_visible_panels_in_order() -> None:
     assert CliRunner().invoke(app, ["benchmark", "--help"]).exit_code == 0
     assert CliRunner().invoke(app, ["crystallize", "--help"]).exit_code == 0
     assert CliRunner().invoke(app, ["capture-soak", "--help"]).exit_code == 0
+
+
+def test_flat_families_are_grouped_with_deprecated_aliases() -> None:
+    """Phase 2: flat command families live under groups; old flat names stay as
+    hidden, deprecated aliases that still run."""
+    runner = CliRunner()
+
+    # Grouped commands resolve at their new path.
+    for path in (
+        ["schema", "plan"],
+        ["schema", "recovery-plan"],
+        ["setup", "ide-config"],
+        ["setup", "integrations"],
+        ["capture", "codex"],
+        ["capture", "claude"],
+        ["packet", "analyze"],
+        ["packet", "status"],
+        ["export", "bundle"],
+        ["export", "keygen"],
+        ["export", "verify"],
+    ):
+        assert runner.invoke(app, [*path, "--help"]).exit_code == 0, path
+
+    # New group names appear in root --help; old flat names do not.
+    output = runner.invoke(app, ["--help"]).output
+    for group_name in ("schema", "packet", "setup", "export"):
+        assert group_name in output
+    for old in (
+        "schema-plan",
+        "ide-config",
+        "codex-capture",
+        "packet-analyzer",
+        "capture-soak",
+        "export-keygen",
+        "verify-export",
+    ):
+        assert old not in output
+
+    # Old flat names are still registered as deprecated aliases and still run.
+    group, _ = _top_level_group()
+    for old in (
+        "schema-plan",
+        "ide-config",
+        "integrations",
+        "codex-capture",
+        "packet-analyzer",
+        "export-keygen",
+        "verify-export",
+    ):
+        assert old in group.commands
+        assert old in cli_runtime._DEPRECATED_ALIASES
+        assert runner.invoke(app, [old, "--help"]).exit_code == 0
 
 
 def test_memory_evolution_gate_default_auto_applies(tmp_path: Path) -> None:

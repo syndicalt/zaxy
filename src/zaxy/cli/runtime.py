@@ -162,6 +162,7 @@ _COMMAND_PANELS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
         "Setup & integrations",
         (
+            "setup",
             "ide-config",
             "integrations",
             "integration-template",
@@ -181,6 +182,7 @@ _COMMAND_PANELS: tuple[tuple[str, tuple[str, ...]], ...] = (
             "hooks",
             "hook-event",
             "hook-status",
+            "packet",
             "packet-analyzer",
             "packet-project",
             "packet-status",
@@ -200,7 +202,7 @@ _COMMAND_PANELS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ),
     (
         "Inspection & maintenance",
-        ("schema-plan", "schema-recovery-plan", "viewer", "offload-get"),
+        ("schema", "schema-plan", "schema-recovery-plan", "viewer", "offload-get"),
     ),
     (
         "Benchmarks & evaluation",
@@ -272,7 +274,7 @@ _HIDDEN_PANELS: frozenset[str] = frozenset(
 # Individual power/maintenance commands hidden from the root listing while their
 # everyday panel stays visible.
 _HIDDEN_EXTRA_COMMANDS: frozenset[str] = frozenset(
-    {"crystallize", "reproject", "capture-soak", "offload-get"}
+    {"crystallize", "reproject", "offload-get"}
 )
 _HIDDEN_COMMANDS: frozenset[str] = (
     frozenset(name for name, panel in _COMMAND_PANEL.items() if panel in _HIDDEN_PANELS)
@@ -305,12 +307,31 @@ class _PanelOrderedGroup(TyperGroup):
                 cast(Any, command).rich_help_panel = _COMMAND_PANEL.get(name, _FALLBACK_PANEL)
                 # Hidden commands stay runnable (invocation does not consult
                 # ``hidden``); they are only dropped from the rendered help and
-                # shell completion.
-                cast(Any, command).hidden = name in _HIDDEN_COMMANDS
+                # shell completion. Deprecated aliases (old flat names now living
+                # under a group) are hidden the same way.
+                cast(Any, command).hidden = name in _HIDDEN_COMMANDS or name in _DEPRECATED_ALIASES
         return ordered
 
 
 app = typer.Typer(cls=_PanelOrderedGroup, help="Zaxy: Event-sourced temporal knowledge graph fabric")
+
+
+# Old flat command names kept as hidden, deprecated aliases (Phase 2 of the CLI
+# streamlining): they still run and print a deprecation notice, forwarding users
+# to the new grouped command. Maps old flat name -> new invocation for docs.
+_DEPRECATED_ALIASES: dict[str, str] = {}
+
+
+def register_deprecated_alias(old_name: str, new_path: str, func: Any) -> None:
+    """Register ``func`` as a hidden, deprecated top-level alias at ``old_name``.
+
+    The command still runs (invocation ignores ``hidden``) and Typer prints a
+    deprecation notice; ``list_commands`` drops it from help and completion. Use
+    this so re-parenting a command into a group never breaks scripts, agent
+    configs, or hooks bound to the old flat name.
+    """
+    _DEPRECATED_ALIASES[old_name] = new_path
+    app.command(old_name, hidden=True, deprecated=True)(func)
 
 
 memory_app = typer.Typer(help="Inspect Eventloom-backed agent memory")
@@ -352,6 +373,19 @@ experimental_app = typer.Typer(help="Run isolated experimental memory research c
 fleet_app = typer.Typer(help="Govern the fleet memory plane (cross-agent/cross-session propagation)")
 
 
+# Phase 2 grouping sub-apps: fold flat command families into predictable groups.
+schema_app = typer.Typer(help="Inspect graph schema migration state")
+
+
+export_app = typer.Typer(help="Build, verify, and disclose signed export bundles")
+
+
+packet_app = typer.Typer(help="Observe and project LLM packet memory")
+
+
+setup_app = typer.Typer(help="Configure clients, integrations, hooks, and keys")
+
+
 app.add_typer(memory_app, name="memory")
 
 
@@ -383,6 +417,18 @@ app.add_typer(fleet_app, name="fleet")
 
 
 app.add_typer(plugin_app, name="plugin")
+
+
+app.add_typer(schema_app, name="schema")
+
+
+app.add_typer(export_app, name="export")
+
+
+app.add_typer(packet_app, name="packet")
+
+
+app.add_typer(setup_app, name="setup")
 
 
 coordinate_app.add_typer(coordinate_worker_app, name="worker")

@@ -187,12 +187,12 @@ def test_cli_keygen_export_verify_roundtrip(tmp_path) -> None:  # type: ignore[n
 
     priv, pub, bundle = tmp_path / "k.pem", tmp_path / "k.pub", tmp_path / "b.json"
     alg = "ed25519"  # CLI default flag is ml-dsa-65; pin ed25519 so the test is portable
-    assert runner.invoke(app, ["export-keygen", "--out-private", str(priv), "--out-public", str(pub), "--algorithm", alg]).exit_code == 0
+    assert runner.invoke(app, ["export", "keygen", "--out-private", str(priv), "--out-public", str(pub), "--algorithm", alg]).exit_code == 0
     assert priv.exists() and pub.exists()
-    assert runner.invoke(app, ["export", "--out", str(bundle), "--private-key", str(priv), "--public-key", str(pub), "--algorithm", alg, "--eventloom-path", str(el), "--session-id", "demo"]).exit_code == 0
+    assert runner.invoke(app, ["export", "bundle", "--out", str(bundle), "--private-key", str(priv), "--public-key", str(pub), "--algorithm", alg, "--eventloom-path", str(el), "--session-id", "demo"]).exit_code == 0
 
     pinned = pub.read_text(encoding="utf-8").strip()
-    ok = runner.invoke(app, ["verify-export", str(bundle), "--expect-public-key", pinned])
+    ok = runner.invoke(app, ["export", "verify", str(bundle), "--expect-public-key", pinned])
     assert ok.exit_code == 0 and "OK" in ok.stdout
 
     # tamper the bundle file -> verification must fail (non-zero exit).
@@ -200,7 +200,7 @@ def test_cli_keygen_export_verify_roundtrip(tmp_path) -> None:  # type: ignore[n
     b = json.loads(bundle.read_text(encoding="utf-8"))
     b["entries"][0]["content"]["content"]["payload"]["decision"] = "TAMPERED"
     bundle.write_text(json.dumps(b), encoding="utf-8")
-    assert runner.invoke(app, ["verify-export", str(bundle)]).exit_code == 1
+    assert runner.invoke(app, ["export", "verify", str(bundle)]).exit_code == 1
 
 
 def test_cli_export_unsigned_and_since_delta(tmp_path: Path) -> None:
@@ -223,7 +223,7 @@ def test_cli_export_unsigned_and_since_delta(tmp_path: Path) -> None:
     runner = CliRunner()
     out = tmp_path / "b.json"
     res = runner.invoke(
-        app, ["export", "--out", str(out), "--eventloom-path", str(el), "--session-id", "demo"]
+        app, ["export", "bundle", "--out", str(out), "--eventloom-path", str(el), "--session-id", "demo"]
     )
     assert res.exit_code == 0, res.output
     bundle = json.loads(out.read_text(encoding="utf-8"))
@@ -244,7 +244,7 @@ def test_cli_export_unsigned_and_since_delta(tmp_path: Path) -> None:
     out2 = tmp_path / "b2.json"
     res2 = runner.invoke(
         app,
-        ["export", "--out", str(out2), "--eventloom-path", str(el), "--session-id", "demo", "--since", "1"],
+        ["export", "bundle", "--out", str(out2), "--eventloom-path", str(el), "--session-id", "demo", "--since", "1"],
     )
     assert res2.exit_code == 0, res2.output
     delta = json.loads(out2.read_text(encoding="utf-8"))
@@ -270,11 +270,11 @@ def test_cli_export_disclose_verify_subset_roundtrip(tmp_path: Path) -> None:
     bundle, subset = tmp_path / "b.json", tmp_path / "s.json"
     alg = "ed25519"
     assert runner.invoke(
-        app, ["export-keygen", "--out-private", str(priv), "--out-public", str(pub), "--algorithm", alg]
+        app, ["export", "keygen", "--out-private", str(priv), "--out-public", str(pub), "--algorithm", alg]
     ).exit_code == 0
     assert runner.invoke(
         app,
-        ["export", "--out", str(bundle), "--private-key", str(priv), "--public-key", str(pub),
+        ["export", "bundle", "--out", str(bundle), "--private-key", str(priv), "--public-key", str(pub),
          "--algorithm", alg, "--eventloom-path", str(el), "--session-id", "demo"],
     ).exit_code == 0
 
@@ -285,7 +285,7 @@ def test_cli_export_disclose_verify_subset_roundtrip(tmp_path: Path) -> None:
     assert res.exit_code == 0, res.output
 
     pinned = pub.read_text(encoding="utf-8").strip()
-    ok = runner.invoke(app, ["verify-export-subset", str(subset), "--expect-public-key", pinned])
+    ok = runner.invoke(app, ["export", "verify-subset", str(subset), "--expect-public-key", pinned])
     assert ok.exit_code == 0 and "OK" in ok.stdout
 
     data = json.loads(subset.read_text(encoding="utf-8"))
@@ -294,4 +294,4 @@ def test_cli_export_disclose_verify_subset_roundtrip(tmp_path: Path) -> None:
     # tamper a disclosed entry -> subset verification must fail
     data["disclosed"][0]["content"]["content"]["payload"]["title"] = "TAMPERED"
     subset.write_text(json.dumps(data), encoding="utf-8")
-    assert runner.invoke(app, ["verify-export-subset", str(subset)]).exit_code == 1
+    assert runner.invoke(app, ["export", "verify-subset", str(subset)]).exit_code == 1

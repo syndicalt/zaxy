@@ -33,6 +33,8 @@ from zaxy.cli.runtime import (
     memory_causal_app,
     memory_consolidation_app,
     memory_reasoning_app,
+    packet_app,
+    register_deprecated_alias,
     trace_app,
 )
 from zaxy.cli.workspace import (
@@ -2166,7 +2168,7 @@ def reproject(
     typer.echo(f"Reprojected {count} events into session {session_id} using {backend}")
 
 
-@app.command()
+@packet_app.command("analyze")
 def packet_analyzer(
     upstream_base_url: str = typer.Option(
         ...,
@@ -2217,7 +2219,7 @@ def packet_analyzer(
     run_packet_analyzer(host=host, port=port, config=config)
 
 
-@app.command("packet-project")
+@packet_app.command("project")
 def packet_project(
     eventloom_path: Path = typer.Option(  # noqa: B008
         Path(".eventloom"),
@@ -2335,3 +2337,8 @@ def packet_project(
         f"Projected {project_result.projected} packet {noun} "
         f"(read={project_result.read}, skipped={project_result.skipped}{graph_text})"
     )
+
+
+# Phase 2: hidden deprecated aliases for the packet family.
+register_deprecated_alias("packet-analyzer", "packet analyze", packet_analyzer)
+register_deprecated_alias("packet-project", "packet project", packet_project)
