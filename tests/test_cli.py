@@ -9116,7 +9116,7 @@ def test_flat_families_are_grouped_with_deprecated_aliases() -> None:
         assert runner.invoke(app, [old, "--help"]).exit_code == 0
 
 
-def test_install_command_registers_harnesses(tmp_path: Path, monkeypatch: "pytest.MonkeyPatch") -> None:
+def test_install_command_registers_harnesses(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """`zaxy install` writes user-scope MCP config for the named harnesses."""
     monkeypatch.setenv("HOME", str(tmp_path))
     result = CliRunner().invoke(app, ["install", "--clients", "opencode,codex", "--json"])
