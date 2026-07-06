@@ -143,7 +143,7 @@ def resolve_zaxy_executable(*args: Any, **kwargs: Any) -> str:
 _COMMAND_PANELS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
         "Essentials",
-        ("init", "serve", "checkout", "append", "bootstrap", "activate", "doctor", "status"),
+        ("install", "init", "serve", "checkout", "append", "bootstrap", "activate", "doctor", "status"),
     ),
     (
         "Memory",

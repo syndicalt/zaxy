@@ -9116,6 +9116,18 @@ def test_flat_families_are_grouped_with_deprecated_aliases() -> None:
         assert runner.invoke(app, [old, "--help"]).exit_code == 0
 
 
+def test_install_command_registers_harnesses(tmp_path: Path, monkeypatch: "pytest.MonkeyPatch") -> None:
+    """`zaxy install` writes user-scope MCP config for the named harnesses."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    result = CliRunner().invoke(app, ["install", "--clients", "opencode,codex", "--json"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    status = {r["harness"]: r["status"] for r in payload["registrations"]}
+    assert status == {"opencode": "configured", "codex": "configured"}
+    assert (tmp_path / ".config/opencode/opencode.json").exists()
+    assert (tmp_path / ".codex/config.toml").exists()
+
+
 def test_daily_loop_promoted_to_top_level() -> None:
     """Phase 3: checkout/append/bootstrap are visible top-level Essentials aliases
     of the `memory` verbs, which keep working."""

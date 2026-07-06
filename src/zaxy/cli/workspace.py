@@ -1557,6 +1557,60 @@ def _codex_auto_conflict_path(
     return config_path
 
 
+@app.command("install")
+def install_harnesses(
+    clients: str | None = typer.Option(
+        None, "--clients", help="Comma-separated harnesses to configure (default: auto-detect installed ones)"
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would change without writing"),
+    json_output: bool = typer.Option(False, "--json", help="Machine-readable output"),
+    zaxy_executable: str | None = typer.Option(
+        None, "--zaxy-executable", help="Path MCP clients should invoke (default: resolved `zaxy`)"
+    ),
+) -> None:
+    """Register the Zaxy MCP server with every detected agent harness (user scope).
+
+    Auto-detects Claude Code, Codex, opencode, OpenClaw, Hermes, Z.ai ZCode, and
+    Pi, then writes each one's user-scope MCP config so Zaxy is available in every
+    project. Idempotent; re-run any time. This is what `install.sh` invokes.
+    """
+    from zaxy.harness_install import HARNESSES, detect_harnesses, install_for_detected
+
+    only = [c.strip() for c in clients.split(",") if c.strip()] if clients else None
+    regs = install_for_detected(executable=zaxy_executable, only=only, dry_run=dry_run)
+
+    if json_output:
+        typer.echo(
+            json.dumps(
+                {
+                    "dry_run": dry_run,
+                    "detected": detect_harnesses(),
+                    "registrations": [
+                        {"harness": r.harness, "status": r.status, "method": r.method, "detail": r.detail}
+                        for r in regs
+                    ],
+                },
+                indent=2,
+            )
+        )
+        return
+
+    if not regs:
+        supported = ", ".join(s.name for s in HARNESSES)
+        typer.echo("No supported agent harness detected on this machine.")
+        typer.echo(f"Supported: {supported}. Re-run with --clients <name> to force one.")
+        return
+
+    marks = {"configured": "✓", "skipped": "⊘", "error": "✗"}
+    verb = "Would configure" if dry_run else "Zaxy MCP registered with"
+    typer.echo(f"{verb} your agent harnesses:")
+    for r in regs:
+        where = r.detail if r.status != "configured" else r.method.removeprefix("file:")
+        typer.echo(f"  {marks.get(r.status, '?')} {r.harness:<12} {where}")
+    if not dry_run and any(r.status == "configured" for r in regs):
+        typer.echo("\nRestart your agent(s); then run `zaxy checkout` in a project to try it.")
+
+
 @app.command("init")
 def init(
     path: Path = typer.Argument(Path("."), help="Workspace root to initialize"),  # noqa: B008
