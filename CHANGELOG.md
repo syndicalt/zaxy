@@ -2,6 +2,56 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 3.1.0 - 2026-07-06
+
+Onboarding and CLI ergonomics: a one-command install, a much smaller everyday
+command surface, and the daily memory loop promoted to top-level. As the first
+PyPI release since 3.0.1, it also carries the 3.0.2 benchmark retraction, the
+honest LongMemEval re-baseline, and the integrity/security fixes.
+
+### Added
+
+- **One-command installer.** `curl -fsSL https://zaxy.com/install.sh | sh`
+  installs the `zaxy` CLI and registers its MCP server with every agent harness
+  it detects — Claude Code, Codex, opencode, OpenClaw, Hermes, Z.ai ZCode, and
+  Pi (Pi only when its MCP adapter is present). Env overrides (`ZAXY_VERSION`,
+  `ZAXY_CLIENTS`, `ZAXY_NO_CONFIGURE`, `ZAXY_INSTALLER`) support scripted/CI use.
+- **`zaxy install`** — auto-detects installed harnesses and registers Zaxy at
+  user scope, idempotently (`--clients`, `--dry-run`, `--json`). This is the
+  engine the installer drives.
+- **Four new supported harnesses**: opencode, OpenClaw, Z.ai ZCode, and Pi,
+  alongside the existing Claude Code, Codex, Cursor, VS Code, and Hermes.
+- **Top-level `checkout`, `append`, `bootstrap`** — the read/write loop an agent
+  runs every turn is now front-and-center in `zaxy --help`.
+
+### Changed
+
+- **`zaxy --help` is drastically smaller.** ~55 benchmark/eval/internal commands
+  are hidden from the root listing (still fully runnable by name), and the
+  scattered flat command families are gathered into groups —
+  `zaxy schema|setup|packet|export …`. The everyday surface is six panels led by
+  Essentials.
+- **Honest LongMemEval-S re-baseline published** (full-haystack, official judge):
+  `0.777` with a gpt-4o reader and `0.898` with a gpt-5 reader, replacing the
+  retracted oracle-mode headline. Embedded LadybugDB is the zero-setup default;
+  Neo4j remains an advanced sidecar opt-in.
+
+### Deprecated
+
+- Flat command names that moved into groups (e.g. `schema-plan`, `ide-config`,
+  `codex-capture`, `packet-analyzer`, `export-keygen`) still run as hidden
+  aliases with a deprecation notice. Migrate to the grouped form (`zaxy schema
+  plan`, `zaxy setup ide-config`, `zaxy capture codex`, `zaxy packet analyze`,
+  `zaxy export keygen`); the aliases will be removed in a future release.
+
+### Breaking
+
+- **`zaxy export` is now a command group, not the bundle builder.** Building an
+  export bundle moved to **`zaxy export bundle`**; bare `zaxy export` prints
+  group help. This is the one intentional break — a group and a leaf command
+  cannot share a name — so it has no alias. Every other moved command keeps a
+  working alias. (The CLI is Beta pre-1.0; see docs/api-inventory.md.)
+
 ## 3.0.2 - 2026-07-04
 
 Integrity and honesty patch. This release removes benchmark contamination from
