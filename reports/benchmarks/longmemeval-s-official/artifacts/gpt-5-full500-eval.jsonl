@@ -1,0 +1,500 @@
+{"question_id": "001be529", "hypothesis": "Over a year.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "00ca467f", "hypothesis": "2", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "0100672e", "hypothesis": "$12", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "0862e8bf", "hypothesis": "Luna", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "0862e8bf_abs", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "08e075c7", "hypothesis": "9 months", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "08f4fc43", "hypothesis": "30 days", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "09ba9854_abs", "hypothesis": "$50", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "09d032c9", "hypothesis": "- Check Settings > Battery to see top draining apps; uninstall or restrict their background activity\n- Turn on Battery Saver/Low Power Mode\n- Screen: lower brightness or use adaptive, shorten auto\u2011lock (30\u201360s), disable Always\u2011On/raise\u2011to\u2011wake, reduce refresh rate (e.g., 60 Hz)\n- Connectivity: prefer Wi\u2011Fi over cellular; disable 5G when not needed; turn off Bluetooth/Location/NFC when unused; use Airplane Mode in poor\u2011signal areas\n- Background activity: disable Background App Refresh/auto\u2011sync for nonessential apps; limit push email (use fetch); trim notifications\n- Remove live wallpapers/widgets and disable Live Activities\n- Update the OS and apps; reboot weekly\n- Charging habits: use quality/original chargers, avoid heat, try to keep charge between ~20\u201380%, remove thick case during fast charging\n- Clean the charging port (carefully) to ensure solid connections\n- Check battery health; if capacity is ~80% or lower, consider a battery replacement", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "0e4e4c46", "hypothesis": "132 points", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "0edc2aef", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "118b2229", "hypothesis": "45 minutes each way.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "1568498a", "hypothesis": "28. Kg3", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "18dcd5a5", "hypothesis": "4", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "195a1a1b", "hypothesis": "- 30\u201345 min sunset walk or an easy, well\u2011maintained beginner trail hike; or gentle cycling on a flat path\n- Short hip hop practice at home with a mellow dance playlist\n- Light gardening to unwind outside\n- Outdoor yoga, tai chi, or qigong session\n- Low\u2011key swim if convenient\n- Cultural movie night (e.g., The Farewell) with themed snacks and a brief discussion; wrap by ~8:45 pm\n- Reading under warm, soft table\u2011lamp lighting\n- Guided meditation with Headspace, Calm, or Insight Timer\n- Deep\u2011breathing and gentle stretching with soothing music\n- 9:15 pm devices away, prepare sleep environment, get ready for bed; 9:30 pm lights out", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "19b5f2b3", "hypothesis": "Two weeks", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "19b5f2b3_abs", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "1d4e3b97", "hypothesis": "Yes\u2014after you replaced your chain and cassette on February 1, your bike\u2019s performance improved, which you may be noticing most during your Sunday group rides.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "21d02d0d", "hypothesis": "2", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "22d2cb42", "hypothesis": "Rhythm Central on Main St.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "2788b940", "hypothesis": "5", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "28bcfaac", "hypothesis": "MusicTheory.net", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "29f2956b_abs", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "2a1811e2", "hypothesis": "21 days.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "2ce6a0f2", "hypothesis": "4", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "2e6d26dc", "hypothesis": "5", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "2ebe6c92", "hypothesis": "The Nightingale", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "352ab8bd", "hypothesis": "Approximately 20%", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "370a8ff4", "hypothesis": "11 weeks and 4 days", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "3ba21379", "hypothesis": "A Ford F-150 pickup truck model.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "3d86fd0a", "hypothesis": "At a coffee shop in the city.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "3fdac837", "hypothesis": "11 days.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "3fe836c9", "hypothesis": "$25,000", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "41698283", "hypothesis": "A 70\u2013200mm zoom lens.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "4388e9dd", "hypothesis": "An untidy, stained white shirt.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "45dc21b6", "hypothesis": "3", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "4b24c848", "hypothesis": "5", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "4c36ccef", "hypothesis": "Roscioli", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "561fabcd", "hypothesis": "Fissionator", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "59524333", "hypothesis": "6:00 pm", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "60159905", "hypothesis": "3", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "60472f9c", "hypothesis": "2", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "6071bd76", "hypothesis": "Less water per tablespoon.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "60d45044", "hypothesis": "Japanese short-grain rice.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "618f13b2", "hypothesis": "4", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "6456829e_abs", "hypothesis": "Tomatoes: 5; Chili peppers: I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "6ade9755", "hypothesis": "Serenity Yoga\u2014and at home using the Down Dog app.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "6aeb4375", "hypothesis": "4", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "6e984301", "hypothesis": "3", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "70b3e69b", "hypothesis": "Manolo Garc\u00eda", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "720133ac", "hypothesis": "$75", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "72e3ee87", "hypothesis": "50", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "75499fd8", "hypothesis": "Golden Retriever.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "75f70248", "hypothesis": "Yes\u2014very likely; with your shedding cat, dust and dander in the living room can trigger sneezing, so HEPA vacuuming and regular air-filter changes can help.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "76d63226", "hypothesis": "55-inch", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "80ec1f4f", "hypothesis": "2", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "80ec1f4f_abs", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "81507db6", "hypothesis": "3", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "86f00804", "hypothesis": "The Seven Husbands of Evelyn Hugo", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "8b9d4367", "hypothesis": "Jaipur Rugs", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "8cf4d046", "hypothesis": "3.83/4.0", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "8e91e7d9", "hypothesis": "4", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "94f70d80", "hypothesis": "4 hours", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "982b5123", "hypothesis": "5 months ago", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "982b5123_abs", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "993da5e2", "hypothesis": "One week", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "9aaed6a3", "hypothesis": "$0.75", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "a3838d2b", "hypothesis": "4", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "a9f6b44c", "hypothesis": "1", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "ac031881", "hypothesis": "LIV (inside a square)", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "ad7109d1", "hypothesis": "500 Mbps", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "b01defab", "hypothesis": "Yes.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "b46e15ed", "hypothesis": "2 months", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "b46e15ee", "hypothesis": "Walk for Hunger", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "b86304ba", "hypothesis": "Triple what you paid.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "bbf86515", "hypothesis": "4 days", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "bc8a6e93", "hypothesis": "A lemon blueberry cake.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "c2ac3c61", "hypothesis": "5", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "c4f10528", "hypothesis": "Miss Bee Providore", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "c7cf7dfd", "hypothesis": "Nostalgia", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "c8090214", "hypothesis": "7 days", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "caf03d32", "hypothesis": "- For consistent slow-cooker yogurt:\n  - Heat milk to 180\u2013185\u00b0F, cool to 110\u2013120\u00b0F; incubate 8\u201312 hours wrapped in a towel; chill, then strain for Greek-style thickness.\n  - Use a thermometer for reliability.\n  - Plant-based bases: choose unsweetened soy, coconut, almond, oat, or cashew; use a vegan yogurt starter or probiotic.\n\n- Cashew-based yogurt tips:\n  - Soak cashews at least 4 hours; drain and rinse.\n  - Blend 1 cup soaked cashews with ~1/2 cup water (adjust for thickness).\n  - Strain through a nut milk bag or cheesecloth (fine-mesh sieve works in a pinch).\n\n- Flavor/finish your yogurt:\n  - Flavorings: vanilla, cinnamon, fruit, nutmeg, ginger, lemon zest, cocoa.\n  - Sweeteners: maple or date syrup, coconut sugar, monk fruit, stevia.\n  - Add-ins: granola, nuts/seeds, cocoa nibs, dried fruit.\n\n- For better plant-based slow-cooker meals:\n  - Try Lentil Curry, Black Bean Chili, Roasted Vegetable Stew, Chickpea & Spinach Curry.\n  - Use varied veggies and grains; choose low-sodium canned goods and rinse; finish with a splash of vinegar or lemon to brighten flavors.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "cc06de0d", "hypothesis": "$6", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "ceb54acb", "hypothesis": "Sexual fixations; Problematic sexual behaviors; Sexual impulsivity; Compulsive sexuality.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "cf22b7bf", "hypothesis": "10 pounds", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "d01c6aa8", "hypothesis": "27", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "d682f1a2", "hypothesis": "3", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "dccbc061", "hypothesis": "You used to be a staunch atheist.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "dcfa8644", "hypothesis": "14 days.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "dd2973ad", "hypothesis": "2:00 AM", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "e47becba", "hypothesis": "Business Administration", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "e48988bc", "hypothesis": "Patagonia.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "e493bb7c", "hypothesis": "Above your bed in your bedroom.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "e61a7584", "hypothesis": "About 9 months.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "eac54adc", "hypothesis": "24 days ago.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "eeda8a6d", "hypothesis": "17", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "ef9cf60a", "hypothesis": "$300", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "f0853d11", "hypothesis": "14 days.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "f0e564bc", "hypothesis": "$1,300", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "f523d9fe", "hypothesis": "Doc Martin", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "f9e8c073", "hypothesis": "5", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "fca70973", "hypothesis": "- Disneyland \u2013 Halloween Time: Oogie Boogie Bash; must-tries: Pumpkin Beignets, Mummy Dogs, Bat Wing Chicken Tenders, Candy Corn Funnel Cake; consider Blue Bayou\u2019s Halloween menu, Carthay Circle\u2019s Halloween Feast, and Paradise Pier Hotel\u2019s Halloween character dining.\n- Knott\u2019s Scary Farm: haunted mazes and scare zones; Boo-fet dining; Calico Saloon Halloween menu; snacks: Graveyard Dirt Cups, Mummy Meatball Subs, Skeleton Fingers Cookies.\n- Universal Studios Hollywood \u2013 Halloween Horror Nights: houses and scare zones; VIP Experience\u2019s Gourmet Buffet (with front-of-line, lounge, guide, etc.); Terror Tipsy Turvey Lounge; bites: Flesh-Eating Zombie Fingers, Graveyard Cake Pops, Mummy Hot Dogs, Blood of the Vine.\n- Six Flags Magic Mountain \u2013 Fright Fest: mazes and themed rides; Fright Fest Feast; Full Throttle Sports Bar Halloween menu; treats: Zombie Brain Cupcakes, Mummy Dogs, Skeleton Keys Lime Bars, Witch\u2019s Brew.\n\nCheck each park\u2019s site for exact dates, availability, and VIP add-ons.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_15e38248", "hypothesis": "3", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "gpt4_1d4ab0c9", "hypothesis": "24 days.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_21adecb5", "hypothesis": "6 months", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_2312f94c", "hypothesis": "Samsung Galaxy S22", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_2487a7cb", "hypothesis": "Data Analysis using Python webinar", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_2ba83207", "hypothesis": "Thrive Market", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_2c50253f", "hypothesis": "6:45 AM", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_2f8be40d", "hypothesis": "4", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "gpt4_31ff4165", "hypothesis": "4", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_45189cb4", "hypothesis": "NBA game (Lakers vs. Bulls) \u2192 College Football National Championship \u2192 Chiefs vs. Bills Divisional Round", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_468eb064", "hypothesis": "Emma", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_4929293a", "hypothesis": "Michael\u2019s engagement party", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_4929293b", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "gpt4_4cd9eba1", "hypothesis": "One week", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_59149c78", "hypothesis": "The Museum of Modern Art (MoMA).", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "gpt4_68e94287", "hypothesis": "Your post about the vegan chili recipe.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_6dc9b45b", "hypothesis": "4 months ago", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_731e37d7", "hypothesis": "$220", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "gpt4_7ca326fa", "hypothesis": "Emma first, Rachel second, Alex third.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_7ddcf75f", "hypothesis": "3 days ago.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_7de946e7", "hypothesis": "Persistent cough", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_85da3956", "hypothesis": "3 weeks", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_93159ced", "hypothesis": "4 years and 9 months", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_9a159967", "hypothesis": "United Airlines", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_a2d1d1f6", "hypothesis": "3 days ago.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_ab202e7f", "hypothesis": "5", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_b5700ca0", "hypothesis": "The Episcopal Church.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "01493427", "hypothesis": "25", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "031748ae", "hypothesis": "Initially, 4 engineers. Now, 5 engineers.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "031748ae_abs", "hypothesis": "4", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "06878be2", "hypothesis": "- On-camera lighting: Godox V1 (Sony) or Sony HVL-F60RM; portable strobe: Godox AD200\n- Flash protection/carry: Godox V1 Hard Case; Think Tank Photo Flash Pouch; Vello Flash Pouch\n- Power on the go (USB-C PD): Anker PowerCore 20000 PD; Mophie Powerstation XXL; Jackery Titan S 20000\n- Support: Gitzo GT3543LS tripod (G-Lock Ultra system) for stability\n- Carrying: Comfortable, durable bags from Think Tank Photo, Lowepro, F-Stop Gear, Peak Design, MindShift Gear\n- Lens care: microfiber cloth, lens cleaning tissue or pre-moistened wipes, blower bulb, lens cleaning solution\n- Styling/processing for candle photos: simple props (pebbles, flowers, greenery); Adobe Lightroom or Photoshop for consistent edits", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "06db6396", "hypothesis": "5", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "06f04340", "hypothesis": "- Grilled chicken or fish with lemon + garden herb marinade (thyme/rosemary/parsley)\n- Veggie-packed whole\u2011grain pasta primavera (cherry tomatoes, bell peppers, onions, mushrooms)\n- Stuffed bell peppers (rice, black beans, diced garden tomatoes, a little cheese)\n- Garden salad (mixed greens, cucumbers, carrots, cherry tomatoes) with an herb vinaigrette\n- Grilled veggie skewers or a roasted vegetable salad (cherry tomatoes, mushrooms, bell peppers, asparagus/Brussels sprouts/sweet potatoes)\n- Herbed quinoa or brown rice pilaf (parsley, lemon)\n- Dessert: fresh fruit tart or a Greek yogurt parfait bar with fruit\n- Signature drink: your Spicy Mango Margarita with jalape\u00f1o heat", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "07741c44", "hypothesis": "Under my bed.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "07741c45", "hypothesis": "Under your bed.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "078150f1", "hypothesis": "$50", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "07b6f563", "hypothesis": "- Screen protector (iPhone 13 Pro): Zagg, TechArmor, Spigen, BodyGuardz, Belkin, Anker, UAG, Skinomi\n- Wallet case (iPhone 13 Pro): Nomad, Bellroy, Spigen, Incipio, Speck, Case-Mate, Tech21, UAG, Mophie, OtterBox\n- Wireless charging power bank upgrade: Anker, Mophie, EC Technology, RavPower, Jackery, Aukey, Romoss, Xiaomi, EcoFlow, Auromars", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "0977f2af", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "099778bb", "hypothesis": "20%", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "09ba9854", "hypothesis": "$50", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "0a34ad58", "hypothesis": "- Get a Suica (or Pasmo) and use it to tap in/out at station gates; reload as needed. If unsure about fares or gates, ask station staff.\n- Plan routes with a transit app or Google Maps; check schedules and account for transfers.\n- From Narita Airport to Shinjuku: follow signs to the JR East station and take the JR Narita Express (N\u2019EX), then transfer to the JR Yamanote Line if needed; you can use your Suica.\n- Example route practice (Shinjuku \u2192 Tsukiji): JR Yamanote Line to Shimbashi \u2192 transfer to the Tokyo Metro Ginza Line toward Asakusa \u2192 2 stops to Tsukijishijo Station.\n- Prefer ATMs for yen (often better rates): 7\u2011Eleven ATMs and bank ATMs inside Shinjuku Station accept international cards. Notify your bank before travel.\n- If you need cash exchange near Park Hyatt Tokyo: Travelex (Shinjuku Station), Seven Bank (Shinjuku Station), Lawson Bank nearby; bring your passport.\n- For a low\u2011stress option on busy routes, taxis work well (e.g., Shinjuku \u2194 Tsukiji ~20\u201330 min, about \u00a54,000\u20135,000).\n- Be prepared for crowds and keep an eye on your belongings (and your Suica).\n- Use TripIt to keep meeting points, reservations, and tickets handy.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "0a995998", "hypothesis": "3", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "0bb5a684", "hypothesis": "7 days.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "0bc8ad92", "hypothesis": "5 months", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "0bc8ad93", "hypothesis": "No", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "0db4c65d", "hypothesis": "18 days.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "0ddfec37", "hypothesis": "15", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "0ddfec37_abs", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "0e5e2d1a", "hypothesis": "38", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "0ea62687", "hypothesis": "2 mpg", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "0f05491a", "hypothesis": "120 stars.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "10d9b85a", "hypothesis": "13 days", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "10e09553", "hypothesis": "7", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "1192316e", "hypothesis": "An hour and a half.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "129d1232", "hypothesis": "$5,850", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "15745da0", "hypothesis": "Three months.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "15745da0_abs", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "157a136e", "hypothesis": "43 years", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "16c90bf4", "hypothesis": "A pilsner or a lager (ideally a local Ancash beer).", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "184da446", "hypothesis": "220", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "18bc8abd", "hypothesis": "Kansas City Masterpiece", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "1903aded", "hypothesis": "Transcriptionist", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "1a1907b4", "hypothesis": "Pimm\u2019s Cup with a Twist: 1.5 oz Hendrick\u2019s, 0.5 oz Pimm\u2019s No. 1, 0.5 oz lemon juice, 0.5 oz Ruby Red Grapefruit simple syrup; muddle cucumber and mint, top with ginger beer. Serve in a Collins with a garnish tray (cucumber, mint, citrus, berries).", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "1a8a66a6", "hypothesis": "2", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "1b9b7252", "hypothesis": "Mindful.org.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "1c0ddc50", "hypothesis": "- On the bike (hands-free):\n  - Queue up history/science podcasts: Hardcore History (Wrath of the Khans), Lore, The Dollop, Radiolab, StarTalk, Stuff You Should Know.\n  - Short guided meditation or nature sounds (Headspace/Calm) to ease anxiety.\n  - Language-learning listening drills (Duolingo/Babbel).\n  - Mental prep: set your top 3 priorities for the day.\n\n- On bus days:\n  - 10\u201315 min mindful breathing or progressive muscle relaxation.\n  - Quick journal or a 3-item gratitude list.\n  - Comedy/storytelling for mood: My Brother, My Brother and Me; The Bugle; How Did This Get Made?; Welcome to Night Vale; The Magnus Archives.\n  - Catch up on news/industry pods or How I Built This.\n\n- Safety for biking audio: keep volume low, avoid earbuds that block hearing; use a phone mount if needed.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "1c549ce4", "hypothesis": "$140", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "1cea1afa", "hypothesis": "600", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "1d4da289", "hypothesis": "Biometric authentication and one-time passwords (OTP), such as a code sent to your mobile device.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "1da05512", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "1de5cff2", "hypothesis": "Veja", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "1e043500", "hypothesis": "Summer Vibes", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "1f2b8d4f", "hypothesis": "$750", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "1faac195", "hypothesis": "Denver, Colorado.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "2133c1b5", "hypothesis": "3 months", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "2133c1b5_abs", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "21436231", "hypothesis": "12", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "2311e44b", "hypothesis": "190", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "2311e44b_abs", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "2318644b", "hypothesis": "$270", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "25e5aa4f", "hypothesis": "University of California, Los Angeles (UCLA)", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "2698e78f", "hypothesis": "Every week.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "2698e78f_abs", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "26bdc477", "hypothesis": "5", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "27016adc", "hypothesis": "10%", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "28dc39ac", "hypothesis": "140 hours", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "29f2956b", "hypothesis": "30 minutes daily.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "2b8f3739", "hypothesis": "$495", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "2bf43736", "hypothesis": "Second Part, Book I, Chapter 4 (\u201cVocal Prayer and Meditation\u201d).", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "2c63a862", "hypothesis": "14 days.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "2ebe6c90", "hypothesis": "21 days.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "311778f1", "hypothesis": "10 hours", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "32260d93", "hypothesis": "Hasan Minhaj: Homecoming King (Netflix)", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "3249768e", "hypothesis": "Absinthe.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "36580ce8", "hypothesis": "Bronchitis.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "36b9f61e", "hypothesis": "$2,500", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "37d43f65", "hypothesis": "16GB", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "37f165cf", "hypothesis": "416 and 440 pages.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "3a704032", "hypothesis": "2", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "3b6f954b", "hypothesis": "The University of Melbourne.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "3c1045c8", "hypothesis": "2.5 years", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "3e321797", "hypothesis": "10 minutes", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "3f1e9474", "hypothesis": "Sarah", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "4100d0a0", "hypothesis": "A mix of Irish and Italian.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "41275add", "hypothesis": "\u201cHow to Sit Properly at a Desk to Avoid Back Pain\u201d \u2014 https://www.youtube.com/watch?v=UfOvNlX9Hh0", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "42ec0761", "hypothesis": "Yes.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "46a3abf7", "hypothesis": "3", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "488d3006", "hypothesis": "GR-90", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "4adc0475", "hypothesis": "5", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "4baee567", "hypothesis": "12", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "4bc144e2", "hypothesis": "$65", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "4d6b87c8", "hypothesis": "25", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "4dfccbf7", "hypothesis": "24 days.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "4dfccbf8", "hypothesis": "You started taking ukulele lessons with Rachel.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "4f54b7c9", "hypothesis": "5", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "4fd1909e", "hypothesis": "The Xfinity Center.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "5025383b", "hypothesis": "Cooking and photography.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "50635ada", "hypothesis": "Premier Silver", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "51a45a95", "hypothesis": "At Target.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "51b23612", "hypothesis": "Nu, pogodi!", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "51c32626", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "545bd2b5", "hypothesis": "Around 2 hours per day.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "55241a1f", "hypothesis": "33", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "577d4d32", "hypothesis": "7:00 PM", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "5809eb10", "hypothesis": "2014.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "58470ed2", "hypothesis": "\u201cThe Library is a sphere whose exact center is any one of its hexagons and whose circumference is inaccessible.\u201d", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "58bf7951", "hypothesis": "The Glass Menagerie", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "5a7937c8", "hypothesis": "3", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "5e1b23de", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "60036106", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "60bf93ed", "hypothesis": "5 days.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "60bf93ed_abs", "hypothesis": "10 days.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "61f8c8f8", "hypothesis": "10 minutes", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "6456829e", "hypothesis": "8", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "6613b389", "hypothesis": "2 months", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "67e0d0f2", "hypothesis": "20", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "6e984302", "hypothesis": "A set of sculpting tools: a modeling tool set, a wire cutter, and a sculpting mat.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "71017276", "hypothesis": "4 weeks ago", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "71017277", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "8077ef71", "hypothesis": "26 days ago.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "8c18457d", "hypothesis": "7 days.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "9a707b81", "hypothesis": "21 days", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "9a707b82", "hypothesis": "rice", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "a3045048", "hypothesis": "7 days.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "af082822", "hypothesis": "Two weeks ago.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "b29f3365", "hypothesis": "Four weeks", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "b9cfe692", "hypothesis": "5.5 weeks", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "bcbe585f", "hypothesis": "4 weeks ago", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "c8090214_abs", "hypothesis": "171 days", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "c9f37c46", "hypothesis": "11 weeks", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "cc6d1ec1", "hypothesis": "Two months", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "e4e14d04", "hypothesis": "Two weeks", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "eac54add", "hypothesis": "You signed a contract with your first client.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_0a05b494", "hypothesis": "The woman selling jam at the farmer\u2019s market.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_0b2f1d21", "hypothesis": "The malfunction of the stand mixer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_18c2b244", "hypothesis": "First: I used a Buy One Get One Free coupon on Luvs diapers at Walmart. Then: I redeemed $12 cashback for a $10 Amazon gift card from Ibotta. Last: I signed up for the rewards program at ShopRite.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_1916e0ea", "hypothesis": "54 days.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "35a27287", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "38146c39", "hypothesis": "- Swap 1/4\u20131/2 of the granulated sugar for turbinado for caramel depth\n- Add a touch of espresso/coffee to amplify the chocolate\n- Stir in toasted nuts (walnuts, pecans, or sliced almonds) for crunch\n- Brighten with orange or lemon zest\n- Fold in dried cherries or cranberries for chewy tartness\n- Finish with a pinch of flaky sea salt on top before baking\n- For extra depth, use brown butter and a pinch of warm spice (cinnamon, nutmeg, or cardamom)", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "505af2f5", "hypothesis": "- Vanilla-Cinnamon Almond Creamer (low sugar): Unsweetened almond milk + vanilla extract + ground cinnamon + pinch sea salt + monk fruit (or a little honey). Whisk or blend; shake before using.\n- Mocha Hazelnut Creamer: Unsweetened almond or cashew milk + unsweetened cocoa powder + vanilla + hazelnut extract + pinch salt + stevia/monk fruit. Blend smooth.\n- Cardamom-Coconut (extra creamy): Cashew or oat milk + ground cardamom + a little cinnamon + coconut extract + pinch salt + stevia/monk fruit (or a small drizzle of honey). Optional: stir in probiotic powder once cool.\n\nTip: Use a reusable glass bottle to reduce waste and just shake before each pour.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "54026fce", "hypothesis": "- Start a weekly, optional virtual coffee break (keep it light\u2014no work talk, respect time, rotate conversation starters).\n- Host online team activities (trivia, online escape rooms).\n- Create social channels on Slack/Teams for non-work chat.\n- Celebrate milestones and birthdays with quick shout-outs or brief virtual gatherings.\n- Form interest-based groups (book club, fitness or hobby challenges).\n- Join/launch cross-department working groups to collaborate informally.\n\nTip: Introduce the idea collaboratively\u2014ask the team how they\u2019d like to stay connected, gather feedback, choose a convenient time, and stay flexible.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "57f827a0", "hypothesis": "- Keep the Wi\u2011Fi path clear: avoid placing large pieces between your living\u2011room router/range extender and your bedroom laptop/smart speaker; raising the router/extender or moving the extender closer to the bedroom can help.\n- Support better sleep: keep the room cool (about 60\u201367\u00b0F), dark, and quiet; use your smart bulbs to dim/warm light in the evening.\n- Lean into your mid\u2011century modern vibe: prioritize clean lines and minimal ornamentation; favor airy, tapered\u2011leg pieces and uncluttered surfaces.\n- Create functional zones (sleep, dressing): keep frequently used items within easy reach, store heavier items lower, and use vertical space to cut clutter.\n- If coverage is still spotty after rearranging, set QoS to prioritize the bedroom laptop/smart speaker or consider adding a mesh node nearer the bedroom.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "5831f84d", "hypothesis": "15", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "58ef2f1c", "hypothesis": "Valentine\u2019s Day (February 14).", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "5a4f22c0", "hypothesis": "TechCorp", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "5c40ec5b", "hypothesis": "2", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "5d3d2817", "hypothesis": "Marketing specialist at a small startup.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "603deb26", "hypothesis": "10", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "6222b6eb", "hypothesis": "6S", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "65240037", "hypothesis": "1:10 \u2014 one part tea tree oil to ten parts carrier oil.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "66f24dbb", "hypothesis": "A yellow dress and a matching pair of earrings.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "681a1674", "hypothesis": "2", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "69fee5aa", "hypothesis": "38", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "6a1eabeb", "hypothesis": "25:50", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "6a27ffc2", "hypothesis": "30", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "6ae235be", "hypothesis": "Atmospheric distillation; fluid catalytic cracking (FCC); alkylation; hydrotreating.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "6aeb4375_abs", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "6b168ec8", "hypothesis": "Three.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "6b7dfb22", "hypothesis": "- Refresh your 30-day challenge with focused mini-prompts:\n  - Palette-knife days: try swirls, dabbing/dotting, scraping/revealing, and thick layered impasto.\n  - Color/flower studies: emphasize careful color mixing and a soft underpainting.\n  - Herb series: paint quick studies of your balcony basil, rosemary, thyme, etc.\n- Change the environment: work by a north-facing window or upgrade lighting; add inspiring studio touches (art/prints, plants, music) and tidy/organize to feel fresh.\n- Seek outside sparks: browse art communities/social feeds for prompts; consider a local art class or group for new ideas and feedback.\n- Keep momentum: set small session goals, use short focused work blocks, track progress in a simple journal, and allow brief resets when energy dips.\n- If selling is on your mind, plan a small cohesive mini-series you\u2019ll be excited to photograph later\u2014having a theme can reignite motivation.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "6c49646a", "hypothesis": "3,000 miles", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "6cb6f249", "hypothesis": "17 days", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "6d550036", "hypothesis": "3", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "6f9b354f", "hypothesis": "A lighter shade of gray.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "7024f17c", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "71315a70", "hypothesis": "10\u201312 hours", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "7161e7e2", "hypothesis": "8 am \u2013 4 pm (Day Shift)", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "71a3fd6b", "hypothesis": "+49 (0) 62 32 / 14 23 - 0", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "726462e0", "hypothesis": "10%", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "73d42213", "hypothesis": "9:00 AM", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "7401057b", "hypothesis": "2", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "7405e8b1", "hypothesis": "Yes", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "7527f7e2", "hypothesis": "$800", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "75832dbd", "hypothesis": "- Publications:\n  - Explainable AI in Medical Imaging: A Survey (Rajpurkar et al., 2020)\n  - Explanation Methods for Medical Image Analysis: A Systematic Review (Jimenez-S\u00e1nchez et al., 2020)\n  - Explainable AI for Medical Image Analysis: A Review (Rajpurkar et al., 2020)\n  - Domain Adaptation for Medical Image Analysis: A Survey (Dou et al., 2020)\n  - Medical Image Synthesis using Generative Adversarial Networks: A Review (Wang et al., 2020)\n  - Interpretable Deep Learning for Cardiac Image Segmentation (Wang et al., 2020)\n  - Explainable AI for Lung Nodule Detection in CT Scans (Chen et al., 2020)\n  - Fusion of Multi-Modal Medical Images using Deep Learning (Rajpurkar et al., 2020)\n  - Multi-Modal Image Fusion for Breast Cancer Diagnosis using Deep Learning (Chen et al., 2020)\n\n- Conferences:\n  - NeurIPS, CVPR, ICML, ICLR, ICCV", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "778164c6", "hypothesis": "Escovitch Fish", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "77eafa52", "hypothesis": "$300", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "7a87bd0c", "hypothesis": "4 weeks", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "7a8d0b71", "hypothesis": "$2,000", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "7e00a6cb", "hypothesis": "International Budget Hostel", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "7e974930", "hypothesis": "$420", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "830ce83f", "hypothesis": "Chicago", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "8464fc84", "hypothesis": "Roscioli", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "852ce960", "hypothesis": "$400,000", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "853b0a1d", "hypothesis": "18 years old.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "8550ddae", "hypothesis": "Lavender gin fizz", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "85fa3a3f", "hypothesis": "$50", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "86b68151", "hypothesis": "IKEA", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "8752c811", "hypothesis": "Sound effects (e.g., ambient, diegetic, non-diegetic, etc.).", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "87f22b4a", "hypothesis": "$120", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "88432d0a", "hypothesis": "4", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "88432d0a_abs", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "89527b6b", "hypothesis": "Blue.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "8979f9ec", "hypothesis": "8", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "89941a93", "hypothesis": "4", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "89941a94", "hypothesis": "Yes.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "8a137a7f", "hypothesis": "A Philips LED bulb.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "8a2466db", "hypothesis": "- Adobe Premiere Pro official docs and tutorials\n- YouTube: Premiere Bro, Video Copilot, Adobe Creative Cloud\n- Courses: Udemy, LinkedIn Learning, Skillshare\n- Communities: Reddit r/premierepro, Adobe\u2019s Premiere Pro forum", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "8aef76bc", "hypothesis": "Mod Podge (or another sealant).", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "8cf51dda", "hypothesis": "1) Identify molecular subtypes of endometrial cancer using genomic and transcriptomic approaches.\n2) Investigate the clinical and biological significance of these subtypes, including associations with patient outcomes and therapy response.\n3) Develop biomarkers for early detection and prognosis based on the identified subtypes.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "8e9d538c", "hypothesis": "17", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "8ebdbe50", "hypothesis": "Data Science certification.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "8fb83627", "hypothesis": "5", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "91b15a6e", "hypothesis": "$5,150", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "92a0aa75", "hypothesis": "1 year and 5 months", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "945e3d21", "hypothesis": "Three times a week.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "95228167", "hypothesis": "- Try Les Paul models with coil\u2011tap/coil\u2011split for versatility (e.g., Les Paul Standard, Traditional, Custom). Compare split (brighter/snappier) vs full humbucker (warm/sustain), especially if you play in open D.\n- If choosing between Strat and Les Paul: Strat = brighter/snappier, 3 single\u2011coils/5\u2011way, lighter; Les Paul = warmer/fuller with more sustain, 2 humbuckers/3\u2011way, heavier. Play both and pick the one that feels like \u201chome.\u201d\n- Test for your use cases:\n  - Open D: heavier strings (about 0.012\u20130.056), confirm action/intonation, and try the neck pickup; ensure it stays in tune and feels right.\n  - Fingerpicking (e.g., Blackbird): also try an acoustic or fingerstyle\u2011focused guitar. If staying electric, try lighter strings and the neck pickup for a mellower tone.\n- Style fit: If you lean toward rock/hard rock/heavy metal/classic rock/blues/Southern rock, a Les Paul is a strong match.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "95bcc1c8", "hypothesis": "10", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "9bbe84a2", "hypothesis": "Level 100.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "9d25d4e0", "hypothesis": "3", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "9ea5eabc", "hypothesis": "Paris", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "9ee3ecd6", "hypothesis": "300 points.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "a06e4cfe", "hypothesis": "3:1", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "a08a253f", "hypothesis": "3 days", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "a11281a2", "hypothesis": "100", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "a1cc6108", "hypothesis": "11", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "a1eacc2a", "hypothesis": "7", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "a2f3aa27", "hypothesis": "About 1,300.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "a3332713", "hypothesis": "$200", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "a346bb18", "hypothesis": "12 minutes", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "a40e080f", "hypothesis": "Patagonia and Southwest Airlines.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "a4996e51", "hypothesis": "50 hours per week", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "a82c026e", "hypothesis": "Dark Souls 3 DLC", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "a89d7624", "hypothesis": "- Catch a show: Red Rocks Park and Amphitheatre, Ogden Theatre, Bluebird Theater, Fillmore Auditorium, Larimer Lounge\n- Festivals (timing-dependent): Westword Music Showcase, Grandoozy, Denver Folk Festival, Denver Jazz Festival, Riot Fest Denver\n- Dig into the scene: Twist & Shout Records; catch smaller gigs at the hi-dive or the Marquis Theater\n- Pre-show BBQ near Red Rocks: GQue (Golden), Dinosaur Bar-B-Que (Lakewood), Moe\u2019s Original BBQ (Wheat Ridge), Big B\u2019s Delicious BBQ (Arvada), Wayne\u2019s Smoke Shack (Morrison)\n- Walkable to Red Rocks: Ship Rock Grille, The Village Tavern\n- Planning tip: Use Songkick or Bandsintown to track shows and set alerts", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "a96c20ee", "hypothesis": "Harvard University", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "a96c20ee_abs", "hypothesis": "Harvard University.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "aae3761f", "hypothesis": "15 hours", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "af8d2e46", "hypothesis": "7", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "afdc33df", "hypothesis": "- Streamline utensils to keep counters clear: purge duplicates; group by task; assign each group a home in your holder; add dividers/compartments; put most\u2011used items front/center; use vertical space and small containers; label sections; clean the holder regularly.\n- Care for granite counters: use a stone-specific soap; for light scratches try a baking soda + water paste or rub in a little mineral oil; use a granite repair kit or a pro for deeper marks.\n- Keep the sink area under control: address the slightly leaking faucet (repair/replace) to prevent puddles and buildup.\n- Deodorize and maintain the garbage disposal regularly: 1/2 cup baking soda + 1 cup vinegar, let sit 1\u20132 hours, then hot rinse; or grind a few ice cubes with 1 tbsp rock salt under cold water; grind citrus pieces to freshen; always run cold water while it\u2019s on; consider replacement if it\u2019s old (10\u201315 years), leaking, frequently clogging, noisy, or corroded.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "affe2881", "hypothesis": "32", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "b0479f84", "hypothesis": "Try these on Netflix tonight:\n- Dynasties\n- Chasing Coral\n- Planet Earth\n- Blue Planet\n- March of the Penguins\n- The Last Lions", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "b320f3f8", "hypothesis": "A rare blue Snaggletooth action figure.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "b3c15d39", "hypothesis": "5 days.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "b5ef892d", "hypothesis": "8 days", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "b6019101", "hypothesis": "5", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "b6025781", "hypothesis": "- Chicken fajita quinoa bowls (grilled chicken, peppers/onions, lime-cilantro quinoa, avocado)\n- Black bean + roasted sweet potato enchiladas (salsa verde; freezer-friendly)\n- Chipotle lentil\u2013mushroom ragu over quinoa with roasted corn and cilantro\n- Chickpea and roasted veggie shawarma bowls with lemon\u2013tahini sauce\n- Sheet-pan chili\u2013lime salmon with broccoli and sweet potato wedges\n- Slow-cooker salsa verde shredded chicken for tacos, bowls, or quesadillas\n- Greek quinoa salad jars (cucumber, tomato, olives, feta, herby chickpeas)\n- Maple\u2013miso roasted tofu with sesame quinoa and garlicky spinach\n- Big-batch olive oil\u2013maple almond granola (cinnamon, toasted oats, dried cherries)\n- Sides to mix in all week: balsamic Brussels with pecans; garlicky saut\u00e9ed kale; toasted pumpkin seeds; feta or Parmesan", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "b759caee", "hypothesis": "@jessica_poole_jewellery", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "ba358f49", "hypothesis": "33", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "ba358f49_abs", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "ba61f0b9", "hypothesis": "6", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "bb7c3b45", "hypothesis": "$300", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "bc149d6b", "hypothesis": "70 pounds", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "bc8a6e93_abs", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "bf659f65", "hypothesis": "2", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "c14c00dd", "hypothesis": "Trader Joe\u2019s", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "c18a7dc8", "hypothesis": "7", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "c19f7a0b", "hypothesis": "6:30 PM", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "c4a1ceb8", "hypothesis": "3", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "c4ea545c", "hypothesis": "Yes", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "c5e8278d", "hypothesis": "Johnson", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "c6853660", "hypothesis": "Increased.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "c7dc5443", "hypothesis": "5-2", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "c8c3f81d", "hypothesis": "Nike", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "c8f1aeed", "hypothesis": "Pennsylvania", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "c960da58", "hypothesis": "20", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "caf9ead2", "hypothesis": "Around 5 hours.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "cc539528", "hypothesis": "Ruby, Python, and PHP.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "cc5ded98", "hypothesis": "About two hours each day.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "ccb36322", "hypothesis": "Spotify", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "ce6d2d27", "hypothesis": "Friday", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "d23cf73b", "hypothesis": "4", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "d24813b1", "hypothesis": "- Lemon Blueberry Cake or Lemon\u2013Lavender Pound Cake: Bake a day ahead; wrap airtight. Keeps ~3 days at room temp (5 refrigerated).\n- Chewy Chocolate Chip Cookies: Use more brown sugar, chill the dough, don\u2019t overmix, and slightly underbake for softness.\n- Healthier cookie tray: Try cranberry\u2013white chocolate, maple\u2013pecan, or lemon\u2013rosemary; swap in oat/almond flour and coconut sugar.\n- Showstopper: Mocha chocolate cake with caramel ganache; make ganache ahead, chill, and gently rewarm if too thick.\n- Savory balance: Vegan lasagna with cashew \u201cricotta\u201d for any plant-based colleagues.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "d3ab962e", "hypothesis": "8 miles", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "d52b4f67", "hypothesis": "The Grand Ballroom.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "d596882b", "hypothesis": "By Chloe.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "d6062bb9", "hypothesis": "1,998", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "d6233ab6", "hypothesis": "Yes\u2014since you remember high school fondly (debate team and AP econ), the reunion is likely to feel meaningful; if you\u2019re nervous, make a brief appearance or set up 1:1 catch-ups with a few close friends.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "d7c942c3", "hypothesis": "Yes.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "d851d5ba", "hypothesis": "$3,750", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "d905b33f", "hypothesis": "20%", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "dad224aa", "hypothesis": "7:30 am", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "db467c8c", "hypothesis": "Nine months.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "dc439ea3", "hypothesis": "Hoop Dance", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "dfde3500", "hypothesis": "Wednesday", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "e01b8e2f", "hypothesis": "Hawaii.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "e25c3b8d", "hypothesis": "$300", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "e3038f8c", "hypothesis": "99", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "e3fc4d6e", "hypothesis": "Dr. Arati Prabhakar", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "e56a43b9", "hypothesis": "$5", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "e5ba910e_abs", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "e6041065", "hypothesis": "40%", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "e66b632c", "hypothesis": "27:45", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "e831120c", "hypothesis": "3.5 weeks", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "e8a79c70", "hypothesis": "2 to 3 eggs", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "e9327a54", "hypothesis": "The Sugar Factory at Icon Park.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "e982271f", "hypothesis": "Revolution Hall", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "eaca4986", "hypothesis": "C D E F G A B A G F E D C", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "eace081b", "hypothesis": "On Oahu.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "ec81a493", "hypothesis": "500", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "ed4ddc30", "hypothesis": "20", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "edced276", "hypothesis": "15", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "edced276_abs", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "eeda8a6d_abs", "hypothesis": "17", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "ef66a6e5", "hypothesis": "2", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "efc3f7c2", "hypothesis": "30 minutes", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "f35224e0", "hypothesis": "27", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "f4f1d8a4", "hypothesis": "Your sister.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "f4f1d8a4_abs", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "f685340e", "hypothesis": "Previously: weekly. Now: every other week.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "f685340e_abs", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "f8c5f88b", "hypothesis": "A sports store downtown.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "faba32e5", "hypothesis": "24 hours", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "fca762bc", "hypothesis": "Memrise", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "fea54f57", "hypothesis": "Evolution", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_194be4b3", "hypothesis": "4", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_1a1dc16d", "hypothesis": "meeting with Rachel", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_1d80365e", "hypothesis": "2 days.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_1e4a8aeb", "hypothesis": "6 days", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_1e4a8aec", "hypothesis": "You planted 12 new tomato saplings.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_213fd887", "hypothesis": "The volleyball league.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_2655b836", "hypothesis": "The GPS system malfunctioned and had to be replaced.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_2d58bcd6", "hypothesis": "The Hate U Give", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_2f56ae70", "hypothesis": "Disney+", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_2f584639", "hypothesis": "The photo album for my mom.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_2f91af09", "hypothesis": "23", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_372c3eed", "hypothesis": "10", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_372c3eed_abs", "hypothesis": "10 years", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "gpt4_385a5000", "hypothesis": "Tomatoes.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_468eb063", "hypothesis": "9 days.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_483dd43c", "hypothesis": "Game of Thrones", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_4edbafa2", "hypothesis": "June 3rd", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_4ef30696", "hypothesis": "1 day.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_4fc4f797", "hypothesis": "59 days.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "gpt4_5438fa52", "hypothesis": "The start of your Spanish classes.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_5501fe77", "hypothesis": "TikTok", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_59149c77", "hypothesis": "7 days.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_59c863d7", "hypothesis": "5", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_5dcc0aab", "hypothesis": "white Adidas sneakers", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_61e13b3c", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "gpt4_65aabe59", "hypothesis": "smart thermostat", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_68e94288", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "gpt4_6ed717ea", "hypothesis": "The training pads for Luna.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_70e84552", "hypothesis": "Fixing the fence.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_70e84552_abs", "hypothesis": "The information provided is not enough. You mentioned fixing the fence, but did not mention purchasing three cows from Peter.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_74aed68e", "hypothesis": "29 days.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_76048e76", "hypothesis": "The bike.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_78cf46a3", "hypothesis": "The narrator receiving their new phone case.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_7a0daae1", "hypothesis": "1 week", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_7abb270c", "hypothesis": "Science Museum, Metropolitan Museum of Art, Museum of History, Modern Art Gallery, Modern Art Museum, Natural History Museum.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "gpt4_7bc6cf22", "hypothesis": "12 days ago.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_7f6b06db", "hypothesis": "Muir Woods day hike \u2192 Big Sur and Monterey road trip \u2192 Yosemite solo camping trip", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_7fce9456", "hypothesis": "4", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_8279ba02", "hypothesis": "10 days", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_8279ba03", "hypothesis": "A smoker.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_88806d6e", "hypothesis": "Tom", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_8c8961ae", "hypothesis": "The solo trip to Thailand.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_8e165409", "hypothesis": "14 days.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_93159ced_abs", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_93f6379c", "hypothesis": "Page Turners", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_98f46fc6", "hypothesis": "The charity bake sale.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_a1b77f9c", "hypothesis": "8 weeks", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_a56e767c", "hypothesis": "4", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_af6db32f", "hypothesis": "17 days ago.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_b0863698", "hypothesis": "7 days ago", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_b4a80587", "hypothesis": "The arrival of the new prime lens.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_b5700ca9", "hypothesis": "4 days ago.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_c27434e8", "hypothesis": "Japanese Zero fighter plane model", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_c27434e8_abs", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_cd90e484", "hypothesis": "Two weeks", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_d12ceb0e", "hypothesis": "59.6", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_d31cdae3", "hypothesis": "The family road trip across the American Southwest.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_d6585ce8", "hypothesis": "- Billie Eilish at the Wells Fargo Center in Philly with your sister (Mar 18)\n- Free outdoor concert series in the park (Mar 25)\n- Music festival in Brooklyn with friends (Apr 1)\n- Jazz night at a local bar (Apr 8)\n- Queen + Adam Lambert at the Prudential Center in Newark with your parents (Apr 15)", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_d6585ce9", "hypothesis": "Your parents.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_d84a3211", "hypothesis": "$185", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_d9af6064", "hypothesis": "The new router.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_e05b82a6", "hypothesis": "10", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_e061b84f", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "gpt4_e061b84g", "hypothesis": "The company\u2019s annual charity soccer tournament.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_e072b769", "hypothesis": "2 weeks and 6 days ago.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_e414231e", "hypothesis": "4 days.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_e414231f", "hypothesis": "Road bike.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_ec93e27f", "hypothesis": "Train", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_f2262a51", "hypothesis": "3", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_f420262c", "hypothesis": "JetBlue, Delta, United, American, American", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_f420262d", "hypothesis": "American Airlines", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_f49edff3", "hypothesis": "Helped my friend prepare the nursery \u2192 Helped my cousin pick out stuff for her baby shower \u2192 Ordered a customized phone case for my friend's birthday.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_fa19884c", "hypothesis": "6 days", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_fa19884d", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": false}}
+{"question_id": "gpt4_fe651585", "hypothesis": "Alex", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
+{"question_id": "gpt4_fe651585_abs", "hypothesis": "I do not have enough information to answer.", "autoeval_label": {"model": "gpt-4o-2024-08-06", "label": true}}
