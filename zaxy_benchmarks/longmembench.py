@@ -2537,9 +2537,8 @@ def _openai_compatible_answer(
     max_tokens: int = 96,
 ) -> str:
     """Generate a concise answer from checkout evidence through chat completions."""
-    if not pure_reader:
-        if answer_candidate := _answer_ready_preference_candidate(question, contexts):
-            return answer_candidate
+    if not pure_reader and (answer_candidate := _answer_ready_preference_candidate(question, contexts)):
+        return answer_candidate
     prompt = "\n\n".join(contexts[:reader_context_limit])
     default_system_prompt = (
         "Answer the LongMemEval question using only the supplied Zaxy "
@@ -2617,7 +2616,16 @@ def _openai_compatible_answer(
         if server_attempts >= max_retries:
             break
         server_attempts += 1
-        time.sleep(min(90.0, 10.0 * server_attempts))
+        # Honor a server-provided Retry-After on 5xx; otherwise back off linearly.
+        retry_after = response.headers.get("retry-after")
+        if retry_after is not None:
+            try:
+                delay = float(retry_after)
+            except ValueError:
+                delay = 10.0 * server_attempts
+        else:
+            delay = 10.0 * server_attempts
+        time.sleep(min(90.0, delay))
     if response is None:
         raise ValueError("OpenAI-compatible request was not attempted")
     response.raise_for_status()

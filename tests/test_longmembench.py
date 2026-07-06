@@ -1460,7 +1460,9 @@ def test_generate_openai_hypotheses_uses_answer_ready_candidate_before_filtering
     assert calls == []
     assert report.question_count == 1
     assert rows[0]["question_id"] == "q-preference-1"
-    assert "hotels in Miami" in rows[0]["hypothesis"]
+    # Honest candidate reflects the cited evidence ("hotels with ocean views, a
+    # rooftop pool, ...") — never the gold `answer` field's "hotels in Miami".
+    assert "hotels with ocean views" in rows[0]["hypothesis"]
     assert "ocean" in rows[0]["hypothesis"]
 
 
@@ -1629,7 +1631,9 @@ def test_openai_compatible_answer_uses_preference_candidate_without_provider(mon
     )
 
     assert calls == []
-    assert "hotels in Miami" in answer
+    # Honest candidate quotes the cited preference ("Miami hotel options with
+    # ocean views, a rooftop pool, ...") rather than a gold-answer string.
+    assert "Miami hotel options" in answer
     assert "ocean" in answer
     assert "rooftop pool" in answer
 

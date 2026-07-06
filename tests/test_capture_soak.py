@@ -124,7 +124,8 @@ def test_capture_soak_command_emits_json(tmp_path: Path) -> None:
     result = CliRunner().invoke(
         app,
         [
-            "capture-soak",
+            "capture",
+            "soak",
             "--eventloom-path",
             str(tmp_path / ".eventloom"),
             "--workspace-root",
