@@ -2,7 +2,7 @@
 
 All notable Zaxy release changes are recorded here.
 
-## Unreleased
+## 3.1.1 - 2026-07-06
 
 ### Fixed
 
@@ -13,6 +13,13 @@ All notable Zaxy release changes are recorded here.
   of only lifecycle telemetry (`hook.stop`, reminders). Previously the hook
   config wired only lifecycle events and the transcript-capture command, though
   it existed, was never triggered. Capture is idempotent and ~1s incremental.
+  (Existing installs must re-run `zaxy install`/setup with `--force` to
+  regenerate their hook config; new installs get it automatically.)
+- **LongMemEval reader honors `Retry-After` on 5xx responses** again; the 429
+  rate-limit hardening had dropped it, forcing a fixed 10s backoff on transient
+  server errors.
+- **`server.json` PyPI package reference** was stuck at `3.0.2`; the MCP
+  registry entry now points at the current release.
 
 ## 3.1.0 - 2026-07-06
 
