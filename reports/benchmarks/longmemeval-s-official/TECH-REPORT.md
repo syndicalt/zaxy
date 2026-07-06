@@ -108,8 +108,8 @@ judge on the committed hypotheses reproduces the score within judge variance.
 
 ## 7. Limitations
 
-- The gpt-4o full-500 pass is answered but not yet fully judged; the gpt-4o
-  figure here is the 130-question held-out sample.
+- The gpt-4o full-500 pass is answered but not yet judged (the run's API
+  key was revoked); the gpt-4o figure here is the 130-question held-out sample.
 - A single LLM judge; a human-agreement study or a second judge model would
   tighten the confidence interval.
 - One retrieval/reader configuration; no ablation of the retrieval components is

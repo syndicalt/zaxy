@@ -12,7 +12,7 @@ hints**. Every number here is reproducible from the committed artifacts +
 |--------|----------------:|-------|
 | **gpt-5** | **~0.90** (451/500) | full 500 |
 | gpt-4o | 0.78 (101/130) | 130-question held-out sample |
-| gpt-4o | *judge in progress* | full 500 (answers generated; see status) |
+| gpt-4o | *answers generated; not yet judged* | full 500 (needs a funded key to finish) |
 
 Retrieval is not the bottleneck: gold-answer-session **Recall@5 ≈ 0.99** on the
 full haystack. The gap to a perfect score is reader reasoning, not retrieval.
