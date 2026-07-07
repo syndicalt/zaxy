@@ -2,11 +2,12 @@
 
 All notable Zaxy release changes are recorded here.
 
-## Unreleased
+## 3.2.0 - 2026-07-07
 
-Gardening pass: the reliability findings and consolidation debt identified in
-the 2026-07-06 codebase assessment (`fable-findings.md`), executed as six
-reviewed PRs.
+Gardening release: the reliability findings and consolidation debt identified
+in the 2026-07-06 codebase assessment (`fable-findings.md`), executed as
+twelve reviewed PRs (#125–#136) — security hardening, embedded-store growth
+bounds, and the complete decomposition of the three god-modules.
 
 ### Security
 
