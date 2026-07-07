@@ -17,6 +17,7 @@ from zaxy.extract import (
     extract,
     register,
 )
+from zaxy.extract.core import _RULES
 
 # ------------------------------------------------------------------
 # Helpers
@@ -2866,3 +2867,117 @@ class TestExtractionSanity:
         for edge in result.edges:
             assert edge.source in entity_names
             assert edge.target in entity_names
+
+
+# ------------------------------------------------------------------
+# Registry completeness (import-reachability guard)
+# ------------------------------------------------------------------
+
+#: Every event type registered by the ``zaxy.extract.rules_*`` submodules.
+#: Snapshot taken before rules.py was split into event-family modules.
+_EXPECTED_RULE_EVENT_TYPES = [
+    "belief.update.proposed",
+    "causal.edge.generated",
+    "code.call.indexed",
+    "code.coverage.indexed",
+    "code.dependency.indexed",
+    "code.file.indexed",
+    "code.import.indexed",
+    "code.symbol.indexed",
+    "command.completed",
+    "compaction.completed",
+    "consolidation.candidate.created",
+    "consolidation.candidate.reviewed",
+    "context.policy",
+    "coordination.assignment.created",
+    "coordination.conflict.detected",
+    "coordination.decision.recorded",
+    "coordination.finding.promoted",
+    "coordination.finding.reported",
+    "coordination.finding.reviewed",
+    "coordination.handoff.created",
+    "coordination.mission.created",
+    "coordination.proof_packet.created",
+    "coordination.worker.created",
+    "decision.made",
+    "document.indexed",
+    "file.edit.applied",
+    "fleet.memory.superseded",
+    "fleet.outcome.propagated",
+    "fleet.promotion.reviewed",
+    "fleet.promotion.rolled_back",
+    "fleet.rule.propagated",
+    "fleet.skill.promoted",
+    "goal.created",
+    "handoff.created",
+    "hook.checkpoint",
+    "inference.edge.generated",
+    "inference.edge.retracted",
+    "issue.diagnosed",
+    "llm.packet.projected",
+    "memory.bootstrap.shown",
+    "memory.checkout.completed",
+    "memory.corrected",
+    "memory.evidence.excluded",
+    "memory.evidence.reinforced",
+    "memory.feedback",
+    "memory.feedback.recorded",
+    "memory.reinforced",
+    "memory.reinforcement",
+    "memory.reminder.suggested",
+    "memory.rolled_back",
+    "memory.synthesis.artifact.created",
+    "memory.synthesis.corrected",
+    "memory.synthesis.rejected",
+    "memory.synthesis.used",
+    "metacognition.confidence.assessed",
+    "metacognition.conflict.clustered",
+    "metacognition.reverify.requested",
+    "metacognition.unknown.recorded",
+    "projection.retired",
+    "projection.updated",
+    "reasoning.primitive.called",
+    "session.ended",
+    "session.genesis",
+    "session.profile.corrected",
+    "skill.applied",
+    "skill.contradicted",
+    "skill.deprecated",
+    "skill.outcome_recorded",
+    "skill.proposed",
+    "skill.revised",
+    "skill.validated",
+    "source.changed",
+    "source.deleted",
+    "source.discovered",
+    "source.unchanged",
+    "subagent.completed",
+    "task.claimed",
+    "task.completed",
+    "task.proposed",
+    "tool.call.completed",
+    "transcript.turn",
+    "user.preference_changed",
+    "verification.recorded",
+    "workspace.instructions.discovered",
+    "workspace.instructions.updated",
+]
+
+
+class TestRegistryCompleteness:
+    """Guard against a rules_* submodule silently dropping out of rules.py.
+
+    The rule extractors self-register at import time; ``zaxy.extract.rules``
+    exists solely to import every ``rules_*`` submodule.  If one of those
+    imports is removed, its event types silently fall through to the generic
+    identity extractor with no error.  This test makes that failure loud.
+    """
+
+    def test_rule_modules_register_exact_event_type_set(self) -> None:
+        """The production rule registry must cover the exact pinned event-type set."""
+        registered = sorted(
+            event_type
+            for event_type, fn in _RULES.items()
+            if fn.__module__.startswith("zaxy.extract.rules")
+        )
+        assert registered == _EXPECTED_RULE_EVENT_TYPES
