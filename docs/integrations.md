@@ -12,9 +12,9 @@ the right runtime hooks to maintain.
 Generate a starter:
 
 ```bash
-zaxy integration-template langgraph --session-id zaxy-default
-zaxy integration-template crewai --session-id zaxy-default
-zaxy integration-template autogen --session-id zaxy-default
+zaxy setup integration-template langgraph --session-id zaxy-default
+zaxy setup integration-template crewai --session-id zaxy-default
+zaxy setup integration-template autogen --session-id zaxy-default
 ```
 
 When an application wants Zaxy to install the framework package too, use the
@@ -32,7 +32,7 @@ python -m pip install 'zaxy-memory[frameworks]'
 The CLI can print the matching command with a starter:
 
 ```bash
-zaxy integration-template langgraph --install-hint
+zaxy setup integration-template langgraph --install-hint
 ```
 
 To inspect the current framework support registry:

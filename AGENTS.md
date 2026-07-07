@@ -1,418 +1,100 @@
-# Zaxy: Event-Sourced Temporal Knowledge Graph Fabric
+# AGENTS.md — working on Zaxy
 
-## Problem Statement
+Zaxy is an event-sourced memory runtime for agent fleets: an append-only,
+hash-chained JSONL log (Eventloom) is the source of truth; an embedded
+LadybugDB graph projection and every cache are replayable derivatives; recall
+is a cited **Memory Checkout**. Published to PyPI as **`zaxy-memory`** (CLI
+binary `zaxy`; the bare `zaxy` name on PyPI is an unrelated package). Docs
+site: https://zaxy.io.
 
-Markdown files + vector DBs are the dominant approach for agent persistent context, but they are fundamentally lossy and inefficient:
+**Controlling docs:** `CLAUDE.md` (operating manual: conventions, named
+failure modes, quality bars, escalation rules) + `docs/architecture.md` +
+`README.md`. This file is the condensed cross-tool orientation; when it and
+the code disagree, the code wins — fix this file.
 
-- **No relational reasoning**: Vector similarity can't do multi-hop traversal or follow causal chains.
-- **No temporal awareness**: Can't answer "What was true then vs. now?" — facts overwrite each other silently.
-- **Non-replayable**: Context is chunked and flattened; you can't reconstruct how the agent arrived at a decision.
-- **Un-auditable**: No provenance chain for compliance or debugging.
+## Architecture in five invariants
 
-> **Current architecture (read this first).** The controlling architecture docs
-> are [docs/architecture.md](docs/architecture.md) and [README.md](README.md).
-> The default projection backend is the **embedded LadybugDB** store (in-process,
-> no external service); Neo4j, pgGraph, and LatticeDB are optional backends
-> selected via `PROJECTION_BACKEND`, behind one pluggable projection contract.
-> Some ADRs below predate the embedded-default move and are kept as historical
-> decision records — where an older note says "Neo4j", read "the projection
-> backend (embedded by default)".
+1. `.eventloom/*.jsonl` is append-only truth. Never edit, truncate, or delete
+   it. Everything under `.eventloom/projections/` is derived and rebuildable —
+   move it aside (never `rm`) and replay rebuilds it.
+2. Embedded LadybugDB is the default backend: file-based, in-process,
+   zero-daemon. Neo4j is an optional sidecar; pgGraph and LatticeDB are
+   experimental. Nothing may assume Neo4j is primary.
+3. One owner per store (exclusive write lock); concurrent owners corrupt the
+   WAL. Owner locking, reaping, self-heal, and the pre-open bloat guard live
+   in the embedded runtime — see `docs/runbook.md`.
+4. MCP is the primary interface (`memory_checkout` is the front door); the CLI
+   is the human/debug surface. The MCP tool contract is snapshot-pinned in
+   `docs/examples/mcp-tool-contract.json` — changing a tool means regenerating
+   the snapshot in the same PR.
+5. Recall is cited or it doesn't count: current facts carry `eventloom://`
+   citations, and agents are told to trust only cited facts.
 
-## Architecture Decision Record
+## Decision record (condensed)
 
-### ADR-1: Event-Sourced Foundation
+| ADR | Decision | Status |
+|-----|----------|--------|
+| 1 | Event-sourced JSONL over mutable state | active |
+| 2 | Hybrid extraction: deterministic rules first, LLM fallback | active |
+| 3 | Graph projection backend | **superseded: embedded LadybugDB default**; Neo4j sidecar opt-in |
+| 4 | Hybrid retrieval (exact + BM25 + graph traversal + embeddings) | active |
+| 5 | Pathlight observability integration | active, optional |
+| 6 | MCP as the primary agent interface | active |
 
-**Decision**: Use Eventloom's append-only JSONL as the immutable source of truth.
+## Tech stack
 
-**Rationale**:
-- Hash-chain integrity (tamper-evident).
-- Deterministic replay.
-- Zero write overhead (local file append).
-- Cross-process locking already solved.
+Python 3.11–3.13 · Pydantic 2 · `mcp` · Typer · embedded LadybugDB (Kuzu
+fork) · pytest (+ coverage ratchet) · ruff + mypy `--strict` · Astro docs site
+(`web/`, mirrors canonical `docs/*.md` at build time — edit `docs/`, never
+`web/src/content/docs/`).
 
-**Trade-off**: Single-writer per file. For multi-agent distributed setups, shard by session or add a log aggregation layer later.
+## Development workflow
 
-### ADR-2: Hybrid Extraction (Rule-Based + LLM Fallback)
+- **Test-first (Karpathy rule): every function gets a test**, shipped in the
+  same commit, with a one-line behavioral docstring.
+- Gates, in CI order: `ruff check src tests zaxy_benchmarks` → `mypy src
+  zaxy_benchmarks` (strict) → pytest on 3.11/3.12/3.13 → **coverage ratchet:
+  ≥ 92.00% over `src/zaxy` only** (`scripts/check-coverage.py`; the
+  `--cov-fail-under=90` in pytest addopts is vestigial). Never lower the floor.
+- Local full runs: exclude `tests/test_doctor.py` (known local native hang;
+  CI is authoritative) and pass `--benchmark-disable`.
+- Branches `<type>/<kebab-slug>`; conventional commits with evidence-citing
+  bodies; **rebase-merge** PRs; PRs are the unit of work.
+- CLI compatibility: moving/renaming a command requires
+  `register_deprecated_alias` (see `src/zaxy/cli/runtime.py`); the only
+  sanctioned exception is a group/leaf collision disclosed as **Breaking**.
+- Releases: version lives in **three** fields (`pyproject.toml`, `server.json`
+  top-level `version`, `server.json` `packages[0].version`); publishing fires
+  from GitHub **Release published**, not tag push. See `.claude/skills/release`.
 
-**Decision**: Extract entities/relations from events using registered rule-based extractors first, LLM fallback only for unstructured events.
+## Benchmark honesty (non-negotiable)
 
-**Rationale**:
-- Eventloom events are strongly typed (`goal.created`, `task.proposed`, etc.).
-- Typed events map deterministically to graph schema.
-- Reduces LLM extraction cost by 60–80%.
-- Faster ingestion (<50ms vs 500ms–2s for LLM).
+There is a public retraction on record (`docs/benchmarks.md`): the 0.956
+headline was oracle-mode with a hardcoded gold-answer table, both removed.
+Rules: no gold answers or answer hints anywhere on a live path; tests assert
+cited evidence, never dataset gold strings; claims are full-haystack with the
+official judge, held-out validated, variance disclosed; every published run
+gets a reproducibility package under `reports/benchmarks/` with a
+`manifest.json` pinning the dataset sha256 and commit.
 
-**Trade-off**: New event types require writing an extractor. This is intentional — it forces schema discipline.
-
-### ADR-3: Direct Neo4j Cypher vs. Graphiti Abstraction
-
-**Decision**: Use the official `neo4j` Python driver with custom Cypher rather than Graphiti's high-level `add_episode` API.
-
-**Rationale**:
-- Full control over bi-temporal schema (`valid_from`, `valid_to`).
-- Our extraction engine already produces structured `ExtractedEntity`/`ExtractedEdge` objects.
-- Graphiti's LLM-based extraction is redundant with our hybrid extractor.
-- Graphiti's hybrid search (vector + BM25 + traversal) can be replicated with native Neo4j indexes.
-
-**Trade-off**: We maintain more Cypher. Mitigated by keeping queries simple and tested.
-
-**Update**: the projection layer is now a pluggable contract. Embedded LadybugDB
-is the default backend; Neo4j-direct-Cypher is one optional backend among several
-(pgGraph, LatticeDB).
-
-### ADR-4: Hybrid Retrieval (Exact + Keyword + Traversal)
-
-**Decision**: Query router fuses three strategies with configurable weights.
-
-**Rationale**:
-- **Exact**: Fast lookup when the query is an entity name.
-- **Keyword/BM25**: Full-text for semantic similarity on names/summaries.
-- **Traversal**: Multi-hop expansion from top keyword hits.
-- Each covers blind spots of the others.
-
-**Trade-off**: Fusion adds ~10–50ms latency. Acceptable for agent context quality.
-
-### ADR-5: Pathlight for Observability (Not Storage)
-
-**Decision**: Pathlight can trace every memory operation when enabled, but does not store context itself.
-
-**Rationale**:
-- Eventloom = durable history.
-- Projection backend (embedded LadybugDB by default) = structured reasoning layer.
-- Pathlight = execution tracing + breakpoints + diff.
-- Clean separation of concerns.
-
-**Trade-off**: Extra network call per traced operation. Mitigated by async batching and optional disabling.
-
-### ADR-6: MCP as Primary Interface
-
-**Decision**: Expose memory via MCP tools (`memory_append`, `memory_query`, `memory_replay`, `memory_invalidate`).
-
-**Rationale**:
-- Framework-agnostic (LangGraph, CrewAI, AutoGen, Claude Desktop, etc.).
-- Standardized schema discovery and type safety.
-- One-click integration via `mcpServers` config.
-
-**Trade-off**: Requires MCP client support. Major frameworks already have it (2025+).
-
-## Tech Stack
-
-| Layer | Technology | Version |
-|-------|-----------|---------|
-| Language | Python | 3.11+ |
-| Graph projection (default) | embedded LadybugDB | pinned |
-| Optional graph backends | Neo4j / pgGraph / LatticeDB | — |
-| Validation | Pydantic | 2.7+ |
-| MCP Server | mcp (official Python SDK) | 1.0+ |
-| Observability | pathlight (Python SDK) | 0.1+ |
-| CLI | typer | 0.12+ |
-| Testing | pytest + pytest-asyncio + pytest-cov | 8.0+ |
-| Lint/Format | ruff | 0.4+ |
-| Types | mypy | 1.10+ |
-
-## Directory Structure
-
-```
-zaxy/
-├── pyproject.toml              # Project config, deps, tool settings
-├── docker-compose.yml          # Neo4j + test services
-├── AGENTS.md                   # This file
-├── src/zaxy/
-│   ├── __init__.py             # Public API exports
-│   ├── __main__.py             # CLI entrypoint (`python -m zaxy`)
-│   ├── core.py                 # MemoryFabric orchestrator
-│   ├── event.py                # Eventloom JSONL I/O + hash chain
-│   ├── extract.py              # Hybrid extraction engine + registry
-│   ├── embedded_graph_store.py # Embedded LadybugDB backend (default)
-│   ├── graph.py                # Neo4j projection backend (optional)
-│   ├── query.py                # Hybrid retrieval router
-│   ├── mcp_server.py           # MCP stdio/sse server
-│   └── trace.py                # Pathlight observability hooks
-├── tests/
-│   ├── conftest.py             # Shared fixtures
-│   ├── test_event.py           # Event log I/O + integrity
-│   ├── test_extract.py         # Rule-based extractors
-│   ├── test_graph.py           # Neo4j operations (mock + integration)
-│   ├── test_query.py           # Query routing + fusion
-│   ├── test_mcp.py             # MCP protocol compliance
-│   └── test_trace.py           # Pathlight span emission
-├── examples/
-│   └── langgraph_memory.py     # Full LangGraph integration demo
-└── scripts/
-    └── setup_neo4j_indexes.cypher  # Manual index setup
-```
-
-## Development Workflow
-
-1. **Write the test first** (Karpathy rule). Every public function must have a test before the implementation is considered complete.
-2. **Unit tests mock external deps** (projection backends, Pathlight, filesystem).
-3. **Integration tests use Docker** (marked `@pytest.mark.integration`).
-4. **Coverage gate: ≥90%** (enforced by CI).
-5. **Lint/format with ruff**, type-check with mypy.
-
-## Testing Strategy
-
-| Test Type | Scope | External Deps | Marker |
-|-----------|-------|---------------|--------|
-| Unit | Single function/class | Mocked | `unit` (default) |
-| Integration | Cross-module + real DB | optional backend (e.g. Neo4j) Docker | `integration` |
-| E2E | Full agent run | Full Docker stack | `e2e` (future) |
-
-Run unit tests: `pytest`
-Run integration tests: `pytest -m integration`
-Run with coverage: `pytest --cov` (default in pyproject.toml)
-
-## Integration Points
-
-### Eventloom (Bottom Layer)
-- **Input**: Zaxy reads `.eventloom/*.jsonl` files.
-- **Output**: Zaxy appends projection metadata back to Eventloom (optional).
-- **Contract**: `Event` Pydantic model matches Eventloom JSONL schema.
-
-### Projection backend (Core Memory)
-- **Default**: embedded LadybugDB (in-process; no external service).
-- **Optional**: Neo4j (`bolt://localhost:7687`, auth `neo4j/testpassword` local dev), pgGraph, LatticeDB — selected via `PROJECTION_BACKEND`.
-- **Schema**: `Entity(name, entity_type, valid_from, valid_to, ...)` + `RELATES(relation_type, valid_from, valid_to)`
-- **Indexes**: Vector index (embedding), Fulltext index (BM25)
-
-### Pathlight (Top Layer)
-- **Collector**: `http://localhost:4100`
-- **Dashboard**: `http://localhost:3100`
-- **Traced Operations**: `append`, `query`, `replay`, `invalidate`
-- **Eventloom Panel**: Pathlight renders Eventloom exports natively.
-
-### MCP (Interface Layer)
-- **Transport**: stdio (default) or SSE
-- **Tools**:
-  - `memory_append(event_type, actor, payload, thread?)`
-  - `memory_query(query, temporal_filter?, limit?)`
-  - `memory_replay(session_id, from_seq?)`
-  - `memory_invalidate(entity_name, entity_type, invalid_at)`
-
-## Performance Targets
-
-| Metric | Target | Notes |
-|--------|--------|-------|
-| Event append | <50ms | Local JSONL write + lock |
-| Rule-based extraction | <10ms | Pure Python dict mapping |
-| Projection upsert | <100ms | MERGE + index lookup |
-| Hybrid query | <200ms | Parallel exact + keyword + traversal |
-| Total context retrieval | <300ms | End-to-end |
-| Token reduction vs. chunk RAG | 70–90% (target; unvalidated) | Structured paths vs. raw text. Validate with `scripts/chunk_rag_token_compare.py` — quality-controlled (token reduction at *equal answer-bearing recall*, pinned chunk-RAG baseline) — driven by a gold-labeled QA dataset through the gated benchmark. |
-
-## Current Status
-
-- [x] Project scaffold (pyproject.toml, docker-compose.yml)
-- [x] Eventloom JSONL I/O with hash-chain integrity
-- [x] Hybrid extraction engine with rule registry
-- [x] Neo4j graph store (schema, upsert, retrieval, invalidation)
-- [x] Hybrid query router (exact + keyword + traversal)
-- [x] Pathlight tracing integration
-- [x] MCP server implementation
-- [x] `MemoryFabric` orchestrator wiring
-- [x] CLI entrypoint (`zaxy serve`, `zaxy replay`, `zaxy compact`)
-- [x] LangGraph adapter example
-- [x] CI/CD (GitHub Actions)
-- [x] Operational runbooks
-- [x] Configuration management (pydantic-settings, env vars)
-- [x] Docker containerization (Dockerfile + compose + SSE production command)
-- [x] Structured logging (console + JSON)
-- [x] Graceful shutdown (SIGTERM/SIGINT handling)
-- [x] Production secrets management (Docker secrets + `*_FILE` config)
-- [x] TLS for Neo4j (generated certs + TLS compose service + integration test)
-- [x] Multi-agent session sharding (SessionManager + MemoryFabric/MCP wiring + graph session isolation)
-- [x] Prometheus metrics
-- [x] Vector index and vector similarity search in query router
-- [x] SSE transport for MCP daemon mode
-- [x] Embedding generation pipeline (deterministic local provider + entity/query vectors)
-- [x] True temporal versioning for reasserted facts and multi-version entity state
-- [x] Remote MCP security (SSE bearer auth + per-client session scopes)
-- [x] Operational backup/restore/log-rotation scripts backed by tests
-- [x] Competitive benchmark suite vs. flat JSONL context baseline
-- [x] Hosted embedding provider adapter with secret-managed credentials
-- [x] Remote deployment environment validation for MCP/SSE
-- [x] Go-live readiness checklist and release gate
-- [x] Release packaging and versioned distribution artifacts
-- [x] Public static site and expanded documentation set
-- [x] Eventloom provenance citations on graph-backed retrieval results
-- [x] Append-time secret redaction and payload classification
-- [x] MMR diversity and explainable score metadata in query router
-- [x] Filesystem document ingestion with source path and line citations
-- [x] Sanitized transcript ingestion and replay-to-context assembly API
-- [x] Query expansion and temporal-aware retrieval scoring policies
-- [x] Configurable scoring profiles and local lexical reranker provider
-- [x] Hosted OpenAI-compatible and local HTTP reranker providers
-- [x] Graceful degradation for graph, embedding, vector, and reranker outages
-- [x] Context lifecycle hooks for after-turn assembly, handoff bundles, and subagent cleanup
-- [x] OIDC/JWKS remote MCP authentication for public multi-tenant deployments
-- [x] Degraded-mode Prometheus metrics and alerting guidance
-- [x] Extractor authoring templates and auditable schema migration tooling
-- [x] Frozen benchmark workload fingerprints and external comparison disclosures
-- [x] Representative benchmark suite for temporal, document, transcript, and mixed workloads
-- [x] Geometry-aware consolidation roadmap for identity-preserving compaction
-- [x] Consolidation-collapse benchmark lane and identity-recall metric
-- [x] `zaxy compact --audit` safety checks for integrity, identity recall, and citations
-- [x] Medoid/exemplar projection storage with Eventloom and source backpointers
-- [x] Context assembly warnings for unsupported compacted/projection context
-- [x] Projection artifact retrieval as cited local routing candidates
-- [x] Okapi BM25 baseline in the live benchmark harness
-- [x] Automatic compaction projection discovery under Eventloom directories
-- [x] First-run MCP client config and framework handoff adapter helpers
-- [x] Local-first embedding/reranker setup helpers
-- [x] Extractor schema-pack examples for common agent event taxonomies
-- [x] Remote MCP rate limiting and audit event export
-- [x] Domain-separated MCP defaults to avoid cross-project `default` session bleed
-- [x] File-level codebase mapping as Eventloom-backed graph projection
-- [x] Symbol-level codebase mapping for functions, classes, types, and imports
-- [x] Local code dependency mapping from resolved imports to source files
-- [x] Python call-site mapping with resolved symbol call edges
-- [x] Static Python test coverage links from tests to imported production symbols
-- [x] JavaScript and TypeScript call-site mapping for same-file and imported local symbols
-- [x] Go, Rust, and Java same-file call-site mapping
-- [x] Go cross-file call resolution for local package-qualified imports
-- [x] Rust cross-file call resolution for simple `use crate::module::symbol` imports
-- [x] Java cross-file call resolution for imported local classes
-- [x] Workspace genesis entry process with profile discovery and write instructions
-- [x] Workspace instruction bootstrap and drift events for agent guidance files
-- [x] Initial lifecycle hook taxonomy for tool calls, command results, and file edits
-- [x] Automatic redacted MCP tool-call lifecycle capture
-- [x] Lifecycle capture for compaction, subagent completion, and session end
-- [x] Minimal static Eventloom/session viewer for bootstrap and lifecycle inspection
-- [x] Local onboarding doctor for Eventloom, MCP defaults, viewer, local profile, and config posture
-- [x] Non-destructive temporal retention and decay-aware retrieval policies
-- [x] Direct agent integration templates for LangGraph, CrewAI, and AutoGen
-- [x] Retention metadata extraction and reinforcement events for decay-aware retrieval
-- [x] Retrieval feedback events that reinforce used context
-- [x] MCP tool support for retrieval feedback events
-- [x] Observer hook config and lightweight hook-event capture
-- [x] Hook protocol documentation and doctor onboarding guidance
-- [x] Safe hook config write mode with no-overwrite default
-- [x] Searchable hook checkpoint events with summary and reason metadata
-- [x] Hook installation detection and supported-client matrix
-- [x] Pruned stale direct-Neo4j demo scripts superseded by doctor, hooks, and MCP smoke coverage
-- [x] Hook status and heartbeat health checks for observable lifecycle capture
-- [x] Unified `zaxy init` onboarding orchestrator for MCP config, local profile, hooks, genesis, heartbeat, doctor, and hook status
-- [x] Explicit `zaxy init --infra check|start` local Neo4j bootstrap actions
-- [x] Structured onboarding next steps in text and JSON output
-- [x] Pre-MCP CLI install guidance and resolved executable paths in generated MCP config
-- [x] Installed `zaxy` console-script preference for generated MCP executable paths
-- [x] `zaxy init --preset local-claude` shortcut for the explicit local onboarding path
-- [x] MCP client install target verification matrix for Claude Code, Cursor, VS Code, and Codex
-- [x] Safe project-local MCP config write-and-merge helpers for Claude Code, Cursor, and VS Code
-- [x] Codex MCP install command rendering via `codex mcp add`
-- [x] Explicit Codex TOML merge support for user and trusted-project config scopes
-- [x] First-class Hermes Agent MCP config rendering and workspace-neutral YAML merge support
-- [x] Claude Code local hook merge and parsed install detection coverage
-- [x] Focused full-suite integration check helper that starts, requires, or skips Neo4j test services explicitly
-- [x] Optional framework extras and install hints for LangGraph, CrewAI, and AutoGen
-- [x] Framework integration support registry with maturity and native-adapter status discovery
-- [x] LongMemEval public-memory benchmark workload for MemPalace-comparable identity recall
-- [x] BM25 lexical fusion for Zaxy LongMemEval benchmark retrieval
-- [x] MemPalace-comparable temporal recall benchmark lane with citation coverage reporting
-- [x] MemPalace-comparable source recall benchmark lane with target/distractor source scoring
-- [x] MemPalace-comparable graph traversal benchmark lane with goal-task-completion path scoring
-- [x] MemPalace-comparable context-collapse benchmark lane with noisy transcript and checkpoint recovery scoring
-- [x] First-class verbatim Eventloom retrieval with MCP and MemoryFabric access
-- [x] Source-aware context assembly with reserved verbatim Eventloom retrieval lane
-- [x] Configurable and observable context assembly source-recall policy
-- [x] Read-only `zaxy memory status` for Eventloom session integrity and latest hashes
-- [x] Read-only `zaxy memory log` for recent Eventloom events with JSON output
-- [x] Read-only `zaxy memory diff` for Eventloom sequence ranges
-- [x] Hash-linked Eventloom provenance path projected into Neo4j with `NEXT_EVENT`/`PREVIOUS_EVENT`
-- [x] Eventloom-vs-Neo4j graph projection integrity status with lag and chain-link checks
-- [x] Intelligent active memory working-set projection in context assembly
-- [x] First-class Memory Checkout contract for current cited prompt state
-- [x] Eventloom-backed memory refs and checkout-by-ref support
-- [x] Normalized command and file-edit observation capture for hooks
-- [x] Hook and doctor observation coverage reporting for automatic capture gaps
-- [x] Hook-event sinks for tool-call and transcript-turn automatic capture
-- [x] Native-preview LangGraph adapter for context projection, observations, and retrieval feedback
-- [x] Native-preview CrewAI adapter for task context projection, task result capture, tool observations, and retrieval feedback
-- [x] Codex in-session `/resume` duplicate MCP process troubleshooting guidance
-- [x] Competitive positioning roadmap against MemPalace-style memory systems
-- [x] LongMemEval workload chunking for hosted embedding input limits
-- [x] Persistent embedding cache and progress output for long-running live benchmarks
-- [x] Local onboarding happy-path infrastructure profile for plain localhost Neo4j with cleared TLS/password-file overrides
-- [x] Model-facing memory capability manifest with ambient checkout/capture/feedback loop guidance
-- [x] Deterministic capture as default onboarding mode with optional packet/hybrid capture and local Codex preset
-- [x] Deterministic local Codex session JSONL capture into Eventloom transcript, tool-call, command, and file-edit observations
-- [x] Deterministic local Claude Code session JSONL capture into Eventloom transcript, tool-call, command, and file-edit observations
-- [x] Memory Checkout diagnostics for source lanes, citation coverage, retention exclusions, warnings, and feedback guidance
-- [x] Memory Checkout guidance with trust/ignore instructions, follow-up checkout suggestions, and feedback payload templates
-- [x] Memory Checkout quality scoring with answerability, confidence, reasons, and required actions
-- [x] Memory Checkout degraded-state handling for missing, superseded-only, uncited, and warning-bearing context
-- [x] Shared Memory Checkout policy module used by core and MCP interfaces
-- [x] Coverage ratchet enforced in CI and release checks from generated coverage XML
-- [x] First-class model-facing Memory Bootstrap contract for session-start capability, checkout, capture, and trust guidance
-- [x] Workspace-neutral Codex MCP config with runtime workspace/Eventloom resolution and doctor leak detection
-- [x] Beta readiness inventory with clean-repo UAT script and doctor gate
-- [x] Maintained beta roadmap with post-UAT product work, release criteria, and doctor coverage
-- [x] Benchmark guardrail comparison CLI for quality floors, latency budgets, and regression checks
-- [x] Deterministic capture soak report with beta pass/fail criteria, latest seq/hash evidence, stale lane detection, and remediation steps
-- [x] Source citation graph projection with `Source` nodes and deterministic `CITES_SOURCE` edges from entities and Eventloom events
-- [x] Temporal entity version graph projection with deterministic `SUPERSEDED_BY` and `PREVIOUS_VERSION` edges
-- [x] Explicit task lifecycle observation edges for commands, file edits, tool calls, and checkpoints
-- [x] First-class inferred-edge audit metadata for graph projection confidence, method, and evidence
-- [x] Explicit `inference.edge.generated` event projection for auditable inferred graph edges
-- [x] Conservative cited-decision inferred-edge producer for task completion events
-- [x] Read-only inferred-edge graph status for method, confidence, evidence, and source-event audit coverage
-- [x] Source-aware inferred-edge retrieval scoring with trust multipliers and score explanations
-- [x] Checkout-level inferred graph context diagnostics and prompt guidance
-- [x] Local Neo4j UAT coverage for inferred-edge projection, retrieval scoring, and Memory Checkout diagnostics
-- [x] Model-facing clean-repo UAT proving init, Memory Bootstrap guidance, cited Memory Checkout, feedback guidance, capture status, and capture-soak coverage
-- [x] Dual clean-repo Codex and Claude Code UAT with isolated `zaxy init`, Memory Bootstrap, Memory Checkout, feedback guidance, doctor, hook status, capture status, and capture-soak checks
-- [x] MemPalace-comparable benchmark inventory CLI for frozen lane fingerprints, product claims, and required release metrics
-- [x] Full 500-question LongMemEval-compatible hash report with BM25 baseline and no-regression guardrails
-- [x] Public benchmark report contract requiring same-harness BM25 latency and token tradeoffs in LongMemEval artifacts
-- [x] Same-harness competitor adapter feasibility matrix for MemPalace, Mem0, and Agent Memory with blockers kept in external disclosures
-- [x] Skill Memory procedural world-model layer with lifecycle events, checkout routing, MCP helper, docs, and full-set quality guardrail verification
-- [x] Skill Memory outcome analytics for promotion candidates, rollback candidates, and contradiction diagnostics
-- [x] Projection backend contract and Neo4j factory for pgGraph evaluation without changing the default backend
-- [x] Experimental pgGraph adapter behind `PROJECTION_BACKEND=pggraph` for projection, exact search, keyword search, pgvector-backed vector search, invalidation, and traversal, with optional integration coverage
-- [x] Initial same-harness pgGraph vs Neo4j LongMemEval-compatible 100-question comparison with BM25 baseline and pgvector-enabled Docker validation
-- [x] Full 500-question pgGraph comparison archived with guardrail failure recorded, keeping pgGraph experimental until Recall@5 matches Neo4j-backed floors
-- [x] Reproducible pgGraph benchmark reset with full-set same-harness Neo4j checkout control
-- [x] Public benchmark guardrail script for cached LongMemEval artifacts and archived report floors
-- [x] Common native-preview adapter contract chosen as the next model-facing UX hardening target, with AutoGen held at template-only until runtime hooks are validated
-- [x] pgGraph operational rebuild path through `zaxy reproject --projection-backend pggraph --reset-projection` with backend cleanup on projection failure
-- [x] Incremental `zaxy refresh-context` for document/code source deltas with Neo4j and pgGraph stale projection retirement
-- [x] Memory Persistence / Agent Recall Hardening with reminder policy, lifecycle hook suggestions, checkout activity markers, dashboard status, and framework checkout middleware
-- [x] Full-set LongMemEval synthesis improved without floor regression: archived hash checkout mean 0.724, Answer@5 0.628, R@5 0.972, citation coverage 1.000
-- [x] LatticeDB backend candidate behind `PROJECTION_BACKEND=latticedb` with projection, exact search, native full-text search, native vector search, traversal, temporal invalidation, source retirement, Eventloom citation metadata, projection status, inferred-edge diagnostics, and backend shootout routing
-- [x] CLI `zaxy memory append` twin of the MCP `memory_append` tool, writing byte-identical events through the shared `MemoryFabric.append` pipeline for trusted daemon/agent shims
-
-## Metrics
+## Current measured state (2026-07-06 — update when re-measured, never guess)
 
 | Metric | Value |
 |--------|-------|
-| Tests | 1063 passed, 11 deselected |
-| Coverage | 91.97% |
-| Lint | ruff clean |
-| Types | mypy clean |
-| Python versions | 3.11, 3.12, 3.13 |
-| LongMemEval 500 hash | Zaxy checkout mean 0.724, Answer@5 0.628, R@5 0.972, citation coverage 1.000, p95 1472.11 ms, p99 2652.55 ms |
-| LongMemEval 500 pgGraph | Zaxy mean 0.698, Answer@5 0.698, R@5 0.958; checkout mean 0.714, Answer@5 0.632, R@5 0.958; same-harness Neo4j checkout control mean 0.714, Answer@5 0.626, R@5 0.958; citation coverage 1.000 |
+| LongMemEval-S answer accuracy (full-haystack, official judge) | **~0.90** gpt-5 reader (full 500) · **0.777** gpt-4o (held-out 130) |
+| LongMemEval-S retrieval Recall@5 | 0.99 |
+| Memory Checkout latency, embedded backend | **~1.0–1.6 s warm** (measured; varies with store size) · ~10–12 s cold/restart |
+| Coverage ratchet | 92.00% floor over `src/zaxy` |
+| MCP tools | 61 (snapshot-pinned) |
 
-## Next Steps
+The original `<300 ms retrieval` target was aspirational and has never been
+met end-to-end; treat it as a roadmap goal, not a claim. The measured checkout
+numbers above are the honest ones (post cold-checkout work, PRs #81–83).
+Detailed methodology and the retraction history: `docs/benchmarks.md`.
 
-1. Build the zero-friction embedded graph runtime path further by
-   running the same-harness backend shootout at meaningful scale, reporting
-   projection throughput, checkout latency, traversal latency, returned tokens,
-   injected tokens, LongMemEval Answer@5/Recall@5, citation coverage, dashboard
-   graph load time, memory footprint, and rebuild recovery for embedded,
-   LatticeDB, Neo4j, pgGraph, and BM25.
-2. Build the Memory Activation Layer so `zaxy init` and a launcher path such as
-   `zaxy activate codex` make checkout/context injection the default session
-   behavior, while CLI and dashboard surfaces expose last checkout, last
-   capture, stale checkout, no-memory-use warnings, and token-efficiency
-   diagnostics.
-3. Keep Neo4j as the release default and quality control backend until the
-   embedded graph path preserves temporal semantics, citations, inferred-edge
-   metadata, session isolation, dashboard graph rendering, and published
-   LongMemEval guardrails.
-4. Continue the pgGraph collaboration track for Postgres-native deployments and
-   embedded packaging or library-mode options, but do not make pgGraph the
-   default unless it beats the same gates without sidecar friction.
-5. Continue LatticeDB evaluation as a first-class embedded candidate. Do not
-   make it the default until the adapter passes the same contract, benchmark,
-   and operations gates at representative scale.
+## Status & roadmap
+
+Shipped state lives in `CHANGELOG.md` (release-by-release, candid). Design
+work lives in `docs/superpowers/specs/` (`YYYY-MM-DD-<topic>-<kind>.md`,
+design-first: agree before code). The old in-file completion checklist was
+retired — it drifted stale and misled agents; the changelog does not.

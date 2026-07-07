@@ -4,7 +4,7 @@ Zaxy can initialize a session with a durable workspace profile before other
 memory writes or indexing work. The entrypoint is:
 
 ```bash
-zaxy init-session . --session-id zaxy-default
+zaxy setup init-session . --session-id zaxy-default
 ```
 
 The command inspects lightweight filesystem signals and appends a
