@@ -20,7 +20,7 @@ from zaxy.compaction import (
     search_compaction_projections,
 )
 from zaxy.config import get_settings
-from zaxy.context import Context, ContextAssemblyPolicy, context_counts
+from zaxy.context import Context, ContextAssemblyPolicy
 from zaxy.context_refresh import (
     ContextRefreshPlan,
     load_refresh_state,
@@ -28,33 +28,20 @@ from zaxy.context_refresh import (
     save_refresh_state,
 )
 from zaxy.core.checkout_build import (
-    _apply_purpose_outcome_learning,
-    _checkout_recall_limit,
-    _checkout_source_id,
     _citation_event_identity,
     _compaction_projection_paths,
     _conflicting_property_value,
-    _consolidation_candidate_ids,
     _context_citation,
-    _context_feedback_metadata,
-    _context_identity,
-    _context_warnings,
-    _contexts_as_of_seq,
     _encoding_classification_content,
     _encoding_gate_eligible,
     _encoding_tokens,
     _event_citation,
     _event_content,
-    _feedback_outcome,
-    _feedback_purpose_payload,
-    _increment_count,
     _invalidation_source_id,
-    _normalize_context_feedback,
     _packet_memory_reinforcements,
     _payload_entity_names,
     _payloads_by_seq,
     _prefer_verbatim_for_duplicate_source_groups,
-    _purpose_outcome_aggregates,
     _source_context_text,
     _synthesis_packet_metadata,
     _token_jaccard,
@@ -62,6 +49,7 @@ from zaxy.core.checkout_build import (
     build_memory_checkout,
     entity_reinforcement_targets,
 )
+from zaxy.core.fabric_checkout import CheckoutOps
 from zaxy.core.fabric_coordination import CoordinationOps
 from zaxy.core.fabric_reasoning import ReasoningOps
 from zaxy.core.models import (
@@ -73,7 +61,6 @@ from zaxy.core.models import (
 )
 from zaxy.documents import collect_document_events
 from zaxy.editable import (
-    MEMORY_ROLLBACK_EVENT_TYPE,
     ROLLBACKABLE_EVENT_TYPES,
     build_memory_correction_event,
     build_memory_rollback_event,
@@ -101,7 +88,6 @@ from zaxy.forgetting import (
 )
 from zaxy.inference import build_inferred_edge_events
 from zaxy.log import get_logger
-from zaxy.long_horizon import build_long_horizon_plan
 from zaxy.metrics import get_metrics
 from zaxy.outcome_learning import (
     build_outcome_event,
@@ -112,9 +98,8 @@ from zaxy.outcome_learning import (
 )
 from zaxy.pagination import encode_query_cursor, validate_query_cursor
 from zaxy.projection_backends import ProjectionBackendConfig, build_projection_store
-from zaxy.purpose import PurposeProfile, purpose_profile, purpose_retrieval_policy
+from zaxy.purpose import PurposeProfile
 from zaxy.query import QueryRouter, ScoringProfile, build_reranker, build_retention_policy
-from zaxy.recall import build_recall_candidate_set
 from zaxy.refs import MemoryRef, MemoryRefStore
 from zaxy.retrieval_cache import SessionRetrievalCache, _eventlog_file_signature
 from zaxy.retrieval_intent import classify_retrieval_intent
@@ -141,7 +126,6 @@ from zaxy.salience import (
     build_confirmed_reinforcement_event,
     build_invalidated_reinforcement_event,
     build_reinforcement_event,
-    build_surfaced_reinforcement_event,
     classify_append,
     cue_overlap,
     cue_pairs,
@@ -159,17 +143,9 @@ from zaxy.security import (
     validate_session_id,
 )
 from zaxy.session import SessionManager
-from zaxy.synthesis_artifact import (
-    build_synthesis_artifact,
-    build_synthesis_candidate_event_payload,
-    build_synthesis_evidence_event_payload,
-    normalize_synthesis_outcome,
-    synthesis_outcome_event_type,
-)
 from zaxy.trace import MemoryTracer
 from zaxy.transcripts import collect_transcript_events
 from zaxy.verbatim import VerbatimIndex
-from zaxy.working_set import build_working_set, format_working_set
 from zaxy.workspace import (
     WorkspaceProfile,
     build_session_genesis_event,
@@ -423,6 +399,24 @@ class MemoryFabric:
             ops = CoordinationOps(host=self)
             self.__dict__["_coordination_ops"] = ops
         return cast(CoordinationOps, ops)
+
+    @property
+    def _checkout(self) -> CheckoutOps:
+        """Checkout/assembly/feedback/synthesis collaborator (phase 3), lazily built."""
+        ops = self.__dict__.get("_checkout_ops")
+        if ops is None:
+            ops = CheckoutOps(host=self)
+            self.__dict__["_checkout_ops"] = ops
+        return cast(CheckoutOps, ops)
+
+    def _build_memory_checkout(self, **kwargs: Any) -> MemoryCheckout:
+        """Checkout-builder seam for collaborators.
+
+        Resolves ``build_memory_checkout`` in THIS module so existing
+        ``patch("zaxy.core.fabric.build_memory_checkout")`` targets keep
+        intercepting the moved checkout path.
+        """
+        return build_memory_checkout(**kwargs)
 
     def _record_degraded_operation(self, operation: str, reason: str) -> None:
         """Metrics seam for collaborators.
@@ -2528,6 +2522,9 @@ class MemoryFabric:
         """
         return await asyncio.to_thread(self._retrieval_cache.verified_replay, session_id, from_seq)
 
+    # -- checkout / assembly / consolidation / feedback / synthesis (phase 3) --
+    # Bodies live in zaxy.core.fabric_checkout.CheckoutOps.
+
     async def propose_consolidation_candidates(
         self,
         *,
@@ -2537,168 +2534,13 @@ class MemoryFabric:
         window_size: int = 8,
     ) -> dict[str, Any]:
         """Append cited, review-pending consolidation candidates for a session log."""
-        from zaxy.consolidation_pipeline import (
-            generate_consolidation_proposals,
-            select_consolidation_segments,
+        return await self._checkout.propose_consolidation_candidates(
+            session_id=session_id, actor=actor, purpose=purpose, window_size=window_size
         )
-
-        sid = validate_session_id(session_id)
-        eventlog = self.session_manager.get(sid).eventlog
-        segments = select_consolidation_segments(
-            eventlog.read_all(),
-            session_id=sid,
-            window_size=window_size,
-        )
-        proposals = generate_consolidation_proposals(segments, purpose=purpose)
-
-        appended: list[dict[str, Any]] = []
-        skipped_existing: list[str] = []
-        existing_candidate_ids = _consolidation_candidate_ids(eventlog.read_all())
-        for proposal in proposals:
-            event_spec = proposal.to_candidate_event(actor=actor)
-            payload = event_spec["payload"]
-            candidate_id = payload["candidate_id"]
-            if candidate_id in existing_candidate_ids:
-                skipped_existing.append(candidate_id)
-                continue
-            event = eventlog.append(
-                event_spec["event_type"],
-                actor=event_spec["actor"],
-                payload=validate_payload(payload),
-                thread=sid,
-            )
-            await self._project_event(event, session_id=sid)
-            appended.append(
-                {
-                    "event_type": event.type,
-                    "seq": event.seq,
-                    "hash": event.hash,
-                    "candidate_id": candidate_id,
-                    "candidate_type": payload["candidate_type"],
-                }
-            )
-            existing_candidate_ids.add(candidate_id)
-
-        return {
-            "session_id": sid,
-            "segment_count": len(segments),
-            "candidate_count": len(appended),
-            "skipped_existing_count": len(skipped_existing),
-            "skipped_existing_candidate_ids": skipped_existing,
-            "events": appended,
-        }
 
     async def consolidation_status(self, *, session_id: str = "default") -> dict[str, Any]:
         """Summarize consolidation candidate and review state from Eventloom replay."""
-        sid = validate_session_id(session_id)
-        replay = await self.replay(session_id=sid)
-
-        candidates: dict[str, dict[str, Any]] = {}
-        reviews_by_candidate: dict[str, list[dict[str, Any]]] = {}
-        rolled_back_targets: set[tuple[int, str]] = set()
-        review_count = 0
-        duplicate_candidate_count = 0
-        rollback_count = 0
-        for event in replay.events:
-            if event.type == "consolidation.candidate.created":
-                candidate_id = event.payload.get("candidate_id")
-                if isinstance(candidate_id, str) and candidate_id:
-                    if candidate_id in candidates:
-                        duplicate_candidate_count += 1
-                        continue
-                    candidates[candidate_id] = {
-                        "candidate_id": candidate_id,
-                        "candidate_type": event.payload.get("candidate_type"),
-                        "review_status": event.payload.get("review_status", "pending"),
-                        "authority_status": "non_authoritative",
-                        "created_seq": event.seq,
-                        "created_hash": event.hash,
-                    }
-                    if event.payload.get("stale") is True:
-                        candidates[candidate_id]["stale"] = True
-                    superseded_by = event.payload.get("superseded_by")
-                    if isinstance(superseded_by, str) and superseded_by:
-                        candidates[candidate_id]["superseded_by"] = superseded_by
-                    valid_to = event.payload.get("valid_to")
-                    if isinstance(valid_to, str) and valid_to:
-                        candidates[candidate_id]["valid_to"] = valid_to
-            elif event.type == "consolidation.candidate.reviewed":
-                candidate_id = event.payload.get("candidate_id")
-                if isinstance(candidate_id, str) and candidate_id in candidates:
-                    review_count += 1
-                    reviews_by_candidate.setdefault(candidate_id, []).append(
-                        {
-                            "seq": event.seq,
-                            "hash": event.hash,
-                            "status": event.payload.get("status"),
-                        }
-                    )
-            elif event.type == MEMORY_ROLLBACK_EVENT_TYPE:
-                target = event.payload.get("target")
-                if isinstance(target, dict):
-                    target_seq = target.get("seq")
-                    target_hash = target.get("hash")
-                    if isinstance(target_seq, int) and isinstance(target_hash, str):
-                        rolled_back_targets.add((target_seq, target_hash))
-                        rollback_count += 1
-
-        # Honor reversals: a memory.rolled_back citing a review event undoes that
-        # acceptance on replay, reverting the candidate to its prior effective
-        # review status (the latest surviving review, else the created default).
-        for candidate_id, candidate in candidates.items():
-            rolled_back_reviews = 0
-            for review in reviews_by_candidate.get(candidate_id, []):
-                if (review["seq"], review["hash"]) in rolled_back_targets:
-                    rolled_back_reviews += 1
-                    continue
-                status = review["status"]
-                if status is not None:
-                    candidate["review_status"] = status
-                candidate["authority_status"] = "non_authoritative"
-                candidate["reviewed_seq"] = review["seq"]
-                candidate["reviewed_hash"] = review["hash"]
-            if rolled_back_reviews:
-                candidate["rolled_back_review_count"] = rolled_back_reviews
-
-        review_status_counts: dict[str, int] = {}
-        authority_status_counts: dict[str, int] = {}
-        type_counts: dict[str, int] = {}
-        stale_count = 0
-        superseded_count = 0
-        valid_to_count = 0
-        for candidate in candidates.values():
-            _increment_count(review_status_counts, str(candidate.get("review_status", "unknown")))
-            _increment_count(
-                authority_status_counts,
-                str(candidate.get("authority_status", "unknown")),
-            )
-            _increment_count(type_counts, str(candidate.get("candidate_type", "unknown")))
-            if candidate.get("stale") is True or candidate.get("review_status") == "stale":
-                stale_count += 1
-            if isinstance(candidate.get("superseded_by"), str) and candidate.get("superseded_by"):
-                superseded_count += 1
-            if isinstance(candidate.get("valid_to"), str) and candidate.get("valid_to"):
-                valid_to_count += 1
-
-        return {
-            "session_id": sid,
-            "candidate_count": len(candidates),
-            "review_count": review_count,
-            "duplicate_candidate_count": duplicate_candidate_count,
-            "rollback_count": rollback_count,
-            "pending_count": review_status_counts.get("pending", 0),
-            "accepted_count": review_status_counts.get("accepted", 0),
-            "rejected_count": review_status_counts.get("rejected", 0),
-            "deferred_count": review_status_counts.get("deferred", 0),
-            "conflicted_count": review_status_counts.get("conflicted", 0),
-            "stale_count": stale_count,
-            "superseded_count": superseded_count,
-            "valid_to_count": valid_to_count,
-            "review_status_counts": dict(sorted(review_status_counts.items())),
-            "authority_status_counts": dict(sorted(authority_status_counts.items())),
-            "candidate_type_counts": dict(sorted(type_counts.items())),
-            "candidates": sorted(candidates.values(), key=lambda item: item["created_seq"]),
-        }
+        return await self._checkout.consolidation_status(session_id=session_id)
 
     def _fleet_manager(self) -> Any:
         """Return a FleetManager bound to this fabric's session manager.
@@ -2733,140 +2575,21 @@ class MemoryFabric:
     ) -> ContextAssembly:
         """Assemble recent replay plus retrieval into prompt-ready context.
 
-        ``cues`` is additive and only affects retrieval under the cognitive
-        retrieval profile (see :meth:`query`).
-
-        ``long_horizon`` engages the two-tier (episodic recent + consolidated
-        remote) assembly. ``None`` falls back to ``long_horizon_enabled``;
-        ``False`` forces single-tier (byte-identical) assembly. When engaged and
-        the session exceeds ``long_horizon_recent_window``, older history is
-        surfaced as cited, non-authoritative consolidation candidates.
+        See :meth:`zaxy.core.fabric_checkout.CheckoutOps.assemble_context`.
         """
-        sid = validate_session_id(session_id)
-        prompt_limit = validate_limit(limit)
-        base_candidate_limit = prompt_limit if recall_limit is None else validate_limit(max(prompt_limit, recall_limit))
-        profile = purpose_profile(purpose)
-        retrieval_policy = purpose_retrieval_policy(
-            profile,
+        return await self._checkout.assemble_context(
             query,
-            prompt_limit=prompt_limit,
-            base_recall_limit=base_candidate_limit,
-        )
-        candidate_limit = validate_limit(
-            min(MAX_QUERY_LIMIT, max(base_candidate_limit, retrieval_policy.min_recall_limit))
-        )
-        retrieval_query = retrieval_policy.retrieval_query
-        replay = await self.replay(from_seq=replay_from_seq, session_id=sid)
-        graph_contexts = await self.query(
-            retrieval_query,
-            limit=candidate_limit,
-            session_id=sid,
-            include_source_lane=False,
-            scoring_profile=retrieval_policy.scoring_profile,
+            session_id=session_id,
+            replay_from_seq=replay_from_seq,
+            limit=limit,
+            recall_limit=recall_limit,
+            max_recent_events=max_recent_events,
+            as_of_seq=as_of_seq,
+            purpose=purpose,
             cues=cues,
-        )
-        verbatim_candidate_limit = self.context_assembly_policy.verbatim_candidate_limit(
-            query=retrieval_query,
-            limit=candidate_limit,
-        )
-        verbatim_contexts = (
-            await self.query_verbatim(retrieval_query, limit=verbatim_candidate_limit, session_id=sid)
-            if verbatim_candidate_limit > 0
-            else []
-        )
-        replay_events = [self._decrypt_event_view(event) for event in replay.events]
-        if as_of_seq is not None:
-            replay_events = [event for event in replay_events if event.seq <= as_of_seq]
-        session_events = list(replay_events)
-        purpose_outcomes = _purpose_outcome_aggregates(replay_events, profile)
-        graph_contexts = _apply_purpose_outcome_learning(graph_contexts, purpose_outcomes)
-        verbatim_contexts = _apply_purpose_outcome_learning(verbatim_contexts, purpose_outcomes)
-        packet_memory_contexts = self._recent_packet_memory_contexts(replay_events)
-        packet_memory_contexts = _apply_purpose_outcome_learning(packet_memory_contexts, purpose_outcomes)
-        recall_contexts = [*graph_contexts, *verbatim_contexts, *packet_memory_contexts]
-        recall = build_recall_candidate_set(recall_contexts, budget=candidate_limit)
-        contexts = self.context_assembly_policy.assemble(
-            graph_contexts,
-            verbatim_contexts,
-            packet_memory_contexts,
-            limit=prompt_limit,
-            query=query,
-        )
-        if as_of_seq is not None:
-            contexts = _contexts_as_of_seq(contexts, as_of_seq)
-            recall = build_recall_candidate_set(
-                _contexts_as_of_seq(recall.contexts(), as_of_seq),
-                budget=candidate_limit,
-            )
-        fleet_contexts = self._fleet_lane_contexts(fleet_ids, agent_id=agent_id or sid)
-        if fleet_contexts:
-            contexts = [*contexts, *fleet_contexts]
-        long_horizon_engaged = (
-            getattr(self.settings, "long_horizon_enabled", False)
-            if long_horizon is None
-            else long_horizon
-        )
-        long_horizon_contexts: list[Context] = []
-        long_horizon_summary: dict[str, Any] | None = None
-        if long_horizon_engaged:
-            plan = build_long_horizon_plan(
-                session_events,
-                session_id=sid,
-                recent_window=max(
-                    getattr(self.settings, "long_horizon_recent_window", 50),
-                    max_recent_events or 0,
-                ),
-                budget=prompt_limit,
-            )
-            long_horizon_summary = plan.to_diagnostics()
-            long_horizon_contexts = plan.consolidated_contexts
-            if long_horizon_contexts:
-                contexts = [*contexts, *long_horizon_contexts]
-        compacted = False
-        if max_recent_events is not None and len(replay_events) > max_recent_events:
-            replay_events = replay_events[-max_recent_events:]
-            compacted = True
-        working_set = build_working_set(replay_events, contexts)
-        lines = [format_working_set(working_set), "", "# Recent Events"]
-        for event in replay_events:
-            lines.append(f"[{event.seq}] {event.type} by {event.actor}")
-            content = _event_content(event)
-            if content:
-                lines.append(str(content))
-        lines.append("")
-        lines.append("# Retrieved Context")
-        for context in contexts:
-            citation = ""
-            if context.metadata and context.metadata.get("citation"):
-                citation = f" ({context.metadata['citation']})"
-            lines.append(f"- {context.content}{citation}")
-        warnings = _context_warnings(contexts, compacted=compacted)
-        if warnings:
-            lines.append("")
-            lines.append("# Context Warnings")
-            for warning in warnings:
-                lines.append(f"- {warning}")
-        working_set_payload = working_set.to_dict()
-        working_set_payload["retrieval_profile"] = self.retrieval_profile.to_diagnostics()
-        working_set_payload["purpose_retrieval_policy"] = retrieval_policy.to_diagnostics(
-            base_recall_limit=base_candidate_limit,
-            resolved_recall_limit=candidate_limit,
-        )
-        return ContextAssembly(
-            session_id=sid,
-            prompt="\n".join(lines).strip(),
-            contexts=contexts,
-            replay_event_count=len(replay_events),
-            compacted=compacted,
-            warnings=warnings,
-            assembly_policy=self.context_assembly_policy.describe(),
-            context_counts=context_counts(contexts, replay_count=len(replay_events)),
-            working_set=working_set_payload,
-            recall=recall,
-            replay_events=session_events,
-            fleet_contexts=fleet_contexts,
-            long_horizon_contexts=long_horizon_contexts,
-            long_horizon=long_horizon_summary,
+            fleet_ids=fleet_ids,
+            agent_id=agent_id,
+            long_horizon=long_horizon,
         )
 
     async def checkout_memory(
@@ -2887,111 +2610,25 @@ class MemoryFabric:
     ) -> MemoryCheckout:
         """Checkout the current cited memory state an agent should condition on.
 
-        ``record_reinforcement=False`` skips the best-effort 'surfaced'
-        salience reinforcement append for read-only inspection surfaces
-        (e.g. the dashboard) that must not write to the log.
-
-        ``cues`` (optional, additive) carries the caller's
-        encoding-specificity context; it only affects ranking under the
-        cognitive retrieval profile.
-
-        ``long_horizon`` engages the two-tier (episodic + consolidated) assembly
-        (``None`` -> ``long_horizon_enabled``; ``False`` forces single-tier).
+        See :meth:`zaxy.core.fabric_checkout.CheckoutOps.checkout_memory`.
         """
-        resolved_ref = self._resolve_checkout_ref(ref, session_id=session_id)
-        checkout_session_id = resolved_ref.session_id if resolved_ref is not None else session_id
-        as_of_seq = resolved_ref.target_seq if resolved_ref is not None else None
-        assembly = await self.assemble_context(
+        return await self._checkout.checkout_memory(
             query,
-            session_id=checkout_session_id,
+            session_id=session_id,
             replay_from_seq=replay_from_seq,
             limit=limit,
-            recall_limit=_checkout_recall_limit(query, limit),
             max_recent_events=max_recent_events,
-            as_of_seq=as_of_seq,
+            ref=ref,
             purpose=purpose,
+            record_reinforcement=record_reinforcement,
             cues=cues,
             fleet_ids=fleet_ids,
             agent_id=agent_id,
             long_horizon=long_horizon,
         )
-        checkout = build_memory_checkout(
-            query=query,
-            assembly=assembly,
-            ref=resolved_ref,
-            purpose=purpose,
-            now=datetime.now(UTC),
-            retrieval_profile=self.retrieval_profile,
-            cues=cues,
-            salience_floor=self._salience_floor,
-            salience_half_life_days=self._salience_half_life_days,
-        )
-        if record_reinforcement:
-            await self._record_surfaced_reinforcement(
-                checkout,
-                assembly,
-                session_id=checkout_session_id,
-                ref=resolved_ref,
-            )
-        return checkout
-
-    async def _record_surfaced_reinforcement(
-        self,
-        checkout: MemoryCheckout,
-        assembly: ContextAssembly,
-        *,
-        session_id: str,
-        ref: MemoryRef | None,
-    ) -> None:
-        """Append one batched 'surfaced' salience reinforcement for a checkout.
-
-        Best-effort observability state: targets are the sealed event refs of
-        the facts/evidence actually carried by the packet, resolved against
-        the replay the checkout was computed from (no extra log scan). A
-        failure here never fails the checkout itself.
-        """
-        try:
-            events = assembly.replay_events
-            if not events:
-                return
-            index = event_ref_index(events)
-            citations = [
-                item.get("citation")
-                for item in [*checkout.current_facts, *checkout.evidence]
-            ]
-            targets = reinforcement_targets_from_citations(citations, event_index=index)
-            if not targets:
-                return
-            checkout_id = _checkout_source_id(ref, events, session_id=session_id)
-            spec = build_surfaced_reinforcement_event(
-                actor="zaxy-memory",
-                session_id=session_id,
-                checkout_id=checkout_id,
-                targets=targets,
-            )
-            await self._append_event_spec(spec, session_id=session_id)
-        except Exception:
-            get_metrics().record_degraded_operation("append", "salience_reinforcement_unavailable")
 
     def _resolve_checkout_ref(self, ref: str | None, *, session_id: str) -> MemoryRef | None:
-        if ref is None:
-            return None
-        if ref == "HEAD":
-            latest = self.session_manager.get(session_id).eventlog.last_event()
-            if latest is None:
-                return None
-            return MemoryRef(
-                name="HEAD",
-                session_id=session_id,
-                target_seq=latest.seq,
-                target_hash=latest.hash,
-                ref_type="head",
-                updated_at=latest.timestamp,
-            )
-        resolved = self.refs.resolve(ref)
-        if resolved is None:
-            raise ValueError(f"Unknown memory ref: {ref}")
-        return resolved
+        return self._checkout._resolve_checkout_ref(ref, session_id=session_id)
 
     async def record_context_feedback(
         self,
@@ -3005,86 +2642,15 @@ class MemoryFabric:
         outcome: str | None = None,
     ) -> int:
         """Append feedback events for retrieved context without mutating history."""
-        sid = validate_session_id(session_id)
-        normalized = _normalize_context_feedback(feedback)
-        purpose_payload = _feedback_purpose_payload(purpose)
-        outcome_value = _feedback_outcome(outcome)
-        count = 0
-        for context in contexts:
-            identity = _context_identity(context)
-            payload: dict[str, Any] = {
-                "entity_name": identity["entity_name"],
-                "entity_type": identity["entity_type"],
-                "feedback": normalized,
-                "source": context.source,
-                "score": context.score,
-            }
-            if context.metadata and (citation := context.metadata.get("citation")):
-                payload["citation"] = citation
-            if context.metadata:
-                payload.update(_context_feedback_metadata(context.metadata))
-            if purpose_payload:
-                payload["purpose"] = purpose_payload
-            if outcome_value:
-                payload["outcome"] = outcome_value
-            if normalized in {"used", "helpful"}:
-                payload.pop("feedback")
-                if importance is not None:
-                    payload["importance"] = max(0.0, min(1.0, float(importance)))
-                feedback_event = await self.append(
-                    "memory.reinforced",
-                    actor=actor,
-                    payload=payload,
-                    session_id=sid,
-                )
-                await self._record_confirmed_reinforcement(
-                    context,
-                    feedback_event=feedback_event,
-                    session_id=sid,
-                    actor=actor,
-                )
-            else:
-                await self.append(
-                    "memory.feedback",
-                    actor=actor,
-                    payload=payload,
-                    session_id=sid,
-                )
-            count += 1
-        return count
-
-    async def _record_confirmed_reinforcement(
-        self,
-        context: Context,
-        *,
-        feedback_event: Any,
-        session_id: str,
-        actor: str,
-    ) -> None:
-        """Append a 'confirmed' salience reinforcement for positive feedback.
-
-        Best-effort observability state: emitted only when the reinforced
-        context carries a citation that resolves to a sealed event in this
-        session's log. A failure here never fails the feedback itself.
-        """
-        try:
-            citation = (context.metadata or {}).get("citation")
-            if not isinstance(citation, str) or not citation:
-                return
-            index = self._session_event_ref_index(session_id)
-            targets = reinforcement_targets_from_citations([citation], event_index=index)
-            if not targets:
-                return
-            feedback_id = _event_citation(feedback_event) or f"{session_id}:feedback"
-            spec = build_confirmed_reinforcement_event(
-                actor=actor,
-                session_id=session_id,
-                feedback_id=feedback_id,
-                targets=targets,
-            )
-            await self._append_event_spec(spec, session_id=session_id)
-        except Exception:
-            get_metrics().record_degraded_operation("append", "salience_reinforcement_unavailable")
+        return await self._checkout.record_context_feedback(
+            contexts,
+            feedback=feedback,
+            session_id=session_id,
+            actor=actor,
+            importance=importance,
+            purpose=purpose,
+            outcome=outcome,
+        )
 
     async def record_synthesis_candidate(
         self,
@@ -3096,31 +2662,9 @@ class MemoryFabric:
         reason: str | None = None,
     ) -> Any:
         """Append an auditable synthesis answer-candidate artifact event."""
-        normalized = normalize_synthesis_outcome(outcome)
-        sid = validate_session_id(checkout.session_id)
-        payload = build_synthesis_candidate_event_payload(
-            checkout=checkout,
-            candidate=candidate,
-            outcome=normalized,
-            reason=reason,
+        return await self._checkout.record_synthesis_candidate(
+            checkout, candidate=candidate, outcome=outcome, actor=actor, reason=reason
         )
-        if not self._connected:
-            try:
-                await self.connect()
-            except Exception:
-                get_metrics().record_degraded_operation("append", "graph_connect_unavailable")
-                self._connected = False
-        eventlog = self.session_manager.get(sid).eventlog
-        event = eventlog.append(
-            synthesis_outcome_event_type(normalized),
-            actor=actor,
-            payload=validate_payload(payload),
-            thread=sid,
-        )
-        await self._project_event(event, session_id=sid)
-        await self._append_generated_inferences(eventlog, source_event=event, session_id=sid)
-        self._invalidate_query_page_cache(sid)
-        return event
 
     async def record_synthesis_evidence(
         self,
@@ -3133,33 +2677,9 @@ class MemoryFabric:
         reason: str | None = None,
     ) -> Any:
         """Append auditable feedback for one synthesis evidence ledger row."""
-        normalized = normalize_synthesis_outcome(outcome)
-        sid = validate_session_id(checkout.session_id)
-        payload = build_synthesis_evidence_event_payload(
-            checkout=checkout,
-            row=row,
-            outcome=normalized,
-            candidate=candidate,
-            reason=reason,
+        return await self._checkout.record_synthesis_evidence(
+            checkout, row=row, outcome=outcome, candidate=candidate, actor=actor, reason=reason
         )
-        if not self._connected:
-            try:
-                await self.connect()
-            except Exception:
-                get_metrics().record_degraded_operation("append", "graph_connect_unavailable")
-                self._connected = False
-        eventlog = self.session_manager.get(sid).eventlog
-        event_type = "memory.evidence.reinforced" if normalized == "used" else synthesis_outcome_event_type(normalized)
-        event = eventlog.append(
-            event_type,
-            actor=actor,
-            payload=validate_payload(payload),
-            thread=sid,
-        )
-        await self._project_event(event, session_id=sid)
-        await self._append_generated_inferences(eventlog, source_event=event, session_id=sid)
-        self._invalidate_query_page_cache(sid)
-        return event
 
     async def record_synthesis_artifact(
         self,
@@ -3168,25 +2688,7 @@ class MemoryFabric:
         actor: str = "zaxy",
     ) -> Any:
         """Append a deterministic synthesis artifact created from checkout state."""
-        sid = validate_session_id(checkout.session_id)
-        payload = build_synthesis_artifact(checkout)
-        if not self._connected:
-            try:
-                await self.connect()
-            except Exception:
-                get_metrics().record_degraded_operation("append", "graph_connect_unavailable")
-                self._connected = False
-        eventlog = self.session_manager.get(sid).eventlog
-        event = eventlog.append(
-            "memory.synthesis.artifact.created",
-            actor=actor,
-            payload=validate_payload(payload),
-            thread=sid,
-        )
-        await self._project_event(event, session_id=sid)
-        await self._append_generated_inferences(eventlog, source_event=event, session_id=sid)
-        self._invalidate_query_page_cache(sid)
-        return event
+        return await self._checkout.record_synthesis_artifact(checkout, actor=actor)
 
     async def after_turn(
         self,
@@ -3200,19 +2702,14 @@ class MemoryFabric:
         limit: int = 10,
     ) -> ContextAssembly:
         """Persist a completed turn and assemble compact context for the next turn."""
-        sid = validate_session_id(session_id)
-        await self.append(
-            "transcript.turn",
-            actor=role,
-            payload={"role": role, "content": content, "source": source},
-            session_id=sid,
-        )
-        return await self.assemble_context(
-            query or content,
-            session_id=sid,
-            replay_from_seq=1,
-            limit=limit,
+        return await self._checkout.after_turn(
+            role=role,
+            content=content,
+            session_id=session_id,
+            query=query,
+            source=source,
             max_recent_events=max_recent_events,
+            limit=limit,
         )
 
     # -- coordination / fleet / handoff (delegated; decomposition phase 2) ----
