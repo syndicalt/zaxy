@@ -106,10 +106,14 @@ class EmbeddedGraphStore:
         vector_quantization: str | None = None,
         active_embedding_version: str | None = None,
         lock_timeout_seconds: float | None = None,
+        bloat_min_bytes: int | None = None,
+        bloat_log_multiplier: float | None = None,
     ) -> None:
         self.path = Path(path)
         self._database: Any | None = None
         self._connection: Any | None = None
+        self._bloat_min_bytes_override = bloat_min_bytes
+        self._bloat_log_multiplier_override = bloat_log_multiplier
         self._vector_ann_threshold_override = vector_ann_threshold
         self._vector_ann_max_dimension_override = vector_ann_max_dimension
         self._vector_ann_efs_override = vector_ann_efs
@@ -151,6 +155,21 @@ class EmbeddedGraphStore:
         import ladybug
 
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        # The bloat guard must run BEFORE the native open: a pathologically
+        # bloated store hangs then segfaults inside ladybug.Database(...), so
+        # no exception handler below ever gets a chance to self-heal it.
+        bloat_reason = self._bloated_store_reason()
+        if bloat_reason is not None:
+            backup_path = _move_incompatible_store_aside(self.path)
+            logger.warning(
+                "embedded projection at %s %s; it was moved aside to %s (no data deleted) and "
+                "a fresh projection store was created. Rebuild full history with "
+                "`zaxy reproject <eventloom log>`; the backup is safe to delete once the "
+                "rebuilt projection is verified.",
+                self.path,
+                bloat_reason,
+                backup_path,
+            )
         lock_timeout = self._resolved_lock_timeout_seconds()
 
         def _open_database() -> Any:
@@ -1170,6 +1189,60 @@ class EmbeddedGraphStore:
         from zaxy.config import get_settings
 
         return get_settings().embedded_lock_timeout_seconds
+
+    def _resolved_bloat_thresholds(self) -> tuple[int, float]:
+        """Return (min_bytes, log_multiplier) for the pre-open bloat guard."""
+        min_bytes = self._bloat_min_bytes_override
+        multiplier = self._bloat_log_multiplier_override
+        if min_bytes is None or multiplier is None:
+            from zaxy.config import get_settings
+
+            settings = get_settings()
+            if min_bytes is None:
+                min_bytes = settings.embedded_store_bloat_min_bytes
+            if multiplier is None:
+                multiplier = settings.embedded_store_bloat_log_multiplier
+        return min_bytes, multiplier
+
+    def _bloated_store_reason(self) -> str | None:
+        """Return why the on-disk store is pathologically bloated, or None.
+
+        A projection is derived from the sibling Eventloom JSONL logs, so a
+        store orders of magnitude larger than its source (the 2026-07-06
+        incident: ~500KB of logs -> a 397MB store that hung ~2min then
+        segfaulted on open) is structurally broken. Detection is stat()-only —
+        it must never open the store. Conservative by design: stores under the
+        size floor, non-standard layouts (no sibling ``*.jsonl``), and stores
+        within the multiplier all pass untouched.
+        """
+        min_bytes, multiplier = self._resolved_bloat_thresholds()
+        if min_bytes <= 0:
+            return None
+        try:
+            store_bytes = self.path.stat().st_size
+        except OSError:
+            return None
+        if store_bytes < min_bytes:
+            return None
+        # Layout convention: <eventloom>/projections/embedded.kuzu — the source
+        # logs are the eventloom dir's *.jsonl files. A non-standard path has
+        # no derivable source, so the guard abstains rather than guesses.
+        eventloom_dir = self.path.parent.parent
+        try:
+            log_bytes = sum(
+                log.stat().st_size for log in eventloom_dir.glob("*.jsonl") if log.is_file()
+            )
+        except OSError:
+            return None
+        if log_bytes <= 0:
+            return None
+        if store_bytes <= log_bytes * multiplier:
+            return None
+        return (
+            f"is pathologically bloated ({store_bytes:,} bytes from {log_bytes:,} bytes of "
+            f"event logs, over {multiplier:g}x; opening such a store hangs and can crash "
+            "natively); the projection is derived state"
+        )
 
     def _ann_engagement_reason(self, *, count: int, dimension: int) -> str | None:
         """Return why the ANN path engages for a scope, or None to stay resident.
