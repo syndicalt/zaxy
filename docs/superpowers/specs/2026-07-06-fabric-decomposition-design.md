@@ -1,6 +1,6 @@
 # MemoryFabric decomposition — design
 
-Status: proposed (design-first; agree before code)
+Status: approved; phase 1 (ReasoningOps) implemented 2026-07-07 — see `src/zaxy/core/fabric_reasoning.py`
 Date: 2026-07-06
 Owner: maintainer + Claude Fable (assessment session)
 
@@ -72,9 +72,13 @@ class ReasoningOps:
     def __init__(self, *, appender: Appender, querier: Querier, tracer: Any) -> None: ...
 ```
 
-`MemoryFabric.__init__` builds each collaborator with narrow callables/
-protocols (e.g. `appender=self._append_event_spec`) instead of handing over
-`self`. Public fabric methods become one-line delegations, so the public API,
+`MemoryFabric.__init__` builds each collaborator against a narrow structural
+protocol. Phase 1 refined this: tests monkeypatch fabric *instance* attributes
+(`checkout_memory`, `query`, `query_causal_predecessors`) after construction,
+so seams must **late-bind** — the collaborator holds the host and resolves
+every lookup at call time (one `ReasoningHost` protocol declaring the exact
+surface), and intra-cluster calls to *public* primitives route back through
+the host so instance patches stay the single dispatch point. Public fabric methods become one-line delegations, so the public API,
 the MCP parity contract, and every patch target are untouched (collaborators
 receive the patched objects at construction time from the facade's namespace,
 preserving `patch("zaxy.core.fabric.X")` interception — construction happens
@@ -118,7 +122,7 @@ lines), five collaborator modules each under ~1,200.
 
 ## 8. Done-when
 
-- [ ] Five phases merged, each individually green (suite + parity + ratchet)
+- [x] Phase 1 (ReasoningOps) merged green — [ ] remaining four phases
 - [ ] `fabric.py` under ~800 lines; no fabric-path module over ~1,500
 - [ ] All 10 patch targets demonstrably still intercept (test files that patch
       them pass unmodified)
