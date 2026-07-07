@@ -1,7 +1,7 @@
 # API Inventory
 
 This inventory is the maintained map of public Zaxy surfaces, first frozen at
-the v0.9 release candidate and kept current through 2.0. It does not make every
+the v0.9 release candidate and kept current through 3.1. It does not make every
 surface stable. It records which contracts are stable now, which are beta,
 which are experimental, and which remain internal so ongoing release work can
 avoid accidental breaking changes.

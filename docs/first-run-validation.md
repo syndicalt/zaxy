@@ -15,8 +15,8 @@ without private project knowledge.
 ```bash
 pipx install zaxy-memory
 zaxy init
-zaxy memory bootstrap --eventloom-path .eventloom
-zaxy memory checkout "current project memory and next useful action" --eventloom-path .eventloom
+zaxy bootstrap --eventloom-path .eventloom
+zaxy checkout "current project memory and next useful action" --eventloom-path .eventloom
 zaxy doctor --eventloom-path .eventloom
 python examples/single_agent_memory.py
 ```

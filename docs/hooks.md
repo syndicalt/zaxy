@@ -1,15 +1,17 @@
 # Hook Protocol
 
-Zaxy hooks are observer adapters. Agents and tools execute normally; hooks only
-record lifecycle checkpoints into Eventloom. This keeps Zaxy out of the
-execution path while preserving durable provenance for session boundaries,
-checkpoints, and compaction.
+Zaxy hooks are observer adapters. Agents and tools execute normally; hooks
+record lifecycle checkpoints into Eventloom and, on the `Stop` hook, run
+deterministic transcript capture so substantive work (turns, tool calls,
+commands, file edits) lands in memory too — see "Automatic transcript capture"
+below. Zaxy stays out of the execution path; everything here is out-of-band
+observation with durable provenance.
 
 Generate client-specific adapter config:
 
 ```bash
-zaxy hooks claude-code --eventloom-path .eventloom --domain my-project
-zaxy hooks codex --eventloom-path .eventloom --domain my-project
+zaxy setup hooks claude-code --eventloom-path .eventloom --domain my-project
+zaxy setup hooks codex --eventloom-path .eventloom --domain my-project
 ```
 
 For Codex, the preferred deterministic path is not provider packet capture and
@@ -25,11 +27,11 @@ idempotent, and out of the model request path. Use
 `zaxy capture status`, `zaxy capture start`, and `zaxy capture stop` when a
 supervisor needs direct control. Add `--graph` to `capture start` when Neo4j is
 reachable and newly captured observations should be projected immediately.
-The underlying `zaxy codex-capture --watch` command remains available for
+The underlying `zaxy capture codex --watch` command remains available for
 supervisors that need direct control; use `--watch-iterations <n>` for bounded
 health checks and tests.
 
-For Claude Code, `zaxy claude-capture` provides the same deterministic,
+For Claude Code, `zaxy capture claude` provides the same deterministic,
 out-of-band path against Claude's own local session logs under
 `~/.claude/projects` (or `$CLAUDE_CONFIG_DIR`). It imports each conversation's
 transcript turns, tool calls, Bash command results, and file edits into
@@ -38,13 +40,15 @@ record's `cwd` and deduplicated by source ref, so captured turns flow through
 the existing hybrid query path and `memory_query` for unified Claude + Codex
 thread search. Run it one-shot or with `--watch` (`--watch-iterations <n>` for
 bounded passes), and add `--graph` to project new observations immediately.
-Unlike Codex capture, it is standalone today — there is no managed watcher or
-onboarding config, and reasoning/thinking blocks are never ingested.
+As of 3.1.1 it is wired automatically: the generated Claude Code `Stop` hook
+runs `zaxy capture claude` alongside the lifecycle handler on every turn end
+(idempotent, ~1s incremental), so no separate watcher is needed for Claude.
+Reasoning/thinking blocks are never ingested.
 
 Write config directly during onboarding:
 
 ```bash
-zaxy hooks claude-code \
+zaxy setup hooks claude-code \
   --eventloom-path .eventloom \
   --domain my-project \
   --output .claude/settings.local.json
@@ -64,7 +68,7 @@ zaxy hook-status --eventloom-path .eventloom
 zaxy hook-status --json
 zaxy hook-status --eventloom-path .eventloom --json
 zaxy hook-status --eventloom-path .eventloom --require-capture-running
-zaxy capture-soak --eventloom-path .eventloom --session-id my-project-default
+zaxy capture soak --eventloom-path .eventloom --session-id my-project-default
 zaxy hook-event heartbeat --eventloom-path .eventloom --session-id my-project-default --source manual
 ```
 
@@ -100,7 +104,7 @@ CLI fallback before substantial work.
 `zaxy doctor` also surfaces the same signal as `capture_health`, making it the
 single first-run health row for whether deterministic capture is installed,
 running when needed, and producing usable observations.
-For beta evidence, `zaxy capture-soak` turns the same observation data into a
+For beta evidence, `zaxy capture soak` turns the same observation data into a
 release-gate report with latest seq/hash, stale lane detection, missing lane
 remediation, and a pass/fail `beta_criteria` field.
 Claude Code detection parses JSON hook command handlers rather than matching
@@ -161,7 +165,7 @@ recommended `memory_checkout`. When memory is fresh it stays silent and adds no
 context noise. Wire it via:
 
 ```bash
-zaxy hooks claude-code --eventloom-path .eventloom --domain my-project
+zaxy setup hooks claude-code --eventloom-path .eventloom --domain my-project
 ```
 
 Codex ships Claude-parity hooks, so the same `UserPromptSubmit` /
@@ -169,7 +173,7 @@ Codex ships Claude-parity hooks, so the same `UserPromptSubmit` /
 emits a `.codex/hooks.json` with the same per-turn recall behavior:
 
 ```bash
-zaxy hooks codex --eventloom-path .eventloom --domain my-project
+zaxy setup hooks codex --eventloom-path .eventloom --domain my-project
 ```
 
 The injected line is plain prose rather than JSON or glyphs, and it is assembled
@@ -231,6 +235,22 @@ zaxy hook-event transcript-turn \
   --content "Recorded the implementation decision." \
   --turn-index 12
 ```
+
+## Automatic transcript capture (`Stop` hook)
+
+Since 3.1.1 the generated hook config for Claude Code and Codex runs
+deterministic transcript capture as a second `Stop`-hook command —
+`zaxy capture claude` / `zaxy capture codex` — after the lifecycle handler.
+Each turn end ingests the client's own local session logs into Eventloom as
+normalized `transcript.turn`, `tool.call.completed`, `command.completed`, and
+`file.edit.applied` observations. Capture is idempotent (source-ref
+deduplicated) and ~1s incremental, so running it on every stop adds no
+meaningful latency. Without this wiring, only lifecycle checkpoints land and
+`memory_checkout` has nothing substantive to recall — `zaxy doctor`'s
+`capture_health` row and `zaxy hook-status` both flag that state. Existing
+installs from before 3.1.1 pick the wiring up by re-running
+`zaxy setup hooks claude-code --output .claude/settings.local.json --force`
+(or re-running `zaxy install`).
 
 ## Compaction Recovery (`session-resumed`)
 

@@ -127,6 +127,6 @@ secret-looking values before the hash is sealed, and record the affected payload
 paths under `security.redacted_paths`. Store references, summaries, or redacted
 metadata instead. See [security.md](security.md) for data-handling guidance.
 
-Related pages: [architecture.md](architecture.md), [graph-schema.md](graph-schema.md),
+Related pages: [architecture.md](architecture.md), [external-ingest.md](external-ingest.md), [graph-schema.md](graph-schema.md),
 [mcp.md](mcp.md), and [runbook.md](runbook.md). The high-level product framing
 is available in [site/index.html](../site/index.html) and [README.md](../README.md).
