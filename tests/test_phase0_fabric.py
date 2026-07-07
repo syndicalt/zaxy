@@ -17,7 +17,6 @@ from pathlib import Path
 
 import pytest
 
-import zaxy.core.fabric as fabric_mod
 from zaxy.core.fabric import MemoryFabric
 
 
@@ -95,7 +94,9 @@ async def test_append_offloads_blocking_write_to_thread(
             offloaded.append(getattr(func, "__name__", ""))
             return await real_to_thread(func, *args, **kwargs)
 
-        monkeypatch.setattr(fabric_mod.asyncio, "to_thread", _spy_to_thread)
+        from zaxy.core import fabric_write as fabric_write_mod
+
+        monkeypatch.setattr(fabric_write_mod.asyncio, "to_thread", _spy_to_thread)
 
         event = await fabric.append(
             "memory.note",
