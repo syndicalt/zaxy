@@ -62,6 +62,7 @@ from zaxy.core.checkout_build import (
     build_memory_checkout,
     entity_reinforcement_targets,
 )
+from zaxy.core.fabric_coordination import CoordinationOps
 from zaxy.core.fabric_reasoning import ReasoningOps
 from zaxy.core.models import (
     ContextAssembly,
@@ -99,7 +100,6 @@ from zaxy.forgetting import (
     decrypt_payload,
 )
 from zaxy.inference import build_inferred_edge_events
-from zaxy.lifecycle import build_subagent_completed_event
 from zaxy.log import get_logger
 from zaxy.long_horizon import build_long_horizon_plan
 from zaxy.metrics import get_metrics
@@ -409,6 +409,29 @@ class MemoryFabric:
             ops = ReasoningOps(host=self)
             self.__dict__["_reasoning_ops"] = ops
         return cast(ReasoningOps, ops)
+
+    @property
+    def _coordination(self) -> CoordinationOps:
+        """Coordination/fleet/handoff collaborator (phase 2), lazily built.
+
+        Same contract as ``_reasoning``: lazy for ``__new__``-constructed
+        partial fabrics; every host lookup late-binds so instance patches
+        (e.g. ``fabric._fleet_manager``) keep intercepting.
+        """
+        ops = self.__dict__.get("_coordination_ops")
+        if ops is None:
+            ops = CoordinationOps(host=self)
+            self.__dict__["_coordination_ops"] = ops
+        return cast(CoordinationOps, ops)
+
+    def _record_degraded_operation(self, operation: str, reason: str) -> None:
+        """Metrics seam for collaborators.
+
+        Resolves ``get_metrics`` in THIS module so existing
+        ``patch("zaxy.core.fabric.get_metrics")`` targets keep intercepting
+        call sites that moved into collaborator modules.
+        """
+        get_metrics().record_degraded_operation(operation, reason)
 
     async def connect(self) -> None:
         """Connect to projection backend and tracer. Idempotent.
@@ -2680,87 +2703,17 @@ class MemoryFabric:
     def _fleet_manager(self) -> Any:
         """Return a FleetManager bound to this fabric's session manager.
 
-        Twin of the MCP server's ``_coordination_manager``: the fleet plane
-        replays the same Eventloom store this fabric reads, so checkout's fleet
-        lane sees exactly the governed state the ``fleet_*`` tools wrote.
+        Kept as a fabric method (delegating to the coordination collaborator)
+        because tests instance-patch it before driving the fleet lane; the
+        moved lane resolves the manager back through this host method.
         """
-        from zaxy.fleet import FleetManager
-
-        manager = FleetManager(eventloom_path=self.eventloom_path, settings=self.settings)
-        manager.session_manager = self.session_manager
-        return manager
+        return self._coordination.fleet_manager()
 
     def _fleet_lane_contexts(
         self, fleet_ids: list[str] | None, *, agent_id: str
     ) -> list[Context]:
-        """Resolve the enrollment-gated, cited, non-authoritative fleet lane.
-
-        Returns nothing unless ``fleet_enabled`` is on and ``fleet_ids`` are
-        requested (default-off: byte-identical checkout otherwise). For each
-        requested fleet the agent must be enrolled at a tier above ``untrusted``
-        (a non-enrolled or ``untrusted`` agent never receives a fleet's promoted
-        memory); only ``active`` promotions whose visibility scope reaches the
-        fleet are surfaced, each carrying its Eventloom citation, fleet
-        provenance, and a ``fleet`` source-lane marker.
-        """
-        if not getattr(self.settings, "fleet_enabled", False) or not fleet_ids:
-            return []
-        from zaxy.fleet import fleet_thread
-
-        manager = self._fleet_manager()
-        contexts: list[Context] = []
-        seen: set[str] = set()
-        for fleet_id in fleet_ids:
-            try:
-                brief = manager.fleet_brief(fleet_id)
-            except Exception:
-                get_metrics().record_degraded_operation("query", "fleet_lane_unavailable")
-                continue
-            tier = next(
-                (agent.trust_tier for agent in brief.agents if agent.agent_id == agent_id),
-                None,
-            )
-            if tier is None or tier == "untrusted":
-                # Not enrolled, or sandboxed/untrusted: never receives fleet memory.
-                continue
-            thread = fleet_thread(fleet_id)
-            for memory in brief.active_promotions:
-                if memory.visibility_scope not in ("fleet", "global"):
-                    continue
-                if memory.promotion_id in seen:
-                    continue
-                seen.add(memory.promotion_id)
-                contexts.append(self._fleet_memory_context(memory, thread=thread))
-        return contexts
-
-    @staticmethod
-    def _fleet_memory_context(memory: Any, *, thread: str) -> Context:
-        """Project one active fleet memory into a cited, non-authoritative Context."""
-        citation = f"eventloom://{thread}/events/{memory.event_seq}#{memory.event_hash[:12]}"
-        confidence = memory.confidence if isinstance(memory.confidence, int | float) else 0.5
-        return Context(
-            content=memory.summary or memory.promotion_id,
-            source="fleet",
-            score=float(confidence),
-            valid_from=memory.timestamp or None,
-            metadata={
-                "assembly_lane": "fleet",
-                "source_lane": "fleet",
-                "citation": citation,
-                "non_authoritative": True,
-                "authority_status": "non_authoritative",
-                "fleet_id": memory.fleet_id,
-                "promotion_id": memory.promotion_id,
-                "kind": memory.kind,
-                "review_status": memory.review_status,
-                "visibility_scope": memory.visibility_scope,
-                "keystone": memory.keystone,
-                "origin_actor": memory.origin_actor,
-                "origin_session": memory.origin_session,
-                "entity_type": "fleet_promotion",
-                "entity_name": memory.promotion_id,
-            },
-        )
+        """Resolve the enrollment-gated fleet lane (see CoordinationOps)."""
+        return self._coordination.fleet_lane_contexts(fleet_ids, agent_id=agent_id)
 
     async def assemble_context(
         self,
@@ -3262,6 +3215,9 @@ class MemoryFabric:
             max_recent_events=max_recent_events,
         )
 
+    # -- coordination / fleet / handoff (delegated; decomposition phase 2) ----
+    # Bodies live in zaxy.core.fabric_coordination.CoordinationOps.
+
     async def handoff_bundle(
         self,
         *,
@@ -3272,24 +3228,12 @@ class MemoryFabric:
         max_recent_events: int = 20,
     ) -> HandoffBundle:
         """Build a portable handoff bundle with summary, replay, and retrieval."""
-        sid = validate_session_id(session_id)
-        summary = self.session_manager.handoff_summary(sid)
-        replay = await self.replay(from_seq=replay_from_seq, session_id=sid)
-        assembly = await self.assemble_context(
-            query,
-            session_id=sid,
+        return await self._coordination.handoff_bundle(
+            session_id=session_id,
+            query=query,
             replay_from_seq=replay_from_seq,
             limit=limit,
             max_recent_events=max_recent_events,
-        )
-        integrity = getattr(replay, "integrity", None)
-        return HandoffBundle(
-            session_id=sid,
-            summary=summary,
-            prompt=assembly.prompt,
-            contexts=assembly.contexts,
-            replay_event_count=assembly.replay_event_count,
-            integrity_ok=bool(getattr(integrity, "ok", False)),
         )
 
     async def cleanup_subagent(
@@ -3302,73 +3246,35 @@ class MemoryFabric:
         limit: int = 10,
     ) -> HandoffBundle:
         """Finalize a subagent session and return a handoff bundle for the parent."""
-        parent_sid = validate_session_id(parent_session_id)
-        subagent_sid = validate_session_id(subagent_session_id)
-        await self.append(
-            "subagent.cleaned",
-            actor="zaxy",
-            payload={
-                "parent_session_id": parent_sid,
-                "subagent_session_id": subagent_sid,
-                "summary": summary,
-            },
-            session_id=subagent_sid,
-        )
-        event = build_subagent_completed_event(
-            parent_session_id=parent_sid,
-            subagent_session_id=subagent_sid,
-            status="succeeded",
+        return await self._coordination.cleanup_subagent(
+            parent_session_id=parent_session_id,
+            subagent_session_id=subagent_session_id,
             summary=summary,
-        )
-        await self.append(
-            event["event_type"],
-            actor=event["actor"],
-            payload=event["payload"],
-            session_id=subagent_sid,
-        )
-        return await self.handoff_bundle(
-            session_id=subagent_sid,
             query=query,
-            replay_from_seq=1,
             limit=limit,
         )
 
     async def coordinate_start_mission(
-        self,
-        mission_id: str,
-        *,
-        objective: str,
-        actor: str = "coordinator",
+        self, mission_id: str, *, objective: str, actor: str = "coordinator"
     ) -> Any:
         """Start a parent coordination mission and project it."""
-        result = self._coordination_manager().start_mission(mission_id, objective=objective, actor=actor)
-        await self._project_event(result.event, session_id=result.mission_id)
-        return result
+        return await self._coordination.coordinate_start_mission(
+            mission_id, objective=objective, actor=actor
+        )
 
     async def coordinate_create_worker(
-        self,
-        mission_id: str,
-        worker_id: str,
-        *,
-        actor: str = "coordinator",
+        self, mission_id: str, worker_id: str, *, actor: str = "coordinator"
     ) -> Any:
         """Register a worker session under a parent mission and project it."""
-        result = self._coordination_manager().create_worker(mission_id, worker_id, actor=actor)
-        await self._project_event(result.event, session_id=result.mission_id)
-        return result
+        return await self._coordination.coordinate_create_worker(mission_id, worker_id, actor=actor)
 
     async def coordinate_assign(
-        self,
-        mission_id: str,
-        worker_id: str,
-        assignment: str,
-        *,
-        actor: str = "coordinator",
+        self, mission_id: str, worker_id: str, assignment: str, *, actor: str = "coordinator"
     ) -> Any:
         """Assign scoped work to a coordination worker and project it."""
-        result = self._coordination_manager().assign(mission_id, worker_id, assignment, actor=actor)
-        await self._project_event(result.event, session_id=result.mission_id)
-        return result
+        return await self._coordination.coordinate_assign(
+            mission_id, worker_id, assignment, actor=actor
+        )
 
     async def coordinate_report_finding(
         self,
@@ -3384,7 +3290,7 @@ class MemoryFabric:
         finding_id: str | None = None,
     ) -> Any:
         """Record a worker-local finding and project it in the worker session."""
-        result = self._coordination_manager().report_finding(
+        return await self._coordination.coordinate_report_finding(
             mission_id,
             worker_id,
             summary=summary,
@@ -3395,8 +3301,6 @@ class MemoryFabric:
             claim_value=claim_value,
             finding_id=finding_id,
         )
-        await self._project_event(result.event, session_id=result.worker_id or worker_id)
-        return result
 
     async def coordinate_review_finding(
         self,
@@ -3408,35 +3312,27 @@ class MemoryFabric:
         rationale: str | None = None,
     ) -> Any:
         """Record a coordinator review decision and project it."""
-        result = self._coordination_manager().review_finding(
-            mission_id,
-            finding_id,
-            status=status,
-            actor=actor,
-            rationale=rationale,
+        return await self._coordination.coordinate_review_finding(
+            mission_id, finding_id, status=status, actor=actor, rationale=rationale
         )
-        await self._project_event(result.event, session_id=result.mission_id)
-        return result
 
     async def coordinate_promote_finding(
-        self,
-        mission_id: str,
-        finding_id: str,
-        *,
-        actor: str = "coordinator",
+        self, mission_id: str, finding_id: str, *, actor: str = "coordinator"
     ) -> Any:
         """Promote a finding into the parent mission history and project it."""
-        result = self._coordination_manager().promote_finding(mission_id, finding_id, actor=actor)
-        await self._project_event(result.event, session_id=result.mission_id)
-        return result
+        return await self._coordination.coordinate_promote_finding(
+            mission_id, finding_id, actor=actor
+        )
 
     async def coordinate_brief(self, mission_id: str) -> Any:
         """Return a replay-backed coordination brief."""
-        return self._coordination_manager().brief(mission_id)
+        return await self._coordination.coordinate_brief(mission_id)
 
     async def coordinate_checkout(self, mission_id: str, *, include_diagnostics: bool = False) -> Any:
         """Return accepted coordination state for prompt injection."""
-        return self._coordination_manager().checkout(mission_id, include_diagnostics=include_diagnostics)
+        return await self._coordination.coordinate_checkout(
+            mission_id, include_diagnostics=include_diagnostics
+        )
 
     async def coordinate_record_synthesis_artifact(
         self,
@@ -3448,58 +3344,17 @@ class MemoryFabric:
         actor: str = "coordinator",
     ) -> dict[str, Any]:
         """Persist a synthesis artifact plus a mission-scoped Coordinate proof packet."""
-        mission_sid = validate_session_id(mission_id)
-        if validate_session_id(checkout.session_id) != mission_sid:
-            raise ValueError("Coordinate synthesis checkout session_id must match mission_id")
-        artifact_payload = build_synthesis_artifact(checkout)
-        proof_packet = self._coordination_manager().proof_packet(
-            mission_sid,
-            artifact_payload,
+        return await self._coordination.coordinate_record_synthesis_artifact(
+            mission_id,
+            checkout,
             decision_scope=decision_scope,
             handoff_id=handoff_id,
-        )
-        proof_payload = validate_payload(proof_packet.to_dict())
-        if not self._connected:
-            try:
-                await self.connect()
-            except Exception:
-                get_metrics().record_degraded_operation("append", "graph_connect_unavailable")
-                self._connected = False
-        eventlog = self.session_manager.get(mission_sid).eventlog
-        artifact_event = eventlog.append(
-            "memory.synthesis.artifact.created",
             actor=actor,
-            payload=validate_payload(artifact_payload),
-            thread=mission_sid,
         )
-        await self._project_event(artifact_event, session_id=mission_sid)
-        await self._append_generated_inferences(eventlog, source_event=artifact_event, session_id=mission_sid)
-        proof_event = eventlog.append(
-            "coordination.proof_packet.created",
-            actor=actor,
-            payload=proof_payload,
-            thread=mission_sid,
-        )
-        await self._project_event(proof_event, session_id=mission_sid)
-        await self._append_generated_inferences(eventlog, source_event=proof_event, session_id=mission_sid)
-        return {
-            "artifact_id": artifact_payload["artifact_id"],
-            "artifact_event": {
-                "seq": artifact_event.seq,
-                "hash": artifact_event.hash,
-                "event_type": artifact_event.type,
-            },
-            "proof_event": {
-                "seq": proof_event.seq,
-                "hash": proof_event.hash,
-                "event_type": proof_event.type,
-            },
-            "proof_packet": proof_payload,
-        }
 
     async def coordinate_performance_ledger(self, mission_id: str) -> Any:
         """Return replay-backed worker outcome metrics for a coordination mission."""
-        return self._coordination_manager().performance_ledger(mission_id)
+        return await self._coordination.coordinate_performance_ledger(mission_id)
 
     async def coordinate_create_handoff(
         self,
@@ -3511,19 +3366,13 @@ class MemoryFabric:
         risks: list[str] | None = None,
     ) -> Any:
         """Create a final parent mission handoff and project it."""
-        result = self._coordination_manager().create_handoff(
-            mission_id,
-            summary=summary,
-            actor=actor,
-            next_steps=next_steps,
-            risks=risks,
+        return await self._coordination.coordinate_create_handoff(
+            mission_id, summary=summary, actor=actor, next_steps=next_steps, risks=risks
         )
-        await self._project_event(result.event, session_id=result.mission_id)
-        return result
 
     async def coordinate_approval_packet(self, mission_id: str) -> Any:
         """Return a portable remote approval packet for pending coordination findings."""
-        return self._coordination_manager().approval_packet(mission_id)
+        return await self._coordination.coordinate_approval_packet(mission_id)
 
     async def coordinate_apply_approval_decisions(
         self,
@@ -3533,41 +3382,19 @@ class MemoryFabric:
         actor: str = "coordinator",
     ) -> Any:
         """Apply remote approval decisions and project all resulting events."""
-        result = self._coordination_manager().apply_approval_decisions(
-            mission_id,
-            decisions,
-            actor=actor,
+        return await self._coordination.coordinate_apply_approval_decisions(
+            mission_id, decisions, actor=actor
         )
-        for event in result.events:
-            await self._project_event(event, session_id=result.mission_id)
-        return result
 
     async def coordinate_record_detected_conflicts(
-        self,
-        mission_id: str,
-        *,
-        actor: str = "zaxy",
+        self, mission_id: str, *, actor: str = "zaxy"
     ) -> Any:
         """Materialize deterministic coordination conflicts and project them."""
-        results = self._coordination_manager().record_detected_conflicts(
-            mission_id,
-            actor=actor,
-        )
-        for result in results:
-            await self._project_event(result.event, session_id=result.mission_id)
-        return results
+        return await self._coordination.coordinate_record_detected_conflicts(mission_id, actor=actor)
 
     def _coordination_manager(self) -> Any:
         """Return a coordination manager bound to this fabric's session manager."""
-        from zaxy.coordination import CoordinationManager
-        from zaxy.coordination_semantic import build_semantic_conflict_detector
-
-        manager = CoordinationManager(
-            eventloom_path=self.eventloom_path,
-            semantic_conflict_detector=build_semantic_conflict_detector(self.settings),
-        )
-        manager.session_manager = self.session_manager
-        return manager
+        return self._coordination.coordination_manager()
 
     async def invalidate(
         self,
@@ -3619,4 +3446,4 @@ class MemoryFabric:
 
         Suitable for resuming an agent session across restarts.
         """
-        return self.session_manager.handoff_summary(session_id)
+        return await self._coordination.handoff_summary(session_id)
