@@ -41,12 +41,10 @@ import sys
 import threading
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager, suppress
-from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, Protocol, cast
+from typing import Any, Literal, cast
 
 import anyio
-import jwt
 from mcp import types
 from mcp.server import Server
 from mcp.server.sse import SseServerTransport
@@ -63,18 +61,14 @@ from zaxy.consolidation import (
     build_consolidation_review_event,
 )
 from zaxy.context import (
-    Context,
     ContextAssemblyPolicy,
     apply_assembly_prompt_budget,
 )
 from zaxy.core import (
-    ContextAssembly,
-    MemoryCheckout,
     MemoryFabric,
     entity_reinforcement_targets,
 )
 from zaxy.export_view import (
-    ExportSelector,
     build_memory_export,
     disclose_export_bundle,
     load_signing_key,
@@ -86,13 +80,153 @@ from zaxy.lifecycle import (
     build_tool_call_completed_event,
 )
 from zaxy.log import get_logger, setup_logging
+from zaxy.mcp_payloads import (
+    _activity_event_citation as _activity_event_citation,
+)
+from zaxy.mcp_payloads import (
+    _approval_decisions as _approval_decisions,
+)
+from zaxy.mcp_payloads import (
+    _checkout_activity_metadata as _checkout_activity_metadata,
+)
+from zaxy.mcp_payloads import (
+    _citation_event_identity as _citation_event_identity,
+)
+from zaxy.mcp_payloads import (
+    _context_assembly_from_payload as _context_assembly_from_payload,
+)
+from zaxy.mcp_payloads import (
+    _context_assembly_payload as _context_assembly_payload,
+)
+from zaxy.mcp_payloads import (
+    _context_from_payload as _context_from_payload,
+)
+from zaxy.mcp_payloads import (
+    _context_from_query_result as _context_from_query_result,
+)
+from zaxy.mcp_payloads import (
+    _context_payload as _context_payload,
+)
+from zaxy.mcp_payloads import (
+    _contexts_as_of_seq as _contexts_as_of_seq,
+)
+from zaxy.mcp_payloads import (
+    _coordination_result_payload as _coordination_result_payload,
+)
+from zaxy.mcp_payloads import (
+    _dict_list_payload as _dict_list_payload,
+)
+from zaxy.mcp_payloads import (
+    _dict_payload as _dict_payload,
+)
+from zaxy.mcp_payloads import (
+    _event_content as _event_content,
+)
+from zaxy.mcp_payloads import (
+    _export_selector_from_arguments as _export_selector_from_arguments,
+)
+from zaxy.mcp_payloads import (
+    _fleet_source_events as _fleet_source_events,
+)
+from zaxy.mcp_payloads import (
+    _fok_probe_text as _fok_probe_text,
+)
+from zaxy.mcp_payloads import (
+    _format_prompt as _format_prompt,
+)
+from zaxy.mcp_payloads import (
+    _int_dict_payload as _int_dict_payload,
+)
+from zaxy.mcp_payloads import (
+    _int_payload as _int_payload,
+)
+from zaxy.mcp_payloads import (
+    _memory_checkout_from_payload as _memory_checkout_from_payload,
+)
+from zaxy.mcp_payloads import (
+    _normalize_feedback as _normalize_feedback,
+)
+from zaxy.mcp_payloads import (
+    _optional_dict_payload as _optional_dict_payload,
+)
+from zaxy.mcp_payloads import (
+    _optional_export_int as _optional_export_int,
+)
+from zaxy.mcp_payloads import (
+    _optional_max_tokens as _optional_max_tokens,
+)
+from zaxy.mcp_payloads import (
+    _optional_strict_text as _optional_strict_text,
+)
+from zaxy.mcp_payloads import (
+    _optional_text as _optional_text,
+)
+from zaxy.mcp_payloads import (
+    _optional_text_list as _optional_text_list,
+)
+from zaxy.mcp_payloads import (
+    _purpose_payload as _purpose_payload,
+)
+from zaxy.mcp_payloads import (
+    _query_context_payload as _query_context_payload,
+)
+from zaxy.mcp_payloads import (
+    _require_synthesis_row_in_checkout as _require_synthesis_row_in_checkout,
+)
+from zaxy.mcp_payloads import (
+    _required_strict_text as _required_strict_text,
+)
+from zaxy.mcp_payloads import (
+    _required_text as _required_text,
+)
+from zaxy.mcp_payloads import (
+    _result_citation as _result_citation,
+)
+from zaxy.mcp_payloads import (
+    _skill_event_type as _skill_event_type,
+)
+from zaxy.mcp_payloads import (
+    _string_payload_list as _string_payload_list,
+)
+from zaxy.mcp_payloads import (
+    _synthesis_row_identity as _synthesis_row_identity,
+)
+from zaxy.mcp_payloads import (
+    _validate_consolidation_window_size as _validate_consolidation_window_size,
+)
+from zaxy.mcp_payloads import (
+    _validate_reasoning_confidence as _validate_reasoning_confidence,
+)
+from zaxy.mcp_payloads import (
+    _validate_reasoning_phase as _validate_reasoning_phase,
+)
+from zaxy.mcp_payloads import (
+    _validate_reasoning_source_events as _validate_reasoning_source_events,
+)
 from zaxy.mcp_runtime import EmbeddedMcpOwnerClaim, EmbeddedMcpRuntimeCoordinator
 from zaxy.mcp_tool_specs import (
     MEMORY_CONFIDENCE_OPERATIONS,
     MEMORY_CONSOLIDATION_OPERATIONS,
-    REASONING_PHASES,
 )
 from zaxy.mcp_tool_specs import TOOLS as TOOLS  # re-export for `from zaxy.mcp_server import TOOLS`
+from zaxy.mcp_transport_auth import (
+    JWKSClient as JWKSClient,
+)
+from zaxy.mcp_transport_auth import (
+    JWTDecoder as JWTDecoder,
+)
+from zaxy.mcp_transport_auth import (
+    MCPTransportAuth as MCPTransportAuth,
+)
+from zaxy.mcp_transport_auth import (
+    RemoteRateLimitError as RemoteRateLimitError,
+)
+from zaxy.mcp_transport_auth import (
+    RemoteRequestGuard as RemoteRequestGuard,
+)
+from zaxy.mcp_transport_auth import (
+    _claim_values as _claim_values,
+)
 from zaxy.memory_persistence import record_memory_activity
 from zaxy.metacognition import (
     FeelingOfKnowingIndex,
@@ -102,10 +236,8 @@ from zaxy.metacognition import (
 )
 from zaxy.metrics import get_metrics
 from zaxy.projection_backends import ProjectionBackendConfig, build_projection_store
-from zaxy.purpose import purpose_profile
 from zaxy.query import QueryRouter, build_retention_policy
 from zaxy.refs import MemoryRef, MemoryRefStore
-from zaxy.remote_security import AuditEventExporter, RemoteAuditEvent, SessionRateLimiter
 from zaxy.retrieval_cache import SessionRetrievalCache
 from zaxy.runtime import LocalEmbeddedGraphRuntime, LocalNeo4jRuntime, LocalPgGraphRuntime
 from zaxy.salience import (
@@ -135,7 +267,6 @@ from zaxy.synthesis_artifact import (
 from zaxy.tool_profiles import resolve_profile
 from zaxy.trace import MemoryTracer
 from zaxy.verbatim import VerbatimIndex
-from zaxy.working_set import format_working_set
 from zaxy.workspace import (
     WorkspaceProfile,
     build_session_genesis_event,
@@ -2315,717 +2446,6 @@ class ZaxyMCPServer:
         if resolved is None:
             raise ValueError(f"Unknown memory ref: {ref}")
         return resolved
-
-
-class JWTDecoder(Protocol):
-    def __call__(self, token: str, key: Any, **kwargs: Any) -> dict[str, Any]:
-        """Decode and validate a JWT."""
-
-
-class JWKSClient(Protocol):
-    def get_signing_key_from_jwt(self, token: str) -> Any:
-        """Return the signing key for a JWT."""
-
-
-class MCPTransportAuth:
-    """Authenticate and scope remote MCP/SSE HTTP requests."""
-
-    def __init__(
-        self,
-        token: str | None,
-        session_header: str = "x-zaxy-session-id",
-        oidc_issuer: str | None = None,
-        oidc_audience: str | None = None,
-        oidc_jwks_url: str | None = None,
-        oidc_required_scope: str = "zaxy:mcp",
-        oidc_session_claim: str = "zaxy_session",
-        jwt_client: JWKSClient | None = None,
-        jwt_decoder: JWTDecoder | None = None,
-    ) -> None:
-        self._token = token
-        self._session_header = session_header.casefold()
-        self._oidc_issuer = oidc_issuer
-        self._oidc_audience = oidc_audience
-        self._oidc_jwks_url = oidc_jwks_url
-        self._oidc_required_scope = oidc_required_scope
-        self._oidc_session_claim = oidc_session_claim
-        self._jwt_client = jwt_client
-        self._jwt_decoder = jwt_decoder or jwt.decode
-
-    def authorize(self, headers: Mapping[str, str]) -> str:
-        """Validate request headers and return the remote session scope."""
-        normalized = {key.casefold(): value for key, value in headers.items()}
-        if self._oidc_enabled:
-            return self._authorize_oidc(normalized)
-        if self._token is not None:
-            header = normalized.get("authorization")
-            if not header or not header.startswith("Bearer "):
-                raise PermissionError("Authorization bearer token is required")
-            supplied = header.removeprefix("Bearer ").strip()
-            if not hmac.compare_digest(supplied, self._token):
-                raise PermissionError("Authorization bearer token is invalid")
-            session_id = normalized.get(self._session_header)
-            if not session_id:
-                raise PermissionError("remote session header is required")
-            return validate_session_id(session_id)
-        return validate_session_id(normalized.get(self._session_header, "default"))
-
-    @property
-    def _oidc_enabled(self) -> bool:
-        return bool(self._oidc_issuer and self._oidc_audience and self._oidc_jwks_url)
-
-    def _authorize_oidc(self, headers: Mapping[str, str]) -> str:
-        header = headers.get("authorization")
-        if not header or not header.startswith("Bearer "):
-            raise PermissionError("Authorization bearer token is required")
-        token = header.removeprefix("Bearer ").strip()
-        if not token:
-            raise PermissionError("Authorization bearer token is required")
-        try:
-            jwks_client = self._jwt_client or jwt.PyJWKClient(str(self._oidc_jwks_url))
-            signing_key = jwks_client.get_signing_key_from_jwt(token)
-            claims = self._jwt_decoder(
-                token,
-                signing_key.key,
-                algorithms=["RS256", "ES256"],
-                audience=self._oidc_audience,
-                issuer=self._oidc_issuer,
-                options={"require": ["exp", "iat", "iss", "aud"]},
-            )
-        except Exception as exc:
-            raise PermissionError("Authorization bearer token is invalid") from exc
-
-        scopes = _claim_values(claims.get("scope")) | _claim_values(claims.get("scp"))
-        if self._oidc_required_scope and self._oidc_required_scope not in scopes:
-            raise PermissionError("Authorization bearer token missing required scope")
-
-        session_claim = claims.get(self._oidc_session_claim)
-        if not isinstance(session_claim, str) or not session_claim:
-            raise PermissionError("Authorization bearer token missing session claim")
-        return validate_session_id(session_claim)
-
-
-class RemoteRateLimitError(PermissionError):
-    """Raised when a remote session exceeds its request rate limit."""
-
-    def __init__(self, retry_after_seconds: int) -> None:
-        super().__init__("remote MCP rate limit exceeded")
-        self.retry_after_seconds = retry_after_seconds
-
-
-class RemoteRequestGuard:
-    """Authorize, rate-limit, and audit remote MCP/SSE HTTP requests."""
-
-    def __init__(
-        self,
-        *,
-        auth: MCPTransportAuth,
-        rate_limit_enabled: bool,
-        rate_limit_requests: int,
-        rate_limit_window_seconds: int,
-        audit_enabled: bool,
-        audit_path: Path | str,
-    ) -> None:
-        self._auth = auth
-        self._limiter = SessionRateLimiter(
-            enabled=rate_limit_enabled,
-            max_requests=rate_limit_requests,
-            window_seconds=rate_limit_window_seconds,
-        )
-        self._audit = AuditEventExporter(path=Path(audit_path), enabled=audit_enabled)
-
-    def authorize(
-        self,
-        headers: Mapping[str, str],
-        *,
-        route: str,
-        method: str,
-        client_host: str | None,
-    ) -> str:
-        """Return authorized session ID or raise an auth/rate-limit error."""
-        try:
-            session_id = self._auth.authorize(headers)
-        except (PermissionError, ValueError) as exc:
-            self._write_audit(
-                session_id=None,
-                route=route,
-                method=method,
-                outcome="denied_auth",
-                reason=str(exc),
-                client_host=client_host,
-            )
-            raise
-
-        decision = self._limiter.check(session_id)
-        if not decision.allowed:
-            get_metrics().record_rate_limit_denial(session_id)
-            self._write_audit(
-                session_id=session_id,
-                route=route,
-                method=method,
-                outcome="denied_rate_limit",
-                reason="rate limit exceeded",
-                client_host=client_host,
-            )
-            raise RemoteRateLimitError(decision.retry_after_seconds)
-
-        self._write_audit(
-            session_id=session_id,
-            route=route,
-            method=method,
-            outcome="allowed",
-            reason=None,
-            client_host=client_host,
-        )
-        return session_id
-
-    def _write_audit(
-        self,
-        *,
-        session_id: str | None,
-        route: str,
-        method: str,
-        outcome: str,
-        reason: str | None,
-        client_host: str | None,
-    ) -> None:
-        self._audit.write(
-            RemoteAuditEvent(
-                timestamp=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-                session_id=session_id,
-                route=route,
-                method=method,
-                outcome=outcome,  # type: ignore[arg-type]
-                reason=reason,
-                client_host=client_host,
-            )
-        )
-
-
-def _checkout_activity_metadata(payload: dict[str, Any]) -> dict[str, Any]:
-    token_efficiency = payload.get("token_efficiency")
-    if isinstance(token_efficiency, dict):
-        return {"token_efficiency": token_efficiency}
-    return {}
-
-
-def _activity_event_citation(event: Any) -> str | None:
-    """Return the stable citation of a sealed memory-activity marker event."""
-    thread = getattr(event, "thread", None)
-    seq = getattr(event, "seq", None)
-    event_hash = getattr(event, "hash", None)
-    if (
-        not isinstance(thread, str)
-        or not isinstance(seq, int)
-        or isinstance(seq, bool)
-        or not isinstance(event_hash, str)
-    ):
-        return None
-    return f"eventloom://{thread}/events/{seq}#{event_hash[:12]}"
-
-
-def _context_assembly_from_payload(
-    payload: dict[str, Any],
-    *,
-    replay_events: list[Any] | None = None,
-) -> ContextAssembly:
-    """Convert an MCP context payload into the shared core assembly contract."""
-    contexts = [
-        _context_from_payload(context)
-        for context in payload.get("contexts", [])
-        if isinstance(context, dict)
-    ]
-    warnings = payload.get("warnings")
-    assembly_policy = payload.get("assembly_policy")
-    counts = payload.get("context_counts")
-    working_set = payload.get("working_set")
-    return ContextAssembly(
-        session_id=str(payload.get("session_id") or "default"),
-        prompt=str(payload.get("prompt") or ""),
-        contexts=contexts,
-        replay_event_count=int(payload.get("replay_event_count") or 0),
-        compacted=payload.get("compacted") is True,
-        warnings=list(warnings) if isinstance(warnings, list) else [],
-        assembly_policy=assembly_policy if isinstance(assembly_policy, dict) else {},
-        context_counts=counts if isinstance(counts, dict) else {},
-        working_set=working_set if isinstance(working_set, dict) else {},
-        replay_events=list(replay_events) if replay_events else [],
-    )
-
-
-def _memory_checkout_from_payload(payload: dict[str, Any]) -> MemoryCheckout:
-    """Convert an MCP checkout payload into the shared core checkout contract."""
-    return MemoryCheckout(
-        session_id=validate_session_id(str(payload.get("session_id") or "default")),
-        query=str(payload.get("query") or ""),
-        prompt=str(payload.get("prompt") or ""),
-        working_set=_dict_payload(payload.get("working_set")),
-        ref=_optional_dict_payload(payload.get("ref")),
-        current_facts=_dict_list_payload(payload.get("current_facts")),
-        evidence=_dict_list_payload(payload.get("evidence")),
-        provenance=_dict_list_payload(payload.get("provenance")),
-        retention=_dict_payload(payload.get("retention")),
-        warnings=_string_payload_list(payload.get("warnings")),
-        guidance=_dict_payload(payload.get("guidance")),
-        quality=_dict_payload(payload.get("quality")),
-        diagnostics=_dict_payload(payload.get("diagnostics")),
-        context_counts=_int_dict_payload(payload.get("context_counts")),
-        replay_event_count=_int_payload(payload.get("replay_event_count")),
-        compacted=payload.get("compacted") is True,
-        assembly_policy=_dict_payload(payload.get("assembly_policy")),
-        purpose=_dict_payload(payload.get("purpose")),
-    )
-
-
-def _require_synthesis_row_in_checkout(checkout: MemoryCheckout, row: dict[str, Any]) -> None:
-    """Ensure MCP row feedback refers to a row carried by this checkout."""
-    identity = _synthesis_row_identity(row)
-    if not any(identity.values()):
-        raise ValueError("row must include fact_id, source_group, or citation")
-    diagnostics = checkout.diagnostics if isinstance(checkout.diagnostics, dict) else {}
-    synthesis = diagnostics.get("synthesis")
-    if not isinstance(synthesis, dict):
-        raise ValueError("checkout must include diagnostics.synthesis.ledger_rows")
-    ledger_rows = synthesis.get("ledger_rows")
-    if not isinstance(ledger_rows, list) or not ledger_rows:
-        raise ValueError("checkout must include diagnostics.synthesis.ledger_rows")
-    for ledger_row in ledger_rows:
-        if isinstance(ledger_row, dict) and _synthesis_row_identity(ledger_row) == identity:
-            return
-    raise ValueError("row must match diagnostics.synthesis.ledger_rows")
-
-
-def _synthesis_row_identity(row: dict[str, Any]) -> dict[str, str | None]:
-    return {
-        "fact_id": _optional_text(row.get("fact_id")),
-        "source_group": _optional_text(row.get("source_group")),
-        "citation": _optional_text(row.get("citation")),
-    }
-
-
-def _context_from_payload(payload: dict[str, Any]) -> Context:
-    metadata = payload.get("metadata")
-    metadata = metadata if isinstance(metadata, dict) else {}
-    return Context(
-        content=str(payload.get("content") or ""),
-        source=str(payload.get("source") or "unknown"),
-        score=float(payload.get("score") or 0.0),
-        valid_from=payload.get("valid_from") if isinstance(payload.get("valid_from"), str) else None,
-        valid_to=payload.get("valid_to") if isinstance(payload.get("valid_to"), str) else None,
-        metadata=metadata,
-    )
-
-
-def _contexts_as_of_seq(contexts: list[Context], as_of_seq: int) -> list[Context]:
-    filtered = []
-    for context in contexts:
-        citation = _result_citation(context)
-        seq, _event_hash = _citation_event_identity(citation)
-        if seq is None or seq <= as_of_seq:
-            filtered.append(context)
-    return filtered
-
-
-def _citation_event_identity(citation: str | None) -> tuple[int | None, str | None]:
-    if not citation:
-        return None, None
-    event_seq: int | None = None
-    event_hash: str | None = None
-    if "/events/" in citation:
-        tail = citation.split("/events/", 1)[1]
-        seq_text = tail.split("#", 1)[0].split("/", 1)[0]
-        if seq_text.isdigit():
-            event_seq = int(seq_text)
-    if "#" in citation:
-        fragment = citation.rsplit("#", 1)[1]
-        event_hash = fragment or None
-    return event_seq, event_hash
-
-
-def _format_prompt(events: list[Any], results: list[Any], *, working_set: Any | None = None) -> str:
-    lines = []
-    if working_set is not None:
-        lines.extend([format_working_set(working_set), ""])
-    lines.append("# Recent Events")
-    for event in events:
-        lines.append(f"[{event.seq}] {event.type} by {event.actor}")
-        content = _event_content(event)
-        if content:
-            lines.append(content)
-    lines.append("")
-    lines.append("# Retrieved Context")
-    for result in results:
-        citation_value = _result_citation(result)
-        citation = f" ({citation_value})" if citation_value else ""
-        lines.append(f"- {result.content}{citation}")
-    return "\n".join(lines).strip()
-
-
-def _event_content(event: Any) -> str:
-    payload = getattr(event, "payload", {})
-    if not isinstance(payload, dict):
-        return ""
-    parts = [
-        str(payload[key])
-        for key in ("title", "summary", "content", "text", "decision", "task")
-        if payload.get(key)
-    ]
-    return " ".join(parts)
-
-
-def _context_payload(result: Any) -> dict[str, Any]:
-    metadata = getattr(result, "metadata", None) or {}
-    return {
-        "content": result.content,
-        "source": result.source,
-        "score": result.score,
-        "valid_from": result.valid_from,
-        "valid_to": result.valid_to,
-        "citation": _result_citation(result),
-        "score_explanation": metadata.get("score_explanation")
-        or getattr(result, "score_explanation", None),
-        "metadata": metadata,
-    }
-
-
-def _context_assembly_payload(assembly: ContextAssembly) -> dict[str, Any]:
-    """Serialize a fabric ContextAssembly into the context-tool output payload."""
-    return {
-        "session_id": assembly.session_id,
-        "prompt": assembly.prompt,
-        "contexts": [_context_payload(context) for context in assembly.contexts],
-        "replay_event_count": assembly.replay_event_count,
-        "compacted": assembly.compacted,
-        "assembly_policy": assembly.assembly_policy,
-        "context_counts": assembly.context_counts,
-        "working_set": assembly.working_set,
-    }
-
-
-def _query_context_payload(context: Context) -> dict[str, Any]:
-    """Flatten a Context into the memory_query output contract.
-
-    Lifts citation/score_explanation out of ``metadata`` to top level so the
-    shared fabric query path preserves the historical memory_query result shape.
-    """
-    metadata = context.metadata or {}
-    return {
-        "content": context.content,
-        "source": context.source,
-        "score": context.score,
-        "valid_from": context.valid_from,
-        "valid_to": context.valid_to,
-        "citation": _result_citation(context),
-        "score_explanation": metadata.get("score_explanation"),
-    }
-
-
-def _context_from_query_result(result: Any) -> Context:
-    metadata: dict[str, Any] = {}
-    citation = getattr(result, "citation", None)
-    if citation:
-        metadata["citation"] = citation
-    score_explanation = getattr(result, "score_explanation", None)
-    if score_explanation:
-        metadata["score_explanation"] = score_explanation
-    entity_name = getattr(result, "entity_name", None)
-    if isinstance(entity_name, str) and entity_name:
-        metadata["entity_name"] = entity_name
-    entity_type = getattr(result, "entity_type", None)
-    if isinstance(entity_type, str) and entity_type:
-        metadata["entity_type"] = entity_type
-    return Context(
-        content=result.content,
-        source=result.source,
-        score=result.score,
-        valid_from=result.valid_from,
-        valid_to=result.valid_to,
-        metadata=metadata or None,
-    )
-
-
-def _result_citation(result: Any) -> str | None:
-    metadata = getattr(result, "metadata", None)
-    if isinstance(metadata, dict):
-        metadata_citation = metadata.get("citation")
-        if isinstance(metadata_citation, str):
-            return metadata_citation
-    citation = getattr(result, "citation", None)
-    return citation if isinstance(citation, str) else None
-
-
-def _claim_values(value: Any) -> set[str]:
-    if isinstance(value, str):
-        return {part for part in value.split() if part}
-    if isinstance(value, list):
-        return {str(part) for part in value if part}
-    return set()
-
-
-def _normalize_feedback(feedback: object) -> str:
-    normalized = str(feedback).casefold().strip()
-    if normalized not in {"used", "helpful", "irrelevant"}:
-        raise ValueError("feedback must be one of: used, helpful, irrelevant")
-    return normalized
-
-
-def _dict_payload(value: object) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
-
-
-def _optional_dict_payload(value: object) -> dict[str, Any] | None:
-    return dict(value) if isinstance(value, dict) else None
-
-
-def _dict_list_payload(value: object) -> list[dict[str, Any]]:
-    if not isinstance(value, list):
-        return []
-    return [dict(item) for item in value if isinstance(item, dict)]
-
-
-def _string_payload_list(value: object) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, str)]
-
-
-def _int_dict_payload(value: object) -> dict[str, int]:
-    if not isinstance(value, dict):
-        return {}
-    return {
-        str(key): int(item)
-        for key, item in value.items()
-        if isinstance(item, int) and not isinstance(item, bool)
-    }
-
-
-def _int_payload(value: object) -> int:
-    return int(value) if isinstance(value, int) and not isinstance(value, bool) else 0
-
-
-def _skill_event_type(action: object) -> str:
-    normalized = str(action).casefold().strip()
-    allowed = {
-        "proposed",
-        "validated",
-        "revised",
-        "deprecated",
-        "contradicted",
-        "applied",
-        "outcome_recorded",
-    }
-    if normalized not in allowed:
-        raise ValueError("skill action must be one of: " + ", ".join(sorted(allowed)))
-    return f"skill.{normalized}"
-
-
-def _required_text(value: object, field: str) -> str:
-    text = _optional_text(value)
-    if text is None:
-        raise ValueError(f"{field} is required")
-    return text
-
-
-def _required_strict_text(value: object, field: str) -> str:
-    text = _optional_strict_text(value, field)
-    if text is None:
-        raise ValueError(f"{field} is required")
-    return text
-
-
-def _optional_text(value: object) -> str | None:
-    if value is None:
-        return None
-    text = str(value).strip()
-    return text or None
-
-
-def _fok_probe_text(query: str, cues: object) -> str:
-    """Combine the query with optional cue field values for the FoK probe.
-
-    Cues are an object of string fields (mission, workspace, tool, phase,
-    ...); their values are probed against the session index as additional
-    query terms, so a cue naming a known entity raises the verdict and an
-    unknown cue honestly dilutes it.
-    """
-    if cues is None:
-        return query
-    if not isinstance(cues, dict):
-        raise ValueError("cues must be an object of string fields")
-    values: list[str] = []
-    for key, value in cues.items():
-        if not isinstance(value, str) or not value.strip():
-            raise ValueError(f"cues[{key!r}] must be a non-empty string")
-        values.append(value.strip())
-    if not values:
-        return query
-    return " ".join([query, *values])
-
-
-def _optional_max_tokens(value: object) -> int | None:
-    """Validate an optional non-negative integer prompt token budget."""
-    if value is None:
-        return None
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError("max_tokens must be an integer")
-    if value < 0:
-        raise ValueError("max_tokens must be >= 0")
-    return value
-
-
-def _optional_export_int(value: object, field: str) -> int | None:
-    if value is None:
-        return None
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError(f"{field} must be an integer")
-    return value
-
-
-def _export_selector_from_arguments(arguments: dict[str, Any]) -> ExportSelector:
-    """Map memory_export tool arguments to an ExportSelector (which validates)."""
-    kwargs: dict[str, Any] = {}
-    if arguments.get("grains") is not None:
-        kwargs["grains"] = frozenset(_optional_text_list(arguments.get("grains")))
-    if arguments.get("kinds") is not None:
-        kwargs["kinds"] = frozenset(_optional_text_list(arguments.get("kinds")))
-    if arguments.get("exclude_sensitivities") is not None:
-        kwargs["exclude_sensitivities"] = frozenset(
-            _optional_text_list(arguments.get("exclude_sensitivities"))
-        )
-    for field_name in ("since_seq", "max_seq", "limit"):
-        resolved = _optional_export_int(arguments.get(field_name), field_name)
-        if resolved is not None:
-            kwargs[field_name] = resolved
-    query_limit = _optional_export_int(arguments.get("query_limit"), "query_limit")
-    if query_limit is not None:
-        kwargs["query_limit"] = query_limit
-    for field_name in ("since_time", "until_time", "query"):
-        resolved_text = _optional_text(arguments.get(field_name))
-        if resolved_text is not None:
-            kwargs[field_name] = resolved_text
-    return ExportSelector(**kwargs)
-
-
-def _optional_strict_text(value: object, field: str) -> str | None:
-    if value is None:
-        return None
-    if not isinstance(value, str):
-        raise ValueError(f"{field} must be a string")
-    text = value.strip()
-    return text or None
-
-
-def _validate_consolidation_window_size(value: object) -> int:
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError("window_size must be an integer")
-    if value < 1 or value > 200:
-        raise ValueError("window_size must be between 1 and 200")
-    return value
-
-
-def _validate_reasoning_phase(value: object, *, default: str) -> str:
-    if value is None:
-        return default
-    if not isinstance(value, str):
-        raise ValueError("phase must be a string")
-    phase = value.strip()
-    if phase not in REASONING_PHASES:
-        raise ValueError("phase must be one of: " + ", ".join(REASONING_PHASES))
-    return phase
-
-
-def _validate_reasoning_confidence(value: object) -> float:
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        raise ValueError("confidence must be a number")
-    confidence = float(value)
-    if confidence < 0.0 or confidence > 1.0:
-        raise ValueError("confidence must be between 0 and 1")
-    return confidence
-
-
-def _validate_reasoning_source_events(value: object) -> list[dict[str, int | str]]:
-    if not isinstance(value, list) or not value:
-        raise ValueError("source_events must be a non-empty array")
-    source_events: list[dict[str, int | str]] = []
-    for index, item in enumerate(value):
-        if not isinstance(item, dict):
-            raise ValueError(f"source_events[{index}] must be an object")
-        seq = item.get("seq")
-        event_hash = item.get("hash")
-        if isinstance(seq, bool) or not isinstance(seq, int) or seq < 1:
-            raise ValueError(f"source_events[{index}].seq must be a positive integer")
-        if not isinstance(event_hash, str) or len(event_hash) != 64:
-            raise ValueError(f"source_events[{index}].hash must be 64 lowercase hex characters")
-        if any(char not in "0123456789abcdef" for char in event_hash):
-            raise ValueError(f"source_events[{index}].hash must be 64 lowercase hex characters")
-        source_events.append({"seq": seq, "hash": event_hash})
-    return source_events
-
-
-def _purpose_payload(value: object) -> dict[str, Any] | None:
-    if value is None:
-        return None
-    if isinstance(value, str | dict):
-        return purpose_profile(value).to_dict()
-    raise ValueError("purpose must be a profile name or object")
-
-
-def _optional_text_list(value: object) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    texts: list[str] = []
-    for item in value:
-        text = _optional_text(item)
-        if text is not None:
-            texts.append(text)
-    return texts
-
-
-def _approval_decisions(value: object) -> list[dict[str, Any]]:
-    if not isinstance(value, list):
-        raise ValueError("decisions must be an array")
-    decisions: list[dict[str, Any]] = []
-    for item in value:
-        if not isinstance(item, dict):
-            raise ValueError("each approval decision must be an object")
-        decisions.append(item)
-    return decisions
-
-
-def _fleet_source_events(value: object) -> list[dict[str, Any]]:
-    """Validate fleet_promote source_events into cited ``{seq, hash}`` refs."""
-    if not isinstance(value, list) or not value:
-        raise ValueError("source_events must be a non-empty array of {seq, hash} objects")
-    refs: list[dict[str, Any]] = []
-    for item in value:
-        if not isinstance(item, dict):
-            raise ValueError("each source_events entry must be an object")
-        seq = item.get("seq")
-        event_hash = item.get("hash")
-        if isinstance(seq, bool) or not isinstance(seq, int) or seq < 1:
-            raise ValueError("source_events entry seq must be a positive integer")
-        if not isinstance(event_hash, str) or not event_hash:
-            raise ValueError("source_events entry hash must be a non-empty string")
-        refs.append({"seq": seq, "hash": event_hash})
-    return refs
-
-
-def _coordination_result_payload(result: Any, event_type: str) -> dict[str, Any]:
-    """Return stable JSON for coordination write results."""
-    payload = {
-        "event_type": event_type,
-        "seq": result.event.seq,
-        "hash": result.event.hash,
-        "mission_id": result.mission_id,
-        "worker_id": result.worker_id,
-        "finding_id": result.finding_id,
-        "handoff_id": result.handoff_id,
-        "summary": result.summary,
-        "evidence": result.evidence,
-        "next_steps": result.event.payload.get("next_steps"),
-        "risks": result.event.payload.get("risks"),
-    }
-    return {key: value for key, value in payload.items() if value is not None and value != []}
 
 
 # ------------------------------------------------------------------
