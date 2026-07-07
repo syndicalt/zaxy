@@ -2,6 +2,64 @@
 
 All notable Zaxy release changes are recorded here.
 
+## Unreleased
+
+Gardening pass: the reliability findings and consolidation debt identified in
+the 2026-07-06 codebase assessment (`fable-findings.md`), executed as six
+reviewed PRs.
+
+### Security
+
+- **Fleet governance authorization closed.** `enroll_agent` had no
+  authorization — any actor could mint itself (or an accomplice) a `steward`;
+  it now requires a steward actor once a fleet has members (empty fleets keep
+  `create_fleet`'s trust-on-first-use bootstrap). `rollback_promotion` trusted
+  a free-string actor; it now requires a steward or the promotion's own actor.
+  The MCP governance-structure tools (`fleet_create`/`fleet_enroll`/
+  `fleet_assign_trust`) are admin-gated when an admin token is configured,
+  mirroring `memory_export`; workflow ops (promote/review) stay tier-gated.
+
+### Fixed
+
+- **Embedded-store quarantine TOCTOU.** Concurrent self-heals could pick the
+  same `.bak` name and silently clobber each other's backup; backup names are
+  now claimed atomically (`O_CREAT|O_EXCL`), preserving the never-delete
+  invariant under concurrency.
+- **Abandoned lock-op daemons are now observable** (registry + warning with
+  live/lifetime counts; the success path joins its worker), closing the
+  silent-accumulation gap.
+- **Pre-open bloat guard.** A pathologically bloated projection (the 397MB
+  incident) hangs then crashes natively inside the engine open, bypassing the
+  exception-based self-heal; `connect()` now stat()s the store first and
+  quarantines through the move-aside path before the open. Settings-tunable
+  (`EMBEDDED_STORE_BLOAT_MIN_BYTES`, `EMBEDDED_STORE_BLOAT_LOG_MULTIPLIER`);
+  a new stat()-only `projection_store_size` doctor check surfaces the same
+  heuristic while the store is unopenable.
+
+### Changed
+
+- **`extract/rules.py` split into five event-family modules** behind a pure
+  import facade; a new guard test pins the exact 85-event-type registration
+  set so a missing submodule import can never silently fall through.
+- **`mcp_server.py` shed its transport-auth and payload-codec clusters** to
+  `mcp_transport_auth.py` / `mcp_payloads.py` (3668 → ~3100 lines) with the
+  full patch-target surface preserved via facade re-imports.
+- **AGENTS.md rewritten** (418 → ~105 lines): current CLI, honest benchmark
+  numbers, embedded-first architecture, and a measured-state table replacing
+  the stale 175-item checklist. Checkout latency is restated honestly (warm
+  ~1.0–1.6s measured; the old `<300ms` figure is a roadmap goal, not a claim).
+- **hooks.md corrected** — it claimed Claude capture had no managed wiring,
+  the opposite of 3.1.1's Stop-hook auto-capture; deprecated flat command
+  forms normalized across five docs.
+
+### Added
+
+- `docs/superpowers/specs/2026-07-06-fabric-decomposition-design.md` — the
+  design-first plan for the `MemoryFabric` god-class split (collaborator
+  extraction, hub-last; sibling-module mixins evaluated and rejected).
+- `CLAUDE.md` operating manual + `.claude/skills/` (release, ci-triage,
+  store-doctor) committed as the controlling working conventions.
+
 ## 3.1.1 - 2026-07-06
 
 ### Fixed
