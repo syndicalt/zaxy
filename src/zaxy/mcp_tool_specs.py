@@ -1482,7 +1482,8 @@ TOOLS = [
         description=(
             "Create a governed fleet memory plane and record the creator as its implicit "
             "steward. Off unless fleet_enabled; the fleet plane crosses trust boundaries only "
-            "through the I4 gate and never grants authority (promotions stay non_authoritative)."
+            "through the I4 gate and never grants authority (promotions stay non_authoritative). "
+            "Admin-gated when an admin token is configured."
         ),
         inputSchema={
             "type": "object",
@@ -1491,13 +1492,18 @@ TOOLS = [
                 "fleet_id": {"type": "string"},
                 "summary": {"type": "string"},
                 "actor": {"type": "string", "default": "coordinator"},
+                "admin_token": {"type": "string", "description": "Admin token if configured"},
             },
             "additionalProperties": False,
         },
     ),
     Tool(
         name="fleet_enroll",
-        description="Enroll an agent in a fleet at a trust tier (enrollment never escalates trust).",
+        description=(
+            "Enroll an agent in a fleet at a trust tier (enrollment never escalates trust; "
+            "steward authority required once the fleet has members). Admin-gated when an "
+            "admin token is configured."
+        ),
         inputSchema={
             "type": "object",
             "required": ["fleet_id", "agent_id"],
@@ -1510,13 +1516,17 @@ TOOLS = [
                     "default": "member",
                 },
                 "actor": {"type": "string", "default": "coordinator"},
+                "admin_token": {"type": "string", "description": "Admin token if configured"},
             },
             "additionalProperties": False,
         },
     ),
     Tool(
         name="fleet_assign_trust",
-        description="Assign a trust tier to an enrolled agent (steward authority required).",
+        description=(
+            "Assign a trust tier to an enrolled agent (steward authority required). "
+            "Admin-gated when an admin token is configured."
+        ),
         inputSchema={
             "type": "object",
             "required": ["fleet_id", "agent_id", "trust_tier", "actor"],
@@ -1529,6 +1539,7 @@ TOOLS = [
                 },
                 "rationale": {"type": "string"},
                 "actor": {"type": "string"},
+                "admin_token": {"type": "string", "description": "Admin token if configured"},
             },
             "additionalProperties": False,
         },

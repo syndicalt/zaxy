@@ -358,7 +358,7 @@ def test_fleet_audit_answers_which_agent_taught_this_from_what_evidence(tmp_path
     manager = _manager(tmp_path)
     manager.create_fleet("alpha", summary="Alpha", actor="coordinator")
     manager.enroll_agent("alpha", "agent-a", actor="coordinator")  # member (may propose to fleet)
-    manager.enroll_agent("alpha", "agent-b", actor="agent-a")  # member proposer
+    manager.enroll_agent("alpha", "agent-b", actor="coordinator")  # member proposer
     source = _seed_source(tmp_path, "agent-a")
 
     result = manager.propagate_rule(
@@ -636,3 +636,83 @@ def test_visibility_scope_and_trust_tier_validators_reject_bad_input() -> None:
         validate_visibility_scope("galaxy")
     with pytest.raises(ValueError):
         validate_trust_tier("god")
+
+
+# ---------------------------------------------------------------------------
+# Governance authorization (enrollment + rollback)
+# ---------------------------------------------------------------------------
+
+
+def test_enroll_requires_steward_actor_in_populated_fleet(tmp_path: Path) -> None:
+    """A non-steward must not enroll agents — especially not mint a steward."""
+    manager = _manager(tmp_path)
+    manager.create_fleet("alpha", summary="Alpha", actor="founder")
+    manager.enroll_agent("alpha", "mallory", actor="founder")  # member
+
+    # privilege escalation: a member minting itself an accomplice steward
+    with pytest.raises(ValueError, match="steward"):
+        manager.enroll_agent("alpha", "accomplice", actor="mallory", trust_tier="steward")
+    # even plain-member enrollment is a governance act reserved for stewards
+    with pytest.raises(ValueError, match="steward"):
+        manager.enroll_agent("alpha", "friend", actor="mallory")
+    # an actor unknown to the fleet has no authority either
+    with pytest.raises(ValueError, match="steward"):
+        manager.enroll_agent("alpha", "ghost-friend", actor="stranger")
+
+    tiers = {agent.agent_id: agent.trust_tier for agent in manager.fleet_brief("alpha").agents}
+    assert tiers == {"founder": "steward", "mallory": "member"}  # nothing minted
+
+
+def test_enroll_bootstraps_an_empty_fleet_trust_on_first_use(tmp_path: Path) -> None:
+    """A fleet with no members keeps create_fleet's trust-on-first-use posture."""
+    manager = _manager(tmp_path)
+    result = manager.enroll_agent("fresh", "founder", actor="founder", trust_tier="steward")
+    assert result.trust_tier == "steward"
+    # ...but once populated, the steward requirement is live immediately
+    with pytest.raises(ValueError, match="steward"):
+        manager.enroll_agent("fresh", "accomplice", actor="mallory", trust_tier="steward")
+
+
+def test_rollback_requires_steward_or_original_actor(tmp_path: Path) -> None:
+    """A stranger must not un-share another agent's promotion; steward and self may."""
+    manager = _manager(tmp_path)
+    manager.create_fleet("alpha", summary="Alpha", actor="founder")
+    manager.enroll_agent("alpha", "agent-a", actor="founder")  # member proposer
+    manager.enroll_agent("alpha", "mallory", actor="founder")  # unrelated member
+    source = _seed_source(tmp_path, "agent-a")
+
+    promoted = manager.promote_skill(
+        "alpha",
+        skill_id="deploy",
+        skill_version="1.0",
+        origin_session="agent-a",
+        source_events=[source],
+        confidence=0.9,
+        actor="agent-a",
+    )
+
+    with pytest.raises(ValueError, match="steward actor or the promotion's original"):
+        manager.rollback_promotion(
+            "alpha", promoted.promotion_id, reason="sabotage", actor="mallory"
+        )
+
+    # the promotion's own actor may retract it (self-rollback)...
+    rolled = manager.rollback_promotion(
+        "alpha", promoted.promotion_id, reason="found a defect", actor="agent-a"
+    )
+    assert rolled.event.type == "fleet.promotion.rolled_back"
+
+    # ...and a steward can roll back anyone's promotion.
+    second = manager.promote_skill(
+        "alpha",
+        skill_id="deploy",
+        skill_version="2.0",
+        origin_session="agent-a",
+        source_events=[_seed_source(tmp_path, "agent-a")],
+        confidence=0.9,
+        actor="agent-a",
+    )
+    steward_rollback = manager.rollback_promotion(
+        "alpha", second.promotion_id, reason="steward decision", actor="founder"
+    )
+    assert steward_rollback.event.type == "fleet.promotion.rolled_back"
