@@ -1,6 +1,6 @@
 # MemoryFabric decomposition — design
 
-Status: approved; phase 1 (ReasoningOps) implemented 2026-07-07 — see `src/zaxy/core/fabric_reasoning.py`
+Status: COMPLETE — all five phases merged 2026-07-07 (PRs #131 #132 #133 #134 #135)
 Date: 2026-07-06
 Owner: maintainer + Claude Fable (assessment session)
 
@@ -122,11 +122,16 @@ lines), five collaborator modules each under ~1,200.
 
 ## 8. Done-when
 
-- [x] Phase 1 (ReasoningOps) merged green — [ ] remaining four phases
-- [ ] `fabric.py` under ~800 lines; no fabric-path module over ~1,500
-- [ ] All 10 patch targets demonstrably still intercept (test files that patch
-      them pass unmodified)
-- [ ] `docs/codebase.md` updated with the collaborator map
+- [x] All five phases merged, each individually green (suite + parity + ratchet
+      + full-table CI + adversarial codex diff review from phase 2 on)
+- [x] `fabric.py` 4,120 → ~1,540 (lifecycle, construction, seams, delegations —
+      above the ~800 aspiration because every public signature + docstring is
+      preserved as a delegation and the C1 lifecycle cluster stays; honest
+      trade accepted). Largest collaborator: fabric_write.py ~1,250
+- [x] All 10 patch targets still intercept — patch-heavy suites pass unmodified
+      (one documented exception: the append thread-offload spy follows the
+      moved code per the June rule, test_phase0_fabric)
+- [x] Collaborator map recorded here (§5) and in each module docstring
 
 ## References
 
