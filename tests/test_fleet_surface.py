@@ -932,3 +932,76 @@ def test_promote_finding_reinforcement_failure_is_best_effort(tmp_path: Path) ->
     # the promotion itself still succeeds; only the observability reinforcement degraded.
     assert result.finding_id == finding.finding_id
     metrics.record_degraded_operation.assert_any_call("append", "salience_reinforcement_unavailable")
+
+
+# ---------------------------------------------------------------------------
+# Admin gating of governance-structure mutations (MCP boundary)
+# ---------------------------------------------------------------------------
+
+
+async def test_fleet_governance_tools_admin_gated_when_token_configured(tmp_path: Path) -> None:
+    """With an admin token configured, create/enroll/assign_trust demand it.
+
+    The MCP ``actor`` argument is self-asserted, so the manager's trust-tier
+    checks cannot authenticate a remote caller; the admin token is the
+    operator-controlled gate for governance-structure mutations.
+    """
+    server = _real_server(tmp_path)
+    server._admin_token = "fleet-admin-secret"
+
+    with pytest.raises(PermissionError, match="admin_token"):
+        await server.handle_fleet_create({"fleet_id": "gated", "summary": "Gated"})
+    with pytest.raises(PermissionError, match="admin_token"):
+        await server.handle_fleet_create(
+            {"fleet_id": "gated", "summary": "Gated", "admin_token": "wrong"}
+        )
+
+    created = _text(
+        await server.handle_fleet_create(
+            {"fleet_id": "gated", "summary": "Gated", "actor": "founder", "admin_token": "fleet-admin-secret"}
+        )
+    )
+    assert created["fleet_id"] == "gated"
+
+    with pytest.raises(PermissionError, match="admin_token"):
+        await server.handle_fleet_enroll({"fleet_id": "gated", "agent_id": "worker", "actor": "founder"})
+    enrolled = _text(
+        await server.handle_fleet_enroll(
+            {
+                "fleet_id": "gated",
+                "agent_id": "worker",
+                "actor": "founder",
+                "admin_token": "fleet-admin-secret",
+            }
+        )
+    )
+    assert enrolled["trust_tier"] == "member"
+
+    with pytest.raises(PermissionError, match="admin_token"):
+        await server.handle_fleet_assign_trust(
+            {"fleet_id": "gated", "agent_id": "worker", "trust_tier": "trusted", "actor": "founder"}
+        )
+    assigned = _text(
+        await server.handle_fleet_assign_trust(
+            {
+                "fleet_id": "gated",
+                "agent_id": "worker",
+                "trust_tier": "trusted",
+                "actor": "founder",
+                "admin_token": "fleet-admin-secret",
+            }
+        )
+    )
+    assert assigned["trust_tier"] == "trusted"
+
+
+async def test_fleet_enroll_via_tool_rejects_non_steward_actor(tmp_path: Path) -> None:
+    """The manager's steward requirement surfaces through the MCP tool."""
+    server = _real_server(tmp_path)
+    await server.handle_fleet_create({"fleet_id": "beta", "summary": "Beta", "actor": "founder"})
+    await server.handle_fleet_enroll({"fleet_id": "beta", "agent_id": "mallory", "actor": "founder"})
+
+    with pytest.raises(ValueError, match="steward"):
+        await server.handle_fleet_enroll(
+            {"fleet_id": "beta", "agent_id": "accomplice", "trust_tier": "steward", "actor": "mallory"}
+        )

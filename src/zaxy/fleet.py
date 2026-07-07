@@ -1167,16 +1167,24 @@ class FleetManager:
         actor: str = "coordinator",
         trust_tier: str = DEFAULT_TRUST_TIER,
     ) -> FleetEnrollmentResult:
-        """Enroll an agent at its requested trust tier.
+        """Enroll an agent at its requested trust tier (steward authority required).
 
         Enrollment never escalates trust: an ``untrusted`` enrollee stays
-        ``untrusted`` and a ``member`` stays ``member``. The fleet creator is the
-        implicit steward (see :meth:`create_fleet`), so no first-enrollee
-        steward bootstrap is performed.
+        ``untrusted`` and a ``member`` stays ``member``. Enrollment is a
+        governance act: once a fleet has any enrolled agents, only a steward
+        may enroll — otherwise any actor could mint itself (or an accomplice)
+        a ``steward``. An empty fleet keeps the trust-on-first-use bootstrap
+        posture of :meth:`create_fleet`, whose creator is the implicit steward.
         """
         fid = validate_session_id(fleet_id)
         aid = validate_session_id(agent_id)
         tier = validate_trust_tier(trust_tier)
+        actor = _require_str(actor, "actor")
+        projection = self._project(fid)
+        if projection.agents and projection.trust_tier(actor) != "steward":
+            raise ValueError(
+                f"enroll_agent requires a steward actor; '{actor}' is not a steward of fleet '{fid}'"
+            )
         event = self._append(
             build_fleet_agent_enrolled_event(actor=actor, fleet_id=fid, agent_id=aid, trust_tier=tier)
         )
@@ -1706,7 +1714,12 @@ class FleetManager:
     def rollback_promotion(
         self, fleet_id: str, promotion_id: str, *, reason: str, actor: str
     ) -> FleetEventResult:
-        """Reversibly un-share a promotion: lowers effective scope additively."""
+        """Reversibly un-share a promotion: lowers effective scope additively.
+
+        Authorized for a steward or the promotion's own actor (self-retraction).
+        Anyone else un-sharing another agent's promotion would be an
+        unauthorized governance action, so it is rejected.
+        """
         fid = validate_session_id(fleet_id)
         actor = _require_str(actor, "actor")
         reason = _require_str(reason, "reason")
@@ -1714,6 +1727,11 @@ class FleetManager:
         memory = projection.memory(promotion_id)
         if memory is None:
             raise ValueError(f"Unknown promotion_id for fleet {fid}: {promotion_id}")
+        if actor != memory.actor and projection.trust_tier(actor) != "steward":
+            raise ValueError(
+                "rollback_promotion requires a steward actor or the promotion's original "
+                f"actor; '{actor}' is neither for promotion '{promotion_id}' in fleet '{fid}'"
+            )
         event = self._append(
             build_fleet_promotion_rolled_back_event(
                 actor=actor,

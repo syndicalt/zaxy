@@ -1404,7 +1404,14 @@ class ZaxyMCPServer:
         await self.tracer.trace_append(event.type, event.actor, event.seq)
 
     async def handle_fleet_create(self, arguments: dict[str, Any]) -> list[TextContent]:
-        """Handle fleet_create tool calls."""
+        """Handle fleet_create tool calls (admin-gated when an admin token is configured).
+
+        The MCP ``actor`` argument is self-asserted, so governance-structure
+        mutations additionally require the operator's admin token in hardened
+        deployments — the manager's trust-tier checks alone cannot authenticate
+        a remote caller's claimed identity.
+        """
+        self._require_admin(arguments)
         fleet_id = validate_session_id(_required_text(arguments.get("fleet_id"), "fleet_id"))
         summary = _required_text(arguments.get("summary"), "summary")
         actor = _optional_text(arguments.get("actor")) or "coordinator"
@@ -1412,7 +1419,8 @@ class ZaxyMCPServer:
         return [TextContent(type="text", text=json.dumps(result.to_dict()))]
 
     async def handle_fleet_enroll(self, arguments: dict[str, Any]) -> list[TextContent]:
-        """Handle fleet_enroll tool calls."""
+        """Handle fleet_enroll tool calls (admin-gated when an admin token is configured)."""
+        self._require_admin(arguments)
         fleet_id = validate_session_id(_required_text(arguments.get("fleet_id"), "fleet_id"))
         agent_id = _required_text(arguments.get("agent_id"), "agent_id")
         trust_tier = _optional_text(arguments.get("trust_tier")) or "member"
@@ -1423,7 +1431,8 @@ class ZaxyMCPServer:
         return [TextContent(type="text", text=json.dumps(result.to_dict()))]
 
     async def handle_fleet_assign_trust(self, arguments: dict[str, Any]) -> list[TextContent]:
-        """Handle fleet_assign_trust tool calls."""
+        """Handle fleet_assign_trust tool calls (admin-gated when an admin token is configured)."""
+        self._require_admin(arguments)
         fleet_id = validate_session_id(_required_text(arguments.get("fleet_id"), "fleet_id"))
         agent_id = _required_text(arguments.get("agent_id"), "agent_id")
         trust_tier = _required_text(arguments.get("trust_tier"), "trust_tier")

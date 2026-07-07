@@ -298,7 +298,7 @@
     },
     {
       "name": "memory_feeling_of_knowing",
-      "description": "Experimental metamemory pre-check: predict whether memory_checkout would likely return something for a query, in roughly a millisecond, from in-memory session state only (no embedding call, no graph query). Returns a non-authoritative verdict (likely | possible | unlikely) with its signal breakdown and raw score. It is a cheap prediction about checkout, never a memory answer or evidence, and its calibration against real checkout outcomes is still being measured — when in doubt, call memory_checkout.",
+      "description": "Experimental metamemory pre-check: predict whether memory_checkout would likely return something for a query, in roughly a millisecond, from in-memory session state only (no embedding call, no graph query). Returns a non-authoritative verdict (likely | possible | unlikely) with its signal breakdown and raw score. It is a cheap prediction about checkout, never a memory answer or evidence, and its calibration against real checkout outcomes is still being measured \u2014 when in doubt, call memory_checkout.",
       "input_schema": {
         "type": "object",
         "required": [
@@ -2393,7 +2393,7 @@
     },
     {
       "name": "fleet_create",
-      "description": "Create a governed fleet memory plane and record the creator as its implicit steward. Off unless fleet_enabled; the fleet plane crosses trust boundaries only through the I4 gate and never grants authority (promotions stay non_authoritative).",
+      "description": "Create a governed fleet memory plane and record the creator as its implicit steward. Off unless fleet_enabled; the fleet plane crosses trust boundaries only through the I4 gate and never grants authority (promotions stay non_authoritative). Admin-gated when an admin token is configured.",
       "input_schema": {
         "type": "object",
         "required": [
@@ -2410,6 +2410,10 @@
           "actor": {
             "type": "string",
             "default": "coordinator"
+          },
+          "admin_token": {
+            "type": "string",
+            "description": "Admin token if configured"
           }
         },
         "additionalProperties": false
@@ -2417,7 +2421,7 @@
     },
     {
       "name": "fleet_enroll",
-      "description": "Enroll an agent in a fleet at a trust tier (enrollment never escalates trust).",
+      "description": "Enroll an agent in a fleet at a trust tier (enrollment never escalates trust; steward authority required once the fleet has members). Admin-gated when an admin token is configured.",
       "input_schema": {
         "type": "object",
         "required": [
@@ -2444,6 +2448,10 @@
           "actor": {
             "type": "string",
             "default": "coordinator"
+          },
+          "admin_token": {
+            "type": "string",
+            "description": "Admin token if configured"
           }
         },
         "additionalProperties": false
@@ -2451,7 +2459,7 @@
     },
     {
       "name": "fleet_assign_trust",
-      "description": "Assign a trust tier to an enrolled agent (steward authority required).",
+      "description": "Assign a trust tier to an enrolled agent (steward authority required). Admin-gated when an admin token is configured.",
       "input_schema": {
         "type": "object",
         "required": [
@@ -2481,6 +2489,10 @@
           },
           "actor": {
             "type": "string"
+          },
+          "admin_token": {
+            "type": "string",
+            "description": "Admin token if configured"
           }
         },
         "additionalProperties": false
