@@ -38,6 +38,16 @@ reviewed PRs.
 
 ### Changed
 
+- **`MemoryFabric` fully decomposed** (spec
+  `2026-07-06-fabric-decomposition-design.md`, five phases, PRs #131–#135):
+  `core/fabric.py` shrank 4,120 → ~1,540 lines, now lifecycle + construction +
+  signature-preserving delegations. Five collaborators own the clusters behind
+  mypy-verified structural host protocols — `fabric_reasoning`,
+  `fabric_coordination`, `fabric_checkout`, `fabric_query`, `fabric_write` —
+  every host lookup late-bound (instance patches and runtime component swaps
+  keep working), patched fabric globals reached only through fabric-resolved
+  seams, and each phase shipped individually green with an adversarial codex
+  diff review (two real findings caught and fixed pre-merge).
 - **`extract/rules.py` split into five event-family modules** behind a pure
   import facade; a new guard test pins the exact 85-event-type registration
   set so a missing submodule import can never silently fall through.
