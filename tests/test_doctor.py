@@ -63,6 +63,7 @@ def test_run_doctor_reports_local_setup_ok(tmp_path: Path, monkeypatch) -> None:
         "embedded_mcp_runtime": "ok",
         "embedded_graph": "ok",
         "projection_freshness": "ok",
+        "projection_store_size": "ok",
         "projection_backup_artifacts": "ok",
         "production": "ok",
     }
