@@ -4298,3 +4298,91 @@ async def test_embedded_store_never_issues_single_statement_delete_all(tmp_path:
 
     source = Path(embedded_graph_store.__file__).read_text(encoding="utf-8")
     assert "DETACH DELETE" not in source
+
+
+# --------------------------------------------------------------------------- #
+# Pre-open bloat guard (projection growth bounds)                              #
+# --------------------------------------------------------------------------- #
+
+
+async def test_embedded_store_connect_quarantines_bloated_store_before_open(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A pathologically bloated store is moved aside BEFORE the native open.
+
+    The 2026-07-06 incident: ~500KB of logs grew a 397MB store whose open hung
+    ~2min then segfaulted — natively, so no exception handler could self-heal.
+    The stat()-only pre-open guard is the only path that can catch this class.
+    """
+    import logging
+
+    eventloom = tmp_path / ".eventloom"
+    (eventloom / "projections").mkdir(parents=True)
+    (eventloom / "zaxy-default.jsonl").write_bytes(b"x" * 100)  # tiny source log
+    path = eventloom / "projections" / "embedded.kuzu"
+    bloated_bytes = b"bloated projection bytes " * 4096  # ~100KB >> 100 bytes of logs
+    path.write_bytes(bloated_bytes)
+
+    store = EmbeddedGraphStore(path, bloat_min_bytes=1024, bloat_log_multiplier=10.0)
+    with caplog.at_level(logging.WARNING, logger="zaxy.embedded_graph_store"):
+        await store.connect()
+    try:
+        backup = path.with_name("embedded.kuzu.pre-ladybug.bak")
+        assert backup.exists()
+        assert backup.read_bytes() == bloated_bytes  # moved aside, never deleted
+        assert any("pathologically bloated" in record.message for record in caplog.records)
+        # a fresh, working store opened in its place
+        assert store._connection is not None
+    finally:
+        await store.close()
+
+
+async def test_embedded_store_connect_leaves_healthy_store_alone(tmp_path: Path) -> None:
+    """A store within the size multiplier is untouched by the bloat guard."""
+    eventloom = tmp_path / ".eventloom"
+    (eventloom / "projections").mkdir(parents=True)
+    (eventloom / "zaxy-default.jsonl").write_bytes(b"x" * 200_000)  # logs >> store
+    path = eventloom / "projections" / "embedded.kuzu"
+
+    store = EmbeddedGraphStore(path, bloat_min_bytes=1024, bloat_log_multiplier=10.0)
+    await store.connect()  # creates a fresh (small) store
+    await store.close()
+
+    reopened = EmbeddedGraphStore(path, bloat_min_bytes=1024, bloat_log_multiplier=10.0)
+    await reopened.connect()
+    try:
+        assert not path.with_name("embedded.kuzu.pre-ladybug.bak").exists()
+    finally:
+        await reopened.close()
+
+
+def test_bloated_store_reason_abstains_without_source_logs(tmp_path: Path) -> None:
+    """A non-standard layout (no sibling *.jsonl) is never judged bloated."""
+    path = tmp_path / "projections" / "embedded.kuzu"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"y" * 50_000)
+    store = EmbeddedGraphStore(path, bloat_min_bytes=1024, bloat_log_multiplier=10.0)
+    assert store._bloated_store_reason() is None
+
+
+def test_bloated_store_reason_disabled_with_zero_min_bytes(tmp_path: Path) -> None:
+    """min_bytes=0 disables the guard entirely."""
+    eventloom = tmp_path / ".eventloom"
+    (eventloom / "projections").mkdir(parents=True)
+    (eventloom / "log.jsonl").write_bytes(b"x")
+    path = eventloom / "projections" / "embedded.kuzu"
+    path.write_bytes(b"y" * 50_000)
+    store = EmbeddedGraphStore(path, bloat_min_bytes=0, bloat_log_multiplier=10.0)
+    assert store._bloated_store_reason() is None
+
+
+def test_bloated_store_reason_respects_size_floor(tmp_path: Path) -> None:
+    """Stores under the absolute floor pass even at an extreme log multiple."""
+    eventloom = tmp_path / ".eventloom"
+    (eventloom / "projections").mkdir(parents=True)
+    (eventloom / "log.jsonl").write_bytes(b"x")  # 1 byte of logs
+    path = eventloom / "projections" / "embedded.kuzu"
+    path.write_bytes(b"y" * 50_000)  # 50000x the logs but under the floor
+    store = EmbeddedGraphStore(path, bloat_min_bytes=1_000_000, bloat_log_multiplier=10.0)
+    assert store._bloated_store_reason() is None

@@ -398,3 +398,81 @@ def test_parent_death_signal_warns_on_nonzero_prctl(
         mcp_server._install_parent_death_signal()
     libc.prctl.assert_called_once()
     assert any("pdeathsig_install_failed" in rec.message for rec in caplog.records)
+
+
+# --------------------------------------------------------------------------- #
+# Abandoned-daemon accounting + race-free backup claims                        #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_await_blocking_success_joins_worker_without_abandonment() -> None:
+    """The common path reclaims its thread and records no abandonment."""
+    import threading
+
+    from zaxy.embedded_graph_internals import abandoned_lock_op_stats
+
+    before = abandoned_lock_op_stats()["total"]
+    # earlier tests may have legitimately abandoned workers; assert no NEW ones
+    lingering_before = {
+        id(t) for t in threading.enumerate() if t.name == "zaxy-embedded-lock-op" and t.is_alive()
+    }
+    result = await await_blocking_with_timeout(lambda: 41 + 1, timeout=5.0, operation="test-op")
+    assert result == 42
+    assert abandoned_lock_op_stats()["total"] == before
+    lingering_after = {
+        id(t) for t in threading.enumerate() if t.name == "zaxy-embedded-lock-op" and t.is_alive()
+    }
+    assert lingering_after <= lingering_before  # this call's worker was joined
+
+
+@pytest.mark.asyncio
+async def test_await_blocking_timeout_records_abandoned_worker(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A timed-out lock op is abandoned by design but MUST be observable."""
+    import logging
+    import threading
+
+    from zaxy.embedded_graph_internals import abandoned_lock_op_stats
+
+    release = threading.Event()
+    before = abandoned_lock_op_stats()["total"]
+    with (
+        caplog.at_level(logging.WARNING, logger="zaxy.embedded_graph_internals"),
+        pytest.raises(EmbeddedProjectionLockedError),
+    ):
+        await await_blocking_with_timeout(release.wait, timeout=0.05, operation="test-block")
+    stats = abandoned_lock_op_stats()
+    assert stats["total"] == before + 1
+    assert stats["live"] >= 1
+    assert any("abandoned after timeout" in record.message for record in caplog.records)
+    release.set()  # unblock the daemon so it exits with the test process cleanly
+
+
+def test_claim_backup_path_is_exclusive_per_claimant(tmp_path: Path) -> None:
+    """Two claims for the same store's backup name can never collide.
+
+    The old exists()-then-replace scan was a TOCTOU: two processes self-healing
+    the same projection could pick the same .bak name and silently clobber each
+    other's backup. Claiming via O_CREAT|O_EXCL makes each name single-winner.
+    """
+    from zaxy.embedded_graph_internals import _claim_backup_path
+
+    store = tmp_path / "embedded.kuzu"
+    first = _claim_backup_path(store)
+    second = _claim_backup_path(store)  # simulates the concurrent claimant
+    assert first != second
+    assert first.name == "embedded.kuzu.pre-ladybug.bak"
+    assert second.name == "embedded.kuzu.pre-ladybug.bak.1"
+    assert first.exists() and second.exists()  # placeholders hold the claims
+
+
+def test_claim_backup_path_never_shadows_an_existing_wal_backup(tmp_path: Path) -> None:
+    """A leftover .bak.wal from an older migration blocks that name entirely."""
+    from zaxy.embedded_graph_internals import _claim_backup_path
+
+    store = tmp_path / "embedded.kuzu"
+    (tmp_path / "embedded.kuzu.pre-ladybug.bak.wal").write_bytes(b"old wal backup")
+    claimed = _claim_backup_path(store)
+    assert claimed.name == "embedded.kuzu.pre-ladybug.bak.1"

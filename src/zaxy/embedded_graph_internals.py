@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import math
+import os
 import queue
 import re
 import threading
@@ -24,6 +26,8 @@ if TYPE_CHECKING:
         SearchResult,
     )
 
+
+logger = logging.getLogger(__name__)
 
 _TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
 
@@ -349,6 +353,42 @@ def is_embedded_projection_lock_error(exc: BaseException) -> bool:
     return "Could not set lock on file" in str(exc) and ".kuzu" in str(exc)
 
 
+# Abandoned lock-op daemons cannot be killed (a blocked C extension call is
+# uninterruptible), but they MUST be observable: each still holds whatever
+# native resources the engine call acquired, and unbounded accumulation under
+# repeated contention is itself a failure signal. The registry keeps a strong
+# reference to each abandoned worker (so accounting survives thread finish
+# ordering) and drops finished ones on every new abandonment.
+_abandoned_lock_ops_lock = threading.Lock()
+_abandoned_lock_ops: list[threading.Thread] = []
+_abandoned_lock_ops_total = 0
+
+
+def abandoned_lock_op_stats() -> dict[str, int]:
+    """Return abandoned lock-op daemon accounting: still-live and lifetime totals."""
+    with _abandoned_lock_ops_lock:
+        live = sum(1 for worker in _abandoned_lock_ops if worker.is_alive())
+        return {"live": live, "total": _abandoned_lock_ops_total}
+
+
+def _record_abandoned_lock_op(worker: threading.Thread, operation: str) -> None:
+    global _abandoned_lock_ops_total
+    with _abandoned_lock_ops_lock:
+        _abandoned_lock_ops[:] = [w for w in _abandoned_lock_ops if w.is_alive()]
+        _abandoned_lock_ops.append(worker)
+        _abandoned_lock_ops_total += 1
+        live = len(_abandoned_lock_ops)
+        total = _abandoned_lock_ops_total
+    logger.warning(
+        "embedded lock-op daemon abandoned after timeout during %s "
+        "(%d still blocked, %d abandoned since process start); the thread cannot "
+        "be interrupted while the engine call blocks and will exit with it",
+        operation,
+        live,
+        total,
+    )
+
+
 async def await_blocking_with_timeout(
     func: Callable[[], Any],
     *,
@@ -362,9 +402,12 @@ async def await_blocking_with_timeout(
     non-daemon — a permanently blocked member would hang process shutdown. The
     blocking call is therefore executed on an explicit *daemon* thread whose
     result is awaited through a queue with a deadline. On timeout the daemon is
-    abandoned (it cannot block exit) and :class:`EmbeddedProjectionLockedError`
-    is raised so callers can reap a stale owner, retry, or degrade instead of
-    hanging the event loop indefinitely.
+    abandoned (it cannot block exit) but recorded in the abandoned-lock-op
+    registry so accumulation is observable, and
+    :class:`EmbeddedProjectionLockedError` is raised so callers can reap a
+    stale owner, retry, or degrade instead of hanging the event loop
+    indefinitely. On completion the worker is joined so the common path leaks
+    nothing.
     """
     result_queue: queue.Queue[tuple[str, Any]] = queue.Queue()
 
@@ -382,11 +425,15 @@ async def await_blocking_with_timeout(
             None, result_queue.get, True, timeout
         )
     except queue.Empty:
+        _record_abandoned_lock_op(worker, operation)
         raise EmbeddedProjectionLockedError(
             reason="acquisition-timeout",
             operation=operation,
             timeout_seconds=timeout,
         ) from None
+    # The queue item is only put after func() returns/raises, so the worker is
+    # finishing; a bounded join reclaims it without risking a stall.
+    worker.join(timeout=1.0)
     kind, value = outcome
     if kind == "ok":
         return value
@@ -408,17 +455,42 @@ def pre_ladybug_backup_paths(path: Path) -> list[Path]:
     return sorted(path.parent.glob(f"{path.name}{_PRE_LADYBUG_BACKUP_SUFFIX}*"))
 
 
-def _move_incompatible_store_aside(path: Path) -> Path:
-    """Move an unreadable projection artifact (and its WAL) to a .bak path.
+def _claim_backup_path(path: Path) -> Path:
+    """Atomically claim a free backup name with ``O_CREAT | O_EXCL``.
 
-    User data is never deleted: if a backup from a previous migration already
-    occupies the .bak name, a numbered suffix is used instead of overwriting.
+    A bare exists()-then-replace scan is a TOCTOU: two processes self-healing
+    the same projection can pick the same ``.bak`` name, and ``Path.replace``
+    overwrites without re-checking — silently clobbering the other's backup.
+    Creating the placeholder exclusively makes name selection race-free: the
+    kernel guarantees only one claimant wins each candidate. The claimed
+    placeholder is immediately overwritten by the caller's atomic ``replace``.
+    The ``.wal`` sibling name is derived from the claimed primary, so any
+    process following this protocol can never collide on it either.
     """
     backup_path = path.with_name(path.name + _PRE_LADYBUG_BACKUP_SUFFIX)
     counter = 1
-    while backup_path.exists() or backup_path.with_name(backup_path.name + ".wal").exists():
+    while True:
+        wal_sibling = backup_path.with_name(backup_path.name + ".wal")
+        if not wal_sibling.exists():
+            try:
+                fd = os.open(backup_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            except FileExistsError:
+                pass
+            else:
+                os.close(fd)
+                return backup_path
         backup_path = path.with_name(f"{path.name}{_PRE_LADYBUG_BACKUP_SUFFIX}.{counter}")
         counter += 1
+
+
+def _move_incompatible_store_aside(path: Path) -> Path:
+    """Move an unreadable projection artifact (and its WAL) to a .bak path.
+
+    User data is never deleted: the backup name is claimed exclusively (see
+    :func:`_claim_backup_path`), so neither a previous migration's backup nor
+    a concurrent self-heal's backup can be overwritten.
+    """
+    backup_path = _claim_backup_path(path)
     path.replace(backup_path)
     wal_path = path.with_name(path.name + ".wal")
     if wal_path.exists():

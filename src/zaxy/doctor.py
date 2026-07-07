@@ -81,6 +81,7 @@ def run_doctor(
         _check_embedded_mcp_runtime(active, repair=repair),
         _check_projection_backend(active),
         _check_projection_freshness(active),
+        _check_projection_store_size(active),
         _check_projection_backup_artifacts(active),
         _check_production(active),
     ]
@@ -1036,6 +1037,62 @@ def _check_neo4j(settings: Settings) -> dict[str, str]:
         "status": "warning",
         "message": f"Neo4j is configured at {settings.neo4j_uri}; reachability not checked",
         "action": "Run zaxy status to test a live graph connection.",
+    }
+
+
+def _check_projection_store_size(settings: Settings) -> dict[str, Any]:
+    """Flag a pathologically bloated embedded projection before it breaks open.
+
+    A projection orders of magnitude larger than its source Eventloom logs is
+    structurally broken (the 2026-07-06 incident: ~500KB of logs grew a 397MB
+    store that hung then crashed natively on open). Detection is stat()-only
+    and mirrors the store's own pre-open bloat guard, so doctor can warn even
+    while the store is unopenable.
+    """
+    store_path = Path(settings.embedded_graph_path)
+    try:
+        store_bytes = store_path.stat().st_size
+    except OSError:
+        return {
+            "name": "projection_store_size",
+            "status": "ok",
+            "message": "no embedded projection store on disk yet",
+        }
+    eventloom_dir = store_path.parent.parent
+    try:
+        log_bytes = sum(
+            log.stat().st_size for log in eventloom_dir.glob("*.jsonl") if log.is_file()
+        )
+    except OSError:
+        log_bytes = 0
+    min_bytes = settings.embedded_store_bloat_min_bytes
+    multiplier = settings.embedded_store_bloat_log_multiplier
+    details = {"store_bytes": store_bytes, "log_bytes": log_bytes}
+    if (
+        min_bytes > 0
+        and store_bytes >= min_bytes
+        and log_bytes > 0
+        and store_bytes > log_bytes * multiplier
+    ):
+        return {
+            "name": "projection_store_size",
+            "status": "warning",
+            "message": (
+                f"embedded projection is {store_bytes:,} bytes from only {log_bytes:,} bytes "
+                f"of event logs (over {multiplier:g}x); opening it may hang or crash — the "
+                "store's pre-open bloat guard will quarantine and rebuild it on next connect"
+            ),
+            "action": (
+                "Run any checkout (or `zaxy reproject`) to trigger the self-heal; the bloated "
+                "store is moved aside, never deleted."
+            ),
+            "details": details,
+        }
+    return {
+        "name": "projection_store_size",
+        "status": "ok",
+        "message": f"embedded projection size is healthy ({store_bytes:,} bytes)",
+        "details": details,
     }
 
 

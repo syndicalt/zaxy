@@ -589,6 +589,31 @@ class Settings(BaseSettings):
         ),
     )
 
+    embedded_store_bloat_min_bytes: int = Field(
+        default=256 * 1024 * 1024,
+        ge=0,
+        description=(
+            "Minimum on-disk size (bytes) before the embedded projection's "
+            "pre-open bloat guard may quarantine it; 0 disables the guard. A "
+            "pathologically bloated store (e.g. 397MB grown from ~500KB of "
+            "event logs) hangs then crashes NATIVELY inside the engine open, "
+            "which no exception handler can catch — so the guard must run "
+            "before the open. The projection is derived state: quarantine "
+            "moves it aside (never deletes) and it rebuilds from the log"
+        ),
+    )
+
+    embedded_store_bloat_log_multiplier: float = Field(
+        default=100.0,
+        gt=0,
+        description=(
+            "Bloat threshold as a multiple of the sibling Eventloom JSONL "
+            "bytes: a store both larger than embedded_store_bloat_min_bytes "
+            "AND more than this multiple of its source logs is quarantined "
+            "before open. Healthy projections run well under 10x their logs"
+        ),
+    )
+
     # ------------------------------------------------------------------
     # Reranking
     # ------------------------------------------------------------------

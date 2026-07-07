@@ -927,3 +927,57 @@ def test_doctor_version_check_uses_workspace_root(tmp_path: Path, monkeypatch) -
     run_doctor(settings=settings, workspace_root=tmp_path)
 
     assert captured.get("project_root") == tmp_path
+
+
+def test_projection_store_size_check_warns_on_bloat(tmp_path: Path) -> None:
+    """Doctor flags a store orders of magnitude larger than its source logs."""
+    from zaxy.doctor import _check_projection_store_size
+
+    eventloom = tmp_path / ".eventloom"
+    (eventloom / "projections").mkdir(parents=True)
+    (eventloom / "zaxy-default.jsonl").write_bytes(b"x" * 100)
+    store = eventloom / "projections" / "embedded.kuzu"
+    store.write_bytes(b"y" * 200_000)
+    settings = Settings(
+        _env_file=None,
+        eventloom_path=str(eventloom),
+        embedded_graph_path=str(store),
+        embedded_store_bloat_min_bytes=1024,
+        embedded_store_bloat_log_multiplier=10.0,
+    )
+
+    check = _check_projection_store_size(settings)
+
+    assert check["status"] == "warning"
+    assert "bloated" in check["message"] or "over" in check["message"]
+    assert check["details"]["store_bytes"] == 200_000
+    assert check["details"]["log_bytes"] == 100
+    assert "self-heal" in check["action"]
+
+
+def test_projection_store_size_check_ok_when_healthy_or_missing(tmp_path: Path) -> None:
+    """A healthy-ratio store and a missing store both report ok."""
+    from zaxy.doctor import _check_projection_store_size
+
+    eventloom = tmp_path / ".eventloom"
+    (eventloom / "projections").mkdir(parents=True)
+    (eventloom / "zaxy-default.jsonl").write_bytes(b"x" * 100_000)
+    store = eventloom / "projections" / "embedded.kuzu"
+    store.write_bytes(b"y" * 50_000)  # smaller than its logs
+    settings = Settings(
+        _env_file=None,
+        eventloom_path=str(eventloom),
+        embedded_graph_path=str(store),
+        embedded_store_bloat_min_bytes=1024,
+        embedded_store_bloat_log_multiplier=10.0,
+    )
+    assert _check_projection_store_size(settings)["status"] == "ok"
+
+    missing = Settings(
+        _env_file=None,
+        eventloom_path=str(eventloom),
+        embedded_graph_path=str(eventloom / "projections" / "absent.kuzu"),
+    )
+    check = _check_projection_store_size(missing)
+    assert check["status"] == "ok"
+    assert "no embedded projection store" in check["message"]
