@@ -17,6 +17,13 @@ git rev-parse HEAD   # match headSha — a green run for an older SHA proves not
 gh run view <RUN_ID> --json jobs -q '.jobs[] | "\(.conclusion)\t\(.name)"'
 ```
 
+**Never pipe `gh pr checks` through awk/cut column hacks to decide a merge.**
+Job names contain spaces (`test (3.13)`), so column extraction shows name
+tokens where you expect statuses — a red matrix once read as green this way
+and got merged (the 2026-07-06 doctor-map incident). Before any merge, read
+the FULL untruncated table and require every row to literally say `pass`:
+`gh pr checks <N>` with no pipeline.
+
 Beware **fail-fast collateral**: matrix jobs showing `cancelled` were killed by a
 sibling's failure — they are not independent failures. Find the job that says
 `failure`, fix it, and the cancelled ones usually follow.
