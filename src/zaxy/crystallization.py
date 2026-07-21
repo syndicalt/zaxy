@@ -29,7 +29,10 @@ Design (mirrors :mod:`zaxy.export_sinks`: operator-side, no daemon):
   the deterministic reverify id as well.
 - **Auditable.** Each pass emits one ``crystallization.run.completed`` summary
   event (non-authoritative, citing the candidate ids it generated) so the pass
-  itself is replayable.
+  itself is replayable. Stages are isolated from one another: a failing stage is
+  recorded on the summary event rather than aborting the pass before it is
+  appended, so an unattended run never leaves a partially-applied log with no
+  audit record.
 """
 
 from __future__ import annotations
@@ -70,6 +73,32 @@ DEFAULT_TOP_SALIENT = 5
 _CANDIDATE_EVENT_TYPE = "consolidation.candidate.created"
 _REVERIFY_EVENT_TYPE = "metacognition.reverify.requested"
 
+#: Stage labels recorded on per-stage error entries.
+STAGE_CONSOLIDATION = "consolidation"
+STAGE_PROCEDURE_MINING = "procedure_mining"
+STAGE_GATING = "gating"
+STAGE_METACOGNITION = "metacognition"
+STAGE_COMPACTION = "compaction"
+STAGE_SALIENCE = "salience"
+
+
+def _record_stage_error(
+    errors: list[dict[str, Any]],
+    stage: str,
+    exc: BaseException,
+    *,
+    candidate_id: str | None = None,
+) -> None:
+    """Append a JSON-serializable record of one failed crystallization stage."""
+    entry: dict[str, Any] = {
+        "stage": stage,
+        "error_type": type(exc).__name__,
+        "error": str(exc) or repr(exc),
+    }
+    if candidate_id is not None:
+        entry["candidate_id"] = candidate_id
+    errors.append(entry)
+
 
 @dataclass(frozen=True)
 class CrystallizationReport:
@@ -78,7 +107,9 @@ class CrystallizationReport:
     All counts are for candidates *freshly proposed by this pass* (so a
     re-run over an unchanged log reports zeros — the idempotency contract).
     ``latency_ms`` is real wall-clock time and is intentionally excluded from
-    :meth:`to_dict`-based equality comparisons by callers.
+    :meth:`to_dict`-based equality comparisons by callers. ``stage_errors``
+    holds one entry per stage that raised; it is empty on a fully successful
+    pass.
     """
 
     session_id: str
@@ -91,11 +122,19 @@ class CrystallizationReport:
     compaction: dict[str, Any] | None
     top_salient: list[dict[str, Any]]
     gate_decisions: list[dict[str, Any]]
+    stage_errors: list[dict[str, Any]]
     latency_ms: float
+
+    @property
+    def ok(self) -> bool:
+        """Whether every stage of the pass completed without raising."""
+        return not self.stage_errors
 
     def to_dict(self) -> dict[str, Any]:
         """Return a stable JSON-serializable representation of the report."""
         return {
+            "ok": self.ok,
+            "stage_errors": self.stage_errors,
             "session_id": self.session_id,
             "consolidation_candidates": self.consolidation_candidates,
             "procedure_candidates": self.procedure_candidates,
@@ -147,6 +186,13 @@ async def run_crystallization_pass(
     6. **Salience diagnostic** — a read-only top-salient listing; no
        reinforcement is emitted here.
 
+    Every stage is isolated: a stage that raises is recorded in ``stage_errors``
+    (and in the summary event's ``stage_errors`` / ``ok`` fields) and the pass
+    continues, so an unattended run always leaves an audit record describing
+    exactly which stages succeeded and which failed. Errors are never swallowed
+    silently — callers surface them, and :attr:`CrystallizationReport.ok` is
+    false whenever any stage failed.
+
     Finally one ``crystallization.run.completed`` summary event is appended so
     the pass is itself auditable and replayable.
     """
@@ -158,35 +204,45 @@ async def run_crystallization_pass(
     fresh_candidates: list[dict[str, Any]] = []
     consolidation_count = 0
     procedure_count = 0
+    # Stages are isolated so an unattended (cron) pass still reaches the summary
+    # append below: a partially-applied pass that emitted no audit record at all
+    # would be unreplayable, which is the worse failure for a background job.
+    stage_errors: list[dict[str, Any]] = []
 
     if consolidation:
-        result = await fabric.propose_consolidation_candidates(session_id=sid, actor=actor)
-        consolidation_count = int(result["candidate_count"])
-        for entry in result["events"]:
-            fresh_candidates.append(
-                {
-                    "candidate_id": str(entry["candidate_id"]),
-                    "seq": int(entry["seq"]),
-                    "hash": str(entry["hash"]),
-                    "source": "consolidation",
-                }
-            )
+        try:
+            result = await fabric.propose_consolidation_candidates(session_id=sid, actor=actor)
+            consolidation_count = int(result["candidate_count"])
+            for entry in result["events"]:
+                fresh_candidates.append(
+                    {
+                        "candidate_id": str(entry["candidate_id"]),
+                        "seq": int(entry["seq"]),
+                        "hash": str(entry["hash"]),
+                        "source": "consolidation",
+                    }
+                )
+        except Exception as exc:
+            _record_stage_error(stage_errors, STAGE_CONSOLIDATION, exc)
 
     if procedure_mining:
-        # Procedure mining requires support across >=2 distinct sessions; it is
-        # mined over the whole session log (every thread present) rather than a
-        # single-thread filter, which would make it a guaranteed no-op.
-        summary = mine_and_propose(eventlog, session_ids=None, actor=actor)
-        procedure_count = int(summary.appended_count)
-        for appended in summary.appended:
-            fresh_candidates.append(
-                {
-                    "candidate_id": appended.candidate_id,
-                    "seq": appended.seq,
-                    "hash": appended.hash,
-                    "source": "procedure",
-                }
-            )
+        try:
+            # Procedure mining requires support across >=2 distinct sessions; it is
+            # mined over the whole session log (every thread present) rather than a
+            # single-thread filter, which would make it a guaranteed no-op.
+            summary = mine_and_propose(eventlog, session_ids=None, actor=actor)
+            procedure_count = int(summary.appended_count)
+            for appended in summary.appended:
+                fresh_candidates.append(
+                    {
+                        "candidate_id": appended.candidate_id,
+                        "seq": appended.seq,
+                        "hash": appended.hash,
+                        "source": "procedure",
+                    }
+                )
+        except Exception as exc:
+            _record_stage_error(stage_errors, STAGE_PROCEDURE_MINING, exc)
 
     confidence_by_id = _confidence_by_candidate_id(eventlog) if fresh_candidates else {}
 
@@ -196,52 +252,68 @@ async def run_crystallization_pass(
     for candidate in fresh_candidates:
         candidate_id = candidate["candidate_id"]
         confidence = confidence_by_id.get(candidate_id, 0.0)
-        decision = await fabric.evaluate_evolution_gate(
-            _CRYSTALLIZATION_GATE_OP,
-            confidence,
-            candidate_ref={"candidate_id": candidate_id},
-            actor=actor,
-            session_id=sid,
-        )
-        gate_decisions.append(
-            {
-                "candidate_id": candidate_id,
-                "op": decision.op,
-                "confidence": decision.confidence,
-                "auto_apply": decision.auto_apply,
-                "tier": decision.tier,
-            }
-        )
-        if auto_apply and decision.auto_apply:
-            review = build_consolidation_review_event(
+        # Isolated per candidate: one un-gateable candidate must not cost the
+        # rest of the batch its gate decision. A failed candidate is counted
+        # neither accepted nor pending — only the recorded error describes it.
+        try:
+            decision = await fabric.evaluate_evolution_gate(
+                _CRYSTALLIZATION_GATE_OP,
+                confidence,
+                candidate_ref={"candidate_id": candidate_id},
                 actor=actor,
                 session_id=sid,
-                candidate_id=candidate_id,
-                status="accepted",
-                rationale=f"auto-accepted by crystallization under {decision.tier}",
             )
-            await fabric.append(
-                review["event_type"],
-                review["actor"],
-                payload=review["payload"],
-                session_id=sid,
+            gate_decisions.append(
+                {
+                    "candidate_id": candidate_id,
+                    "op": decision.op,
+                    "confidence": decision.confidence,
+                    "auto_apply": decision.auto_apply,
+                    "tier": decision.tier,
+                }
             )
-            auto_accepted += 1
-        else:
-            left_pending += 1
+            if auto_apply and decision.auto_apply:
+                review = build_consolidation_review_event(
+                    actor=actor,
+                    session_id=sid,
+                    candidate_id=candidate_id,
+                    status="accepted",
+                    rationale=f"auto-accepted by crystallization under {decision.tier}",
+                )
+                await fabric.append(
+                    review["event_type"],
+                    review["actor"],
+                    payload=review["payload"],
+                    session_id=sid,
+                )
+                auto_accepted += 1
+            else:
+                left_pending += 1
+        except Exception as exc:
+            _record_stage_error(stage_errors, STAGE_GATING, exc, candidate_id=candidate_id)
 
     metacognition_summary: dict[str, Any] = {}
     reverify_requested = 0
     if metacognition:
-        metacognition_summary, reverify_requested = await _run_metacognition_monitor(
-            fabric, eventlog, session_id=sid, actor=actor
-        )
+        try:
+            metacognition_summary, reverify_requested = await _run_metacognition_monitor(
+                fabric, eventlog, session_id=sid, actor=actor
+            )
+        except Exception as exc:
+            _record_stage_error(stage_errors, STAGE_METACOGNITION, exc)
 
     compaction_summary: dict[str, Any] | None = None
     if compaction:
-        compaction_summary = _run_compaction_diagnostic(eventlog)
+        try:
+            compaction_summary = _run_compaction_diagnostic(eventlog)
+        except Exception as exc:
+            _record_stage_error(stage_errors, STAGE_COMPACTION, exc)
 
-    top_salient = _top_salient(fabric, eventlog, now=moment, limit=DEFAULT_TOP_SALIENT)
+    top_salient: list[dict[str, Any]] = []
+    try:
+        top_salient = _top_salient(fabric, eventlog, now=moment, limit=DEFAULT_TOP_SALIENT)
+    except Exception as exc:
+        _record_stage_error(stage_errors, STAGE_SALIENCE, exc)
 
     citations = [
         {"candidate_id": candidate["candidate_id"], "seq": candidate["seq"], "hash": candidate["hash"]}
@@ -260,6 +332,8 @@ async def run_crystallization_pass(
             "reverify_requested": reverify_requested,
             "compaction_safe": None if compaction_summary is None else bool(compaction_summary.get("safe")),
             "candidates": citations,
+            "ok": not stage_errors,
+            "stage_errors": stage_errors,
         },
         session_id=sid,
     )
@@ -276,6 +350,7 @@ async def run_crystallization_pass(
         compaction=compaction_summary,
         top_salient=top_salient,
         gate_decisions=gate_decisions,
+        stage_errors=stage_errors,
         latency_ms=latency_ms,
     )
 

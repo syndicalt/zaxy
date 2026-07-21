@@ -1041,6 +1041,17 @@ def crystallize(
             f"reverify_requested={report.reverify_requested}"
         )
 
+    # The summary event is already durable at this point; a non-zero exit is how
+    # an unattended cron run learns that some stages failed.
+    if report.stage_errors:
+        for entry in report.stage_errors:
+            typer.echo(
+                f"zaxy crystallize stage failed: {entry['stage']}: "
+                f"{entry['error_type']}: {entry['error']}",
+                err=True,
+            )
+        raise typer.Exit(code=1)
+
 
 @app.command("fleet-benchmark")
 def fleet_benchmark(
