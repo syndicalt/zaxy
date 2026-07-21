@@ -411,3 +411,88 @@ class TestWithheldRuleIsNotAssembled:
         proposed = [e for e in events if e.type == RULE_PROPOSED_EVENT_TYPE]
         assert len(proposed) == 1
         assert proposed[0].payload["rule"] == self._LESSON
+class TestRecordOutcomeTargetResolution:
+    """`record_outcome` must resolve its target against the sealed log.
+
+    A citation that resolves to nothing is worse than no citation: it lands in
+    an append-only log and cannot be retracted. The sibling evolution ops
+    (edit/rollback/forget) all reject unresolvable targets; this asserts
+    `record_outcome` now matches them.
+    """
+
+    async def _fabric(self, tmp_path: Path) -> MemoryFabric:
+        fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
+        await fabric.connect()
+        return fabric
+
+    async def test_rejects_target_seq_that_does_not_exist(self, tmp_path: Path) -> None:
+        """A (seq, hash) pointing past the end of the log is refused, not silently cited."""
+        fabric = await self._fabric(tmp_path)
+        try:
+            await fabric.append("goal.created", actor="user", payload={"t": "x"}, session_id="ext")
+            with pytest.raises(ValueError, match="no event at seq 999"):
+                await fabric.record_outcome(
+                    outcome="failure", summary="s",
+                    target_seq=999, target_hash="f" * 64, session_id="ext",
+                )
+        finally:
+            await fabric.close()
+
+    async def test_rejects_hash_that_does_not_match_the_sealed_event(self, tmp_path: Path) -> None:
+        """A correct seq with the wrong hash is refused -- the pair must match the seal."""
+        fabric = await self._fabric(tmp_path)
+        try:
+            event = await fabric.append(
+                "goal.created", actor="user", payload={"t": "x"}, session_id="ext"
+            )
+            with pytest.raises(ValueError, match="does not match the sealed event"):
+                await fabric.record_outcome(
+                    outcome="failure", summary="s",
+                    target_seq=event.seq, target_hash="f" * 64, session_id="ext",
+                )
+        finally:
+            await fabric.close()
+
+    async def test_rejects_half_supplied_target(self, tmp_path: Path) -> None:
+        """Supplying seq without hash is an error, not a silently dropped reinforcement."""
+        fabric = await self._fabric(tmp_path)
+        try:
+            event = await fabric.append(
+                "goal.created", actor="user", payload={"t": "x"}, session_id="ext"
+            )
+            with pytest.raises(ValueError, match="target_hash"):
+                await fabric.record_outcome(
+                    outcome="failure", summary="s",
+                    target_seq=event.seq, target_hash=None, session_id="ext",
+                )
+        finally:
+            await fabric.close()
+
+    async def test_no_target_still_records_outcome_without_reinforcement(
+        self, tmp_path: Path
+    ) -> None:
+        """Omitting the target entirely stays valid -- the loop is not made target-mandatory."""
+        fabric = await self._fabric(tmp_path)
+        try:
+            result = await fabric.record_outcome(
+                outcome="failure", summary="no target reported", session_id="ext"
+            )
+        finally:
+            await fabric.close()
+        assert result["outcome"] == "failure"
+        assert "reinforced" not in result
+
+    async def test_resolvable_target_still_reinforces(self, tmp_path: Path) -> None:
+        """A real (seq, hash) reinforces exactly as before -- no behavioural regression."""
+        fabric = await self._fabric(tmp_path)
+        try:
+            event = await fabric.append(
+                "goal.created", actor="user", payload={"t": "x"}, session_id="ext"
+            )
+            result = await fabric.record_outcome(
+                outcome="success", summary="worked",
+                target_seq=event.seq, target_hash=event.hash, session_id="ext",
+            )
+        finally:
+            await fabric.close()
+        assert result["reinforced"] == "confirmed"
