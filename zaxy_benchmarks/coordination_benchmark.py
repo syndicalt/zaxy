@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from zaxy.coordination import ConflictState, CoordinationBrief, CoordinationManager, FindingState
+from zaxy.coordinationbench_adapter import decide_findings, decision_rationale
 
 COORDINATION_WORKLOAD_VERSION = "coordination-v1"
 COORDINATION_BASELINE_DESCRIPTIONS = {
@@ -1463,10 +1464,24 @@ def _run_case(output_dir: Path, case: CoordinationBenchCase) -> CoordinationBenc
             )
             if result.finding_id != finding["finding_id"]:
                 raise RuntimeError("coordination finding ID mismatch")
+    # Adjudicate from public signals only. This previously called
+    # `_accepted_finding_ids`, which read `case.gold.expected_accepted_claims`
+    # and accepted exactly those -- the harness handed Zaxy the answer key and
+    # then scored Zaxy against it, so accepted-state precision/recall were 1.0
+    # by construction and Zaxy's acceptance behaviour was never exercised. The
+    # baselines got no equivalent oracle, making the comparison meaningless.
     promotion_start = time.perf_counter()
-    for finding_id in _accepted_finding_ids(case):
-        manager.review_finding(case.mission_id, finding_id, status="accepted", actor="benchmark")
-        manager.promote_finding(case.mission_id, finding_id, actor="benchmark")
+    findings = [finding for worker in case.workers for finding in worker["findings"]]
+    for decision in decide_findings(findings):
+        manager.review_finding(
+            case.mission_id,
+            decision.finding_id,
+            status=decision.status,
+            actor="benchmark",
+            rationale=decision_rationale(decision),
+        )
+        if decision.status == "accepted":
+            manager.promote_finding(case.mission_id, decision.finding_id, actor="benchmark")
     promotion_latency_ms = (time.perf_counter() - promotion_start) * 1000.0
     brief_start = time.perf_counter()
     brief = manager.brief(case.mission_id)
@@ -1603,19 +1618,6 @@ def _finding(
         "evidence": evidence,
         "confidence": confidence,
     }
-
-
-def _accepted_finding_ids(case: CoordinationBenchCase) -> list[str]:
-    accepted_values = set(case.gold.expected_accepted_claims.items())
-    accepted_seen: set[tuple[Any, Any]] = set()
-    ids: list[str] = []
-    for worker in case.workers:
-        for finding in worker["findings"]:
-            claim = (finding.get("claim_key"), finding.get("claim_value"))
-            if claim in accepted_values and claim not in accepted_seen:
-                ids.append(str(finding["finding_id"]))
-                accepted_seen.add(claim)
-    return ids
 
 
 def _duplicate_consolidation(brief: CoordinationBrief, gold: CoordinationBenchGold) -> float:

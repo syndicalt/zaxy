@@ -77,7 +77,7 @@ def _case_result(
         manager.create_worker(mission_id, worker_id, actor="coordinationbench")
         manager.assign(mission_id, worker_id, f"CoordinationBench case {case_id}", actor="coordinationbench")
     public_findings = [dict(finding) for finding in case.get("findings", [])]
-    decisions = _decide_findings(public_findings)
+    decisions = decide_findings(public_findings)
     decisions_by_id = {decision.finding_id: decision for decision in decisions}
     for finding in public_findings:
         finding_id = str(finding["finding_id"])
@@ -98,7 +98,7 @@ def _case_result(
             decision.finding_id,
             status=decision.status,
             actor="coordinationbench-policy",
-            rationale=_rationale(decision),
+            rationale=decision_rationale(decision),
         )
         if decision.status == "accepted":
             manager.promote_finding(mission_id, decision.finding_id, actor="coordinationbench-policy")
@@ -140,7 +140,14 @@ def _case_result(
     }
 
 
-def _decide_findings(findings: list[dict[str, Any]]) -> list[FindingDecision]:
+def decide_findings(findings: list[dict[str, Any]]) -> list[FindingDecision]:
+    """Adjudicate findings from public signals only, never from benchmark gold.
+
+    Decides per claim key using evidence presence, source-reference strength,
+    corroboration count, and recency markers. It never reads
+    ``CoordinationBenchGold``, which is what makes it valid to score against:
+    a harness that adjudicates using the answer key measures nothing.
+    """
     by_key: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for finding in findings:
         by_key[str(finding.get("claim_key") or "")].append(finding)
@@ -491,7 +498,7 @@ def _audit_notes(runtime_case: dict[str, Any] | None) -> str:
     )
 
 
-def _rationale(decision: FindingDecision) -> str:
+def decision_rationale(decision: FindingDecision) -> str:
     if decision.status == "accepted":
         return "public-signal policy selected this finding for parent mission state"
     if decision.stale:
