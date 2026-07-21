@@ -9729,6 +9729,70 @@ def test_memory_rollback_reverses_evolution(tmp_path: Path) -> None:
     (workspace / ".env.local").write_text("PROJECTION_BACKEND=null\n", encoding="utf-8")
     runner = CliRunner()
 
+    append_result = runner.invoke(
+        app,
+        [
+            "memory", "append", "decision.made",
+            "--actor", "zaxy-agent",
+            "--session-id", "ext",
+            "--payload-json", '{"summary": "deploy on Fridays"}',
+            "--eventloom-path", str(eventloom_path),
+            "--json",
+        ],
+    )
+    assert append_result.exit_code == 0, append_result.output
+    seeded = json.loads(append_result.output)
+    edit_result = runner.invoke(
+        app,
+        [
+            "memory", "edit",
+            "--target-seq", str(seeded["seq"]),
+            "--target-hash", seeded["hash"],
+            "--new-content", "deploy on Mondays",
+            "--reason", "policy changed",
+            "--eventloom-path", str(eventloom_path),
+            "--session-id", "ext",
+            "--json",
+        ],
+    )
+    assert edit_result.exit_code == 0, edit_result.output
+    correction = json.loads(edit_result.output)["correction_event"]
+
+    result = runner.invoke(
+        app,
+        [
+            "memory", "rollback",
+            "--target-seq", str(correction["seq"]),
+            "--target-hash", correction["hash"],
+            "--reason", "reverse the correction",
+            "--eventloom-path", str(eventloom_path),
+            "--session-id", "ext",
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["rollback_id"].startswith("rollback:")
+    assert payload["reverts"]["event_type"] == "memory.corrected"
+
+    events = EventLog(eventloom_path / "ext.jsonl").read_all()
+    rolled = [e for e in events if e.type == "memory.rolled_back"]
+    assert len(rolled) == 1
+    assert rolled[0].payload["target"] == correction
+    assert rolled[0].payload["authority_status"] == "non_authoritative"
+    # Reversal is additive: the correction it reverses is still in the sealed log.
+    assert any(e.seq == correction["seq"] and e.type == "memory.corrected" for e in events)
+    assert EventLog(eventloom_path / "ext.jsonl").verify().ok is True
+
+
+def test_memory_rollback_rejects_a_gate_decision(tmp_path: Path) -> None:
+    """`zaxy memory rollback` refuses a gate decision: an audit record has no reversal."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    eventloom_path = workspace / ".eventloom"
+    (workspace / ".env.local").write_text("PROJECTION_BACKEND=null\n", encoding="utf-8")
+    runner = CliRunner()
+
     gate_result = runner.invoke(
         app,
         [
@@ -9757,17 +9821,13 @@ def test_memory_rollback_reverses_evolution(tmp_path: Path) -> None:
             "--json",
         ],
     )
-    assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
-    assert payload["rollback_id"].startswith("rollback:")
-    assert payload["reverts"]["event_type"] == "evolution.gate.evaluated"
-
+    assert result.exit_code != 0
+    # Rich wraps the error inside a box, so match fragments that survive wrapping.
+    assert "evolution.gate.evaluated" in result.output
+    assert "not a reversible" in result.output
+    # The refusal is total: no rollback marker was appended.
     events = EventLog(eventloom_path / "ext.jsonl").read_all()
-    rolled = [e for e in events if e.type == "memory.rolled_back"]
-    assert len(rolled) == 1
-    assert rolled[0].payload["target"] == {"seq": gate_event.seq, "hash": gate_event.hash}
-    assert rolled[0].payload["authority_status"] == "non_authoritative"
-    assert EventLog(eventloom_path / "ext.jsonl").verify().ok is True
+    assert not any(e.type == "memory.rolled_back" for e in events)
 
 
 def test_memory_rollback_rejects_non_reversible_target(tmp_path: Path) -> None:

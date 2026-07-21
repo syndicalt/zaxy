@@ -466,6 +466,14 @@ class CheckoutOps:
         working_set = build_working_set(replay_events, contexts)
         lines = [format_working_set(working_set), "", "# Recent Events"]
         for event in replay_events:
+            # The raw-event timeline is a second, lane-independent route into the
+            # prompt: a rolled-back correction reaches the model here verbatim even
+            # after every retrieval lane has dropped it. Suppress only the excluded
+            # event's own body -- the header line stays so the timeline keeps its
+            # shape and the reversal remains visible in the audit trail.
+            if event.seq in withheld_seqs:
+                lines.append(f"[{event.seq}] {event.type} by {event.actor} (reversed)")
+                continue
             lines.append(f"[{event.seq}] {event.type} by {event.actor}")
             content = _event_content(event)
             if content:

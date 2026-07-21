@@ -39,28 +39,36 @@ MEMORY_ROLLBACK_EVENT_TYPE = "memory.rolled_back"
 
 #: The evolution events a rollback may reverse.
 #:
-#: Reversal is only as real as the replay that honours it, and today that
-#: differs per type:
+#: Every member is genuinely reversed; membership is the promise that a success
+#: response means the change is undone. Two mechanisms, one per shape:
 #:
-#: - ``consolidation.candidate.reviewed`` -- fully reversed; ``_reverts_descriptor``
-#:   restores the candidate's prior review status.
-#: - ``memory.rule.generated`` / ``memory.rule.proposed`` -- reversed at checkout
-#:   assembly: a rolled-back rule is excluded from every retrieval lane, the same
-#:   exclusion applied to a gate-withheld rule.
-#: - ``evolution.gate.evaluated``, ``fleet.promotion.reviewed``,
-#:   ``MEMORY_CORRECTED_EVENT_TYPE`` -- **audit markers only**. A rollback is
-#:   accepted and recorded, but nothing downstream reverses it yet. Verified for
-#:   corrections: after rolling one back, the corrected content still reaches the
-#:   prompt. Kept accepted rather than rejected so existing callers and the fleet
-#:   path keep working; making these effective is open work, and until then the
-#:   success response must not be read as "the change is undone".
+#: - ``consolidation.candidate.reviewed`` -- reversed in projection:
+#:   ``_reverts_descriptor`` carries the prior review status and the replay
+#:   restores it.
+#: - ``memory.rule.generated`` / ``memory.rule.proposed`` /
+#:   ``MEMORY_CORRECTED_EVENT_TYPE`` -- reversed at checkout assembly: the
+#:   rolled-back event is excluded from every retrieval lane, the same exclusion
+#:   applied to a gate-withheld rule. Their projection *is* their effect, so
+#:   dropping it is a complete reversal -- a rolled-back rule stops governing the
+#:   agent, and a rolled-back correction stops being the current content while the
+#:   retained original resurfaces. The exclusion never touches the cited target.
+#:
+#: Deliberately absent (declaring them would promise a reversal that cannot happen):
+#:
+#: - ``evolution.gate.evaluated`` -- an audit record of what the gate decided at a
+#:   point in time. There is nothing to restore: the decision's *effect* is the
+#:   event it gated, which is what an operator must roll back instead. Reversing
+#:   the record itself would only invite mistaking it for undoing the change.
+#: - ``fleet.promotion.reviewed`` -- fleet owns its own reversal,
+#:   :meth:`zaxy.fleet.FleetManager.rollback_promotion`, which lowers the
+#:   effective scope and enforces steward-or-original-actor authorization plus the
+#:   rollback window. Routing it through here was inert and would have bypassed
+#:   both checks; one owner per semantic.
 ROLLBACKABLE_EVENT_TYPES: frozenset[str] = frozenset(
     {
         "consolidation.candidate.reviewed",
         "memory.rule.generated",
         "memory.rule.proposed",
-        "evolution.gate.evaluated",
-        "fleet.promotion.reviewed",
         MEMORY_CORRECTED_EVENT_TYPE,
     }
 )

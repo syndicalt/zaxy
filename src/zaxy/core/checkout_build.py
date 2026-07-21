@@ -21,7 +21,7 @@ from zaxy.core.models import (
     ContextAssembly,
     MemoryCheckout,
 )
-from zaxy.editable import MEMORY_ROLLBACK_EVENT_TYPE
+from zaxy.editable import MEMORY_CORRECTED_EVENT_TYPE, MEMORY_ROLLBACK_EVENT_TYPE
 from zaxy.event import (  # noqa: F401 - ReplayResult re-export for existing tests
     EventLog,
     IntegrityReport,
@@ -949,18 +949,28 @@ _WITHHELD_REVIEW_STATUSES = frozenset({"pending", "rejected", "deferred"})
 #: so the authoritative signal is always the payload's ``review_status``.
 _GOVERNED_RULE_EVENT_TYPES = frozenset({"memory.rule.proposed", "memory.rule.generated"})
 
+#: Event types whose *own* projection is what a rollback must retract, so excluding
+#: the event's seq from assembly is a complete reversal. Rules are here because a
+#: rolled-back rule must stop governing the agent; ``memory.corrected`` is here
+#: because a correction's only effect is the corrected content it surfaces --
+#: dropping it restores the retained original as the current view. Types with
+#: reversal semantics of their own are deliberately absent:
+#: ``consolidation.candidate.reviewed`` is reverted by ``_reverts_descriptor``, so
+#: excluding it here too would reverse it twice.
+_ROLLBACK_REVERSIBLE_EVENT_TYPES = _GOVERNED_RULE_EVENT_TYPES | {MEMORY_CORRECTED_EVENT_TYPE}
+
 
 def _governance_withheld_event_seqs(replay_events: list[Any]) -> frozenset[int]:
-    """Return replay seqs for rule events governance has excluded from application.
+    """Return replay seqs for events governance has excluded from assembly.
 
-    A rule is excluded when the evolution gate withheld it for review, or when an
-    operator rolled it back. Rollback is scoped to rule events on purpose:
-    ``consolidation.candidate.reviewed`` already has real reversal semantics
-    (``_reverts_descriptor`` restores the prior review status), so handling it
-    here as well would reverse it twice.
+    An event is excluded when the evolution gate withheld a rule for review, or
+    when an operator rolled back an event whose projection *is* its effect (a
+    rule, or a human correction). Only the rolled-back event's own seq is
+    excluded, never its cited target -- rolling back a correction must restore
+    the original memory, not hide it too.
     """
     withheld: set[int] = set()
-    rule_seqs: set[int] = set()
+    reversible_seqs: set[int] = set()
     rolled_back_targets: set[int] = set()
     for event in replay_events:
         event_type = getattr(event, "type", None)
@@ -975,13 +985,15 @@ def _governance_withheld_event_seqs(replay_events: list[Any]) -> frozenset[int]:
                 if isinstance(target_seq, int) and not isinstance(target_seq, bool):
                     rolled_back_targets.add(target_seq)
             continue
-        if event_type not in _GOVERNED_RULE_EVENT_TYPES or not isinstance(seq, int):
+        if event_type not in _ROLLBACK_REVERSIBLE_EVENT_TYPES or not isinstance(seq, int):
             continue
-        rule_seqs.add(seq)
+        reversible_seqs.add(seq)
+        if event_type not in _GOVERNED_RULE_EVENT_TYPES:
+            continue
         status = str(payload.get("review_status") or "").casefold().strip()
         if status in _WITHHELD_REVIEW_STATUSES:
             withheld.add(seq)
-    return frozenset(withheld | (rolled_back_targets & rule_seqs))
+    return frozenset(withheld | (rolled_back_targets & reversible_seqs))
 
 
 def _context_source_seq(context: Context) -> int | None:

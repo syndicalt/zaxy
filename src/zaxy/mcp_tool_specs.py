@@ -439,10 +439,12 @@ TOOLS = [
         description=(
             "Reverse a prior memory evolution with a cited, non-authoritative memory.rolled_back "
             "event. The target (target_seq/target_hash) must be a reversible evolution event "
-            "(e.g. a consolidation acceptance, a generated preventive rule, a gate decision); the "
-            "reversal cites it, routes through the I4 update gate, and on replay undoes the "
+            "(a consolidation acceptance, a generated/proposed preventive rule, or a human "
+            "correction); the reversal cites it, routes through the I4 update gate, and undoes the "
             "evolution's effect (a rolled-back consolidation acceptance reverts the candidate to "
-            "its prior review status). Additive and reversible; nothing is mutated or deleted."
+            "its prior review status; a rolled-back rule or correction stops reaching the prompt). "
+            "Additive and reversible; nothing is mutated or deleted. Fleet promotions are reversed "
+            "with the fleet's own authorized rollback, not this tool."
         ),
         inputSchema={
             "type": "object",
