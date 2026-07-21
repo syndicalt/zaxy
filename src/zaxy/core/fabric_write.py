@@ -491,7 +491,16 @@ class WriteEngine:
         """
         sid = validate_session_id(session_id or "default")
         outcome = validate_outcome(outcome)
-        target = target_ref(target_seq, target_hash)
+        # Resolve the target against the sealed log rather than format-checking it.
+        # `target_ref` only validates shape, so an unresolvable (seq, hash) used to
+        # append a reinforcement citing an event that does not exist -- an uncitable
+        # citation in an append-only log -- and supplying just one of the pair
+        # silently dropped the reinforcement entirely. Match the sibling evolution
+        # ops (edit/rollback/forget), which all require a resolvable target.
+        target: dict[str, Any] | None = None
+        if target_seq is not None or target_hash is not None:
+            target_event = self._require_target_event(target_seq, target_hash, session_id=sid)
+            target = {"seq": target_event.seq, "hash": target_event.hash}
         pe = prediction_error(outcome, prior) if prior is not None else None
 
         outcome_spec = build_outcome_event(
