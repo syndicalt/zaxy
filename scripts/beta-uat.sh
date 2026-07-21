@@ -130,7 +130,7 @@ MARKDOWN
         --max-checkout-prompt-tokens 5000 \
         --min-checkout-facts-per-1k-tokens 0.1
     zaxy capture status --workspace .
-    zaxy capture-soak --eventloom-path .eventloom --workspace-root . --session-id "${session_id}"
+    zaxy capture soak --eventloom-path .eventloom --workspace-root . --session-id "${session_id}"
     zaxy memory status --eventloom-path .eventloom
     if [[ -z "${preset}" ]]; then
         GRAPH_STATUS_OUTPUT="$(zaxy memory status --eventloom-path .eventloom --graph)"

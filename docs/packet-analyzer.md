@@ -7,7 +7,7 @@ request/response provenance to Eventloom, so it can consume provider quota and
 requires the runtime and upstream to support the same wire API.
 
 ```bash
-zaxy packet-analyzer \
+zaxy packet analyze \
   --upstream-base-url https://api.openai.com/v1 \
   --upstream-api-key "$OPENAI_API_KEY" \
   --eventloom-path .eventloom \

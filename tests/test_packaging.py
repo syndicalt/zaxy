@@ -864,7 +864,7 @@ def test_beta_uat_script_exercises_clean_repo_happy_path() -> None:
     assert "zaxy doctor" in script
     assert "zaxy hook-status" in script
     assert "zaxy capture status" in script
-    assert "zaxy capture-soak" in script
+    assert "zaxy capture soak" in script
     assert "zaxy memory status" in script
 
 
@@ -937,7 +937,7 @@ def test_beta_uat_script_exercises_observation_sinks_for_capture_soak() -> None:
     assert "zaxy hook-event file-edit" in script
     assert "zaxy hook-event tool-call" in script
     assert "zaxy hook-event transcript-turn" in script
-    assert "zaxy capture-soak --eventloom-path .eventloom --workspace-root . --session-id" in script
+    assert "zaxy capture soak --eventloom-path .eventloom --workspace-root . --session-id" in script
 
 
 def test_beta_uat_script_enforces_activation_efficiency_guardrail() -> None:
@@ -947,7 +947,7 @@ def test_beta_uat_script_enforces_activation_efficiency_guardrail() -> None:
     assert "zaxy hook-status --eventloom-path .eventloom --min-activation-rate 1.0" in script
     assert "--max-checkout-prompt-tokens 5000" in script
     assert "--min-checkout-facts-per-1k-tokens 0.1" in script
-    assert script.index("--min-activation-rate 1.0") < script.index("zaxy capture-soak")
+    assert script.index("--min-activation-rate 1.0") < script.index("zaxy capture soak")
 
 
 def test_beta_uat_script_stops_managed_capture_before_cleanup() -> None:
@@ -985,7 +985,7 @@ def test_beta_roadmap_tracks_post_uat_product_work() -> None:
     assert "zaxy benchmark-inventory" in roadmap
     assert "CrewAI" in roadmap
     assert "capture soak" in roadmap
-    assert "zaxy capture-soak" in roadmap
+    assert "zaxy capture soak" in roadmap
     assert "release criteria" in roadmap
 
 
@@ -1369,7 +1369,7 @@ def test_release_doc_gates_accept_complete_happy_path_references(tmp_path: Path)
     )
     (docs / "testing.md").write_text("scripts/beta-uat.sh\n", encoding="utf-8")
     (docs / "hooks.md").write_text("zaxy hook-status\nobservation coverage\n", encoding="utf-8")
-    (docs / "mcp.md").write_text("zaxy capture-soak\n", encoding="utf-8")
+    (docs / "mcp.md").write_text("zaxy capture soak\n", encoding="utf-8")
     (tmp_path / "BETA.md").write_text(
         "Git for LLM memory\nMemPalace-comparable\ntemporal recall\nsource recall\n"
         "graph traversal\ncontext-collapse\nCrewAI\ncapture soak\nrelease criteria\n",
@@ -5926,7 +5926,7 @@ def _write_minimal_beta_ready_project(root: Path) -> None:
         "zaxy hook-status --min-activation-rate 1.0 --max-checkout-prompt-tokens 5000 "
         "--min-checkout-facts-per-1k-tokens 0.1\n"
         "zaxy capture status\n"
-        "zaxy capture-soak\n"
+        "zaxy capture soak\n"
         "zaxy memory status\n"
         "zaxy memory status --eventloom-path .eventloom --graph\n"
         "Graph projection (backend=embedded):\n"
@@ -5946,7 +5946,7 @@ def _write_minimal_beta_ready_project(root: Path) -> None:
         "deterministic\n"
         "zaxy capture start\n"
         "zaxy capture status\n"
-        "zaxy capture-soak\n"
+        "zaxy capture soak\n"
         "zaxy hook-status\n"
         "observation coverage\n"
     )

@@ -91,7 +91,7 @@ bare embedded branch also runs `zaxy memory status --eventloom-path .eventloom -
 proves the repo-local embedded projection can be inspected, audited, rebuilt,
 and rechecked without backend flags. The UAT path runs `zaxy hook-status
 --min-activation-rate 1.0`, so it fails if its clean first-run captured sessions
-did not all start substantive work after fresh checkout. `zaxy capture-soak` is
+did not all start substantive work after fresh checkout. `zaxy capture soak` is
 the beta evidence command for
 deterministic capture: it checks transcript, tool-call, command, and file-edit
 observation coverage, freshness, latest seq/hash, and remediation steps.
