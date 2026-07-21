@@ -1,0 +1,34 @@
+{
+  "artifacts": [
+    {
+      "file": "report.json",
+      "sha256": "9b572693634efc5933ee244ec72c30c8453deefcca2d06ff5c7ea02c9da5272a"
+    }
+  ],
+  "benchmark": "checkout-latency",
+  "claim_scope": {
+    "note": "Internal lane. Measured up to 8000 events on one loaded aarch64 workstation. The historical ~1.0-1.6s warm figure came from a ~78k-event store that has not been reproduced, so no <300ms claim may be made at that scale from this run. Publishing any latency number requires a run at the scale being claimed.",
+    "publishable": false
+  },
+  "lane_version": "checkout-latency-v1",
+  "measured": {
+    "max_events": 8000,
+    "unmeasured_scale_of_record": 78000
+  },
+  "provenance": {
+    "harness": "zaxy_benchmarks/checkout_latency_lane.py",
+    "produced_at_commit": "f8b300da951671c29951e479ed1ddc052d0bee1e",
+    "reproduce": "measure_checkout_latency(root, sizes=DEFAULT_SIZES, repeats=20, warmup=3)"
+  },
+  "reproducibility": {
+    "deterministic": false,
+    "note": "Wall-clock timings are hardware- and load-dependent and will not reproduce byte-identically. The seeded corpus and query are deterministic; the scaling shape across sizes is the comparable part, not the absolute milliseconds."
+  },
+  "run": "checkout-latency-v1",
+  "scoring": {
+    "judge_note": "No judge and no provider calls; this lane measures latency only.",
+    "llm_judge": false,
+    "method": "wall-clock warm Memory Checkout p50/p95, interleaved within one process per store size"
+  },
+  "status": "current"
+}

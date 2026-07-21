@@ -1,0 +1,27 @@
+{
+  "lane": "checkout_latency",
+  "version": "checkout-latency-v1",
+  "validation": "internal",
+  "measurement": "Warm Memory Checkout p50/p95 at several store sizes, interleaved within one process against one store per size, warmup rounds discarded. Absolute latency is hardware- and load-dependent; the scaling shape is the comparable part. Cold start is not measured here.",
+  "points": [
+    {
+      "events": 500,
+      "p50_ms": 56.866,
+      "p95_ms": 99.901,
+      "samples": 20
+    },
+    {
+      "events": 2000,
+      "p50_ms": 70.972,
+      "p95_ms": 114.454,
+      "samples": 20
+    },
+    {
+      "events": 8000,
+      "p50_ms": 141.235,
+      "p95_ms": 182.546,
+      "samples": 20
+    }
+  ],
+  "scaling_note": "p50 grew 2.48x while the store grew 16x (500 -> 8000 events). This lane measured up to 8000 events and makes no claim beyond that size."
+}
