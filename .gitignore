@@ -101,6 +101,8 @@ reports/**/*.db-wal
 
 # Local feature worktrees
 .worktrees/
+# Agent-harness worktrees (git repos; `git add -A` would embed them)
+.claude/worktrees/
 
 # Local Superpowers visual companion sessions
 .superpowers/
