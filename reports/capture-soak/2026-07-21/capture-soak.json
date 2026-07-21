@@ -1,0 +1,59 @@
+{
+  "actions": [
+    "Wire hooks or adapter sinks for: command.completed, file.edit.applied, tool.call.completed, transcript.turn."
+  ],
+  "active_observation_types": [],
+  "beta_criteria": {
+    "requires": [
+      "all high-value deterministic capture lanes observed",
+      "latest events no older than 30 minutes"
+    ],
+    "status": "fail"
+  },
+  "checked_at": "2026-07-21T16:49:38.527521Z",
+  "codex_capture": {
+    "installed": false,
+    "paths": [],
+    "runtime": {
+      "message": "Codex capture watcher is not running",
+      "pids": [],
+      "running": false
+    }
+  },
+  "eventloom_path": ".eventloom",
+  "latest_hook_event": null,
+  "max_stale_minutes": 30,
+  "message": "0 of 4 deterministic capture lanes are active",
+  "missing_observation_types": [
+    "command.completed",
+    "file.edit.applied",
+    "tool.call.completed",
+    "transcript.turn"
+  ],
+  "observation_coverage": {
+    "command.completed": {
+      "count": 0,
+      "latest": null
+    },
+    "file.edit.applied": {
+      "count": 0,
+      "latest": null
+    },
+    "hook": {
+      "count": 0,
+      "latest": null
+    },
+    "tool.call.completed": {
+      "count": 0,
+      "latest": null
+    },
+    "transcript.turn": {
+      "count": 0,
+      "latest": null
+    }
+  },
+  "session_id": null,
+  "stale_observation_types": [],
+  "status": "warning",
+  "workspace_root": "/home/cheapseatsecon/Projects/Personal/zaxy"
+}
