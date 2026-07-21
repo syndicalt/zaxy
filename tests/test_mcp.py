@@ -4782,3 +4782,46 @@ class TestMemoryExportTool:
                 await server.handle_memory_export({"session_id": "other", "disclose": {}})
         finally:
             remote_session_scope.reset(token)
+
+
+class TestCoordinationPromotionGate:
+    """The coordination_promote MCP tool enforces the accepted+cited promotion policy."""
+
+    async def _reported_finding(self, server: ZaxyMCPServer) -> str:
+        await server.handle_coordination_start({"mission_id": "gate-mcp", "objective": "Audit", "actor": "lead"})
+        await server.handle_coordination_worker_create({"mission_id": "gate-mcp", "worker_id": "w1", "actor": "lead"})
+        result = await server.handle_coordination_report_finding({
+            "mission_id": "gate-mcp",
+            "worker_id": "w1",
+            "summary": "Unreviewed, evidence-free claim.",
+            "actor": "w1-agent",
+        })
+        return str(json_loads(result[0].text)["finding_id"])
+
+    async def test_promote_tool_refuses_an_unreviewed_finding(self, tmp_path: Path) -> None:
+        """coordination_promote should surface the policy refusal rather than append a promotion."""
+        server = ZaxyMCPServer(eventloom_path=str(tmp_path / ".eventloom"))
+        server.graph = AsyncMock()
+        server.tracer = AsyncMock()
+        finding_id = await self._reported_finding(server)
+
+        with pytest.raises(ValueError, match="no prior accepted review"):
+            await server.handle_coordination_promote({"mission_id": "gate-mcp", "finding_id": finding_id})
+
+    async def test_promote_tool_force_argument_overrides_the_gate(self, tmp_path: Path) -> None:
+        """coordination_promote with force=True promotes and records the bypassed reason."""
+        server = ZaxyMCPServer(eventloom_path=str(tmp_path / ".eventloom"))
+        server.graph = AsyncMock()
+        server.tracer = AsyncMock()
+        finding_id = await self._reported_finding(server)
+
+        result = await server.handle_coordination_promote(
+            {"mission_id": "gate-mcp", "finding_id": finding_id, "force": True}
+        )
+
+        assert json_loads(result[0].text)["event_type"] == "coordination.finding.promoted"
+
+    def test_promote_tool_schema_exposes_the_force_escape(self) -> None:
+        """The published coordination_promote contract must advertise the force escape hatch."""
+        tool = next(t for t in TOOLS if t.name == "coordination_promote")
+        assert tool.inputSchema["properties"]["force"] == {"type": "boolean", "default": False}

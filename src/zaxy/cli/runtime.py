@@ -630,12 +630,18 @@ def coordinate_promote(
     finding: str = typer.Option(..., "--finding", help="Finding ID"),
     eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
     actor: str = typer.Option("coordinator", help="Actor recording the event"),
+    force: bool = typer.Option(False, "--force", help="Bypass the accepted-review and evidence policy gate"),
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
 ) -> None:
-    """Promote a finding into accepted parent mission state."""
+    """Promote a reviewed, cited finding into accepted parent mission state."""
     from zaxy.coordination import CoordinationManager
 
-    result = CoordinationManager(eventloom_path=eventloom_path).promote_finding(mission, finding, actor=actor)
+    try:
+        result = CoordinationManager(eventloom_path=eventloom_path).promote_finding(
+            mission, finding, actor=actor, force=force
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--finding") from exc
     payload = {
         "mission_id": result.mission_id,
         "worker_id": result.worker_id,
@@ -833,11 +839,14 @@ def coordinate_apply_approval(
     from zaxy.coordination import CoordinationManager
 
     decisions = _coordinate_decisions_from_json(decisions_json)
-    result = CoordinationManager(eventloom_path=eventloom_path).apply_approval_decisions(
-        mission,
-        decisions,
-        actor=actor,
-    )
+    try:
+        result = CoordinationManager(eventloom_path=eventloom_path).apply_approval_decisions(
+            mission,
+            decisions,
+            actor=actor,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--decisions-json") from exc
     payload = result.to_dict()
     if json_output:
         typer.echo(json.dumps(payload, indent=2, sort_keys=True))

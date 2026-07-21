@@ -106,6 +106,7 @@ def test_promote_finding_appends_promoted_reinforcement_targeting_finding_source
         "auth-api",
         summary="API failures trace to expired JWKS cache handling.",
         actor="auth-api-agent",
+        evidence=[{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
     )
     manager.review_finding("auth-main", finding.finding_id, status="accepted", actor="lead")
 
@@ -137,6 +138,7 @@ def test_coordination_proof_packet_scopes_and_labels_authority(tmp_path: Path) -
         "auth-api",
         summary="Expired JWKS cache is the accepted auth failure cause.",
         actor="auth-api-agent",
+        evidence=[{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
         claim_key="auth.failure.cause",
         claim_value="expired-jwks-cache",
     )
@@ -145,6 +147,7 @@ def test_coordination_proof_packet_scopes_and_labels_authority(tmp_path: Path) -
         "auth-docs",
         summary="Docs need release note updates.",
         actor="auth-docs-agent",
+        evidence=[{"kind": "file", "reference": "docs/release-notes.md"}],
         claim_key="release.docs",
         claim_value="needs-update",
     )
@@ -232,12 +235,14 @@ def test_coordination_checkout_and_proof_share_accepted_state_resolution(tmp_pat
         "api",
         summary="Accepted API cause is expired JWKS cache.",
         actor="api-agent",
+        evidence=[{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
     )
     accepted_unused = manager.report_finding(
         "release-rc1",
         "docs",
         summary="Accepted docs update is ready.",
         actor="docs-agent",
+        evidence=[{"kind": "file", "reference": "docs/release-notes.md"}],
     )
     pending = manager.report_finding(
         "release-rc1",
@@ -306,6 +311,7 @@ def test_coordination_proof_packet_links_handoff_event_ref(tmp_path: Path) -> No
         "auth-api",
         summary="Expired JWKS cache is accepted.",
         actor="auth-api-agent",
+        evidence=[{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
     )
     manager.review_finding("release-rc1", finding.finding_id, status="accepted", actor="lead")
     manager.promote_finding("release-rc1", finding.finding_id, actor="lead")
@@ -364,6 +370,7 @@ def test_coordination_proof_packet_surfaces_mixed_identity_non_authoritative_row
         "auth-api",
         summary="Expired JWKS cache is accepted.",
         actor="auth-api-agent",
+        evidence=[{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
     )
     pending = manager.report_finding(
         "release-rc1",
@@ -587,6 +594,7 @@ def test_coordination_checkout_can_include_pending_and_conflict_diagnostics(tmp_
         "auth-api",
         summary="Expired JWKS cache causes API failures.",
         actor="auth-api-agent",
+        evidence=[{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
         claim_key="auth.failure.cause",
         claim_value="expired-jwks-cache",
     )
@@ -954,6 +962,7 @@ def test_coordination_audit_report_reconstructs_proof_packet_fields(tmp_path: Pa
         "auth-api",
         summary="Expired JWKS cache causes API failures.",
         actor="auth-api-agent",
+        evidence=[{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
     )
     review = manager.review_finding("auth-main", finding.finding_id, status="accepted", actor="lead")
     promotion = manager.promote_finding("auth-main", finding.finding_id, actor="lead")
@@ -1019,6 +1028,7 @@ def test_coordination_inspection_links_handoff_to_proof_packet_refs(tmp_path: Pa
         "auth-api",
         summary="Expired JWKS cache causes API failures.",
         actor="auth-api-agent",
+        evidence=[{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
     )
     manager.review_finding("auth-main", finding.finding_id, status="accepted", actor="lead")
     manager.promote_finding("auth-main", finding.finding_id, actor="lead")
@@ -1067,6 +1077,7 @@ def test_coordination_proof_trace_replays_artifact_handoff_and_ledger(tmp_path: 
         "auth-api",
         summary="Expired JWKS cache causes API failures.",
         actor="auth-api-agent",
+        evidence=[{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
     )
     review = manager.review_finding("auth-main", finding.finding_id, status="accepted", actor="lead")
     promotion = manager.promote_finding("auth-main", finding.finding_id, actor="lead")
@@ -1476,3 +1487,177 @@ def test_coordination_apply_approval_decisions_reviews_and_promotes(tmp_path: Pa
     brief = manager.brief("auth-main")
     assert [finding.finding_id for finding in brief.accepted_findings] == [accepted.finding_id]
     assert [finding.finding_id for finding in brief.deferred_findings] == [deferred.finding_id]
+
+
+def _gated_manager(tmp_path: Path) -> tuple[CoordinationManager, str]:
+    """Build a mission with one reported, unreviewed, evidence-free finding."""
+    manager = CoordinationManager(eventloom_path=tmp_path / ".eventloom")
+    manager.start_mission("gate-1", objective="Audit findings", actor="lead")
+    manager.create_worker("gate-1", "w1", actor="lead")
+    finding = manager.report_finding(
+        "gate-1",
+        "w1",
+        summary="Unreviewed, evidence-free claim.",
+        actor="w1-agent",
+    )
+    return manager, finding.finding_id
+
+
+def test_promote_finding_refuses_a_finding_without_a_prior_accepted_review(tmp_path: Path) -> None:
+    """Promotion must refuse a finding that has never been reviewed as accepted."""
+    manager, finding_id = _gated_manager(tmp_path)
+
+    with pytest.raises(ValueError, match="no prior accepted review"):
+        manager.promote_finding("gate-1", finding_id, actor="auditor")
+
+
+def test_promote_finding_refuses_before_appending_any_event(tmp_path: Path) -> None:
+    """A refused promotion must append nothing to the append-only log."""
+    manager, finding_id = _gated_manager(tmp_path)
+    before = [event.type for event in manager.session_manager.replay("gate-1").events]
+
+    with pytest.raises(ValueError):
+        manager.promote_finding("gate-1", finding_id, actor="auditor")
+
+    assert [event.type for event in manager.session_manager.replay("gate-1").events] == before
+
+
+def test_promote_finding_refuses_an_accepted_finding_with_no_evidence(tmp_path: Path) -> None:
+    """An accepted review is not sufficient: promotion also requires evidence citations."""
+    manager, finding_id = _gated_manager(tmp_path)
+    manager.review_finding("gate-1", finding_id, status="accepted", actor="lead")
+
+    with pytest.raises(ValueError, match="no evidence citations"):
+        manager.promote_finding("gate-1", finding_id, actor="auditor")
+
+
+def test_promote_finding_force_overrides_the_policy_gate_and_records_the_reason(tmp_path: Path) -> None:
+    """An explicit force escape promotes anyway and stamps the bypassed reason on the event."""
+    manager, finding_id = _gated_manager(tmp_path)
+
+    promotion = manager.promote_finding("gate-1", finding_id, actor="auditor", force=True)
+
+    assert promotion.event.type == "coordination.finding.promoted"
+    assert promotion.event.payload["forced"] is True
+    assert promotion.event.payload["force_reason"] == "no prior accepted review (status=pending)"
+
+
+def test_promote_finding_allows_a_reviewed_and_cited_finding_without_force(tmp_path: Path) -> None:
+    """The gate is not a blanket block: a reviewed, cited finding promotes with no force flag."""
+    manager = CoordinationManager(eventloom_path=tmp_path / ".eventloom")
+    manager.start_mission("gate-2", objective="Audit findings", actor="lead")
+    manager.create_worker("gate-2", "w1", actor="lead")
+    finding = manager.report_finding(
+        "gate-2",
+        "w1",
+        summary="Cited claim.",
+        actor="w1-agent",
+        evidence=[{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
+    )
+    manager.review_finding("gate-2", finding.finding_id, status="accepted", actor="lead")
+
+    promotion = manager.promote_finding("gate-2", finding.finding_id, actor="lead")
+
+    assert promotion.event.type == "coordination.finding.promoted"
+    assert "forced" not in promotion.event.payload
+
+
+def test_apply_approval_decisions_appends_nothing_when_a_later_decision_is_invalid(tmp_path: Path) -> None:
+    """A bad decision mid-batch must leave the append-only log completely untouched."""
+    manager = CoordinationManager(eventloom_path=tmp_path / ".eventloom")
+    manager.start_mission("batch-1", objective="Audit findings", actor="lead")
+    manager.create_worker("batch-1", "w1", actor="lead")
+    good = manager.report_finding(
+        "batch-1",
+        "w1",
+        summary="Cited claim.",
+        actor="w1-agent",
+        evidence=[{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
+    )
+    before = [event.type for event in manager.session_manager.replay("batch-1").events]
+
+    with pytest.raises(ValueError, match="Unknown finding_id"):
+        manager.apply_approval_decisions(
+            "batch-1",
+            [
+                {"finding_id": good.finding_id, "status": "accepted", "promote": True},
+                {"finding_id": "does-not-exist", "status": "accepted"},
+            ],
+            actor="reviewer",
+        )
+
+    assert [event.type for event in manager.session_manager.replay("batch-1").events] == before
+
+
+def test_apply_approval_decisions_appends_nothing_when_a_later_status_is_invalid(tmp_path: Path) -> None:
+    """An unknown review status anywhere in the batch aborts before the first append."""
+    manager = CoordinationManager(eventloom_path=tmp_path / ".eventloom")
+    manager.start_mission("batch-2", objective="Audit findings", actor="lead")
+    manager.create_worker("batch-2", "w1", actor="lead")
+    good = manager.report_finding(
+        "batch-2",
+        "w1",
+        summary="Cited claim.",
+        actor="w1-agent",
+        evidence=[{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
+    )
+    before = [event.type for event in manager.session_manager.replay("batch-2").events]
+
+    with pytest.raises(ValueError, match="Invalid finding status for decision 1"):
+        manager.apply_approval_decisions(
+            "batch-2",
+            [
+                {"finding_id": good.finding_id, "status": "accepted"},
+                {"finding_id": good.finding_id, "status": "not-a-status"},
+            ],
+            actor="reviewer",
+        )
+
+    assert [event.type for event in manager.session_manager.replay("batch-2").events] == before
+
+
+def test_apply_approval_decisions_appends_nothing_when_a_promotion_would_be_ungated(tmp_path: Path) -> None:
+    """A batch that would promote an evidence-free finding aborts before any event is written."""
+    manager = CoordinationManager(eventloom_path=tmp_path / ".eventloom")
+    manager.start_mission("batch-3", objective="Audit findings", actor="lead")
+    manager.create_worker("batch-3", "w1", actor="lead")
+    cited = manager.report_finding(
+        "batch-3",
+        "w1",
+        summary="Cited claim.",
+        actor="w1-agent",
+        evidence=[{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
+    )
+    uncited = manager.report_finding("batch-3", "w1", summary="Uncited claim.", actor="w1-agent")
+    before = [event.type for event in manager.session_manager.replay("batch-3").events]
+
+    with pytest.raises(ValueError, match="Refusing decision 1"):
+        manager.apply_approval_decisions(
+            "batch-3",
+            [
+                {"finding_id": cited.finding_id, "status": "accepted", "promote": True},
+                {"finding_id": uncited.finding_id, "status": "accepted", "promote": True},
+            ],
+            actor="reviewer",
+        )
+
+    assert [event.type for event in manager.session_manager.replay("batch-3").events] == before
+
+
+def test_apply_approval_decisions_honors_a_per_decision_force_escape(tmp_path: Path) -> None:
+    """A decision carrying force=True may promote an evidence-free finding within a batch."""
+    manager = CoordinationManager(eventloom_path=tmp_path / ".eventloom")
+    manager.start_mission("batch-4", objective="Audit findings", actor="lead")
+    manager.create_worker("batch-4", "w1", actor="lead")
+    uncited = manager.report_finding("batch-4", "w1", summary="Uncited claim.", actor="w1-agent")
+
+    result = manager.apply_approval_decisions(
+        "batch-4",
+        [{"finding_id": uncited.finding_id, "status": "accepted", "promote": True, "force": True}],
+        actor="reviewer",
+    )
+
+    assert result.reviewed_count == 1
+    assert result.promoted_count == 1
+    promoted = [event for event in result.events if event.type == "coordination.finding.promoted"]
+    assert promoted[0].payload["force_reason"] == "no evidence citations"

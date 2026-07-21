@@ -1216,7 +1216,10 @@ TOOLS = [
     ),
     Tool(
         name="coordination_apply_approval",
-        description="Apply remote approval decisions to a coordination mission.",
+        description=(
+            "Apply remote approval decisions to a coordination mission atomically: "
+            "all decisions are validated before any event is appended."
+        ),
         inputSchema={
             "type": "object",
             "required": ["mission_id", "decisions"],
@@ -1246,7 +1249,10 @@ TOOLS = [
     ),
     Tool(
         name="coordination_promote",
-        description="Promote an accepted finding into the parent mission history.",
+        description=(
+            "Promote an accepted, evidence-cited finding into the parent mission history. "
+            "Refuses findings without a prior accepted review or without evidence unless force is set."
+        ),
         inputSchema={
             "type": "object",
             "required": ["mission_id", "finding_id"],
@@ -1254,6 +1260,7 @@ TOOLS = [
                 "mission_id": {"type": "string"},
                 "finding_id": {"type": "string"},
                 "actor": {"type": "string", "default": "coordinator"},
+                "force": {"type": "boolean", "default": False},
             },
             "additionalProperties": False,
         },

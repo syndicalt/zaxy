@@ -1351,7 +1351,10 @@ class ZaxyMCPServer:
         self._enforce_coordination_mission_scope(mission_id)
         finding_id = _required_text(arguments.get("finding_id"), "finding_id")
         actor = _optional_text(arguments.get("actor")) or "coordinator"
-        result = self._coordination_manager().promote_finding(mission_id, finding_id, actor=actor)
+        force = bool(arguments.get("force", False))
+        result = self._coordination_manager().promote_finding(
+            mission_id, finding_id, actor=actor, force=force
+        )
         await self._project_coordination_result(result.event, session_id=mission_id)
         return [TextContent(type="text", text=json.dumps(_coordination_result_payload(result, "coordination.finding.promoted")))]
 

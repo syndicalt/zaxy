@@ -1408,6 +1408,8 @@ def test_coordinate_cli_checkout_returns_accepted_state_with_optional_diagnostic
             "auth-api",
             "--summary",
             "API failures trace to expired JWKS cache handling.",
+            "--evidence",
+            "pytest tests/test_auth.py -q",
             "--claim-key",
             "auth.failure.cause",
             "--claim-value",
@@ -1866,7 +1868,26 @@ def test_coordinate_cli_approval_packet_and_apply_decisions(tmp_path: Path) -> N
         "recommended_status": "deferred",
     }
 
-    decisions = json.dumps([{"finding_id": finding_id, "status": "accepted", "rationale": "Reviewed remotely.", "promote": True}])
+    cited_result = runner.invoke(
+        app,
+        [
+            "coordinate",
+            "report",
+            "--mission",
+            "auth-main",
+            "--worker",
+            "auth-api",
+            "--summary",
+            "Token refresh retry is missing in auth middleware.",
+            "--evidence",
+            "pytest tests/test_auth.py -q",
+            "--eventloom-path",
+            str(eventloom),
+        ],
+    )
+    cited_finding_id = cited_result.output.strip().split()[1]
+
+    decisions = json.dumps([{"finding_id": cited_finding_id, "status": "accepted", "rationale": "Reviewed remotely.", "promote": True}])
     apply_result = runner.invoke(
         app,
         [
@@ -9657,3 +9678,91 @@ def test_memory_rollback_rejects_non_reversible_target(tmp_path: Path) -> None:
         ],
     )
     assert result.exit_code != 0
+
+
+def _coordinate_gate_fixture(runner: CliRunner, eventloom: Path) -> str:
+    """Report one unreviewed, evidence-free finding and return its ID."""
+    runner.invoke(app, ["coordinate", "start", "Audit", "--mission", "gate-cli", "--eventloom-path", str(eventloom)])
+    runner.invoke(app, ["coordinate", "worker", "create", "--mission", "gate-cli", "--worker", "w1", "--eventloom-path", str(eventloom)])
+    result = runner.invoke(
+        app,
+        [
+            "coordinate",
+            "report",
+            "--mission",
+            "gate-cli",
+            "--worker",
+            "w1",
+            "--summary",
+            "Unreviewed, evidence-free claim.",
+            "--eventloom-path",
+            str(eventloom),
+        ],
+    )
+    return result.output.strip().split()[1]
+
+
+def test_coordinate_promote_cli_refuses_an_unreviewed_finding(tmp_path: Path) -> None:
+    """coordinate promote should exit non-zero for a finding with no accepted review."""
+    runner = CliRunner()
+    eventloom = tmp_path / ".eventloom"
+    finding_id = _coordinate_gate_fixture(runner, eventloom)
+
+    result = runner.invoke(
+        app,
+        ["coordinate", "promote", "--mission", "gate-cli", "--finding", finding_id, "--eventloom-path", str(eventloom)],
+    )
+
+    assert result.exit_code != 0
+    # Rich wraps the error inside a bordered panel, so compare on collapsed whitespace.
+    assert "no prior accepted review" in " ".join(result.output.replace("│", " ").split())
+
+
+def test_coordinate_promote_cli_force_flag_overrides_the_gate(tmp_path: Path) -> None:
+    """coordinate promote --force promotes an ungated finding and reports success."""
+    runner = CliRunner()
+    eventloom = tmp_path / ".eventloom"
+    finding_id = _coordinate_gate_fixture(runner, eventloom)
+
+    result = runner.invoke(
+        app,
+        [
+            "coordinate",
+            "promote",
+            "--mission",
+            "gate-cli",
+            "--finding",
+            finding_id,
+            "--force",
+            "--eventloom-path",
+            str(eventloom),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert f"Finding {finding_id} promoted" in result.output
+
+
+def test_coordinate_apply_approval_cli_refuses_an_ungated_promotion(tmp_path: Path) -> None:
+    """coordinate apply-approval should reject a batch whose promotion fails the policy gate."""
+    runner = CliRunner()
+    eventloom = tmp_path / ".eventloom"
+    finding_id = _coordinate_gate_fixture(runner, eventloom)
+    decisions = json.dumps([{"finding_id": finding_id, "status": "accepted", "promote": True}])
+
+    result = runner.invoke(
+        app,
+        [
+            "coordinate",
+            "apply-approval",
+            "--mission",
+            "gate-cli",
+            "--decisions-json",
+            decisions,
+            "--eventloom-path",
+            str(eventloom),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "no evidence citations" in " ".join(result.output.replace("│", " ").split())

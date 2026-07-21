@@ -1886,7 +1886,7 @@
     },
     {
       "name": "coordination_apply_approval",
-      "description": "Apply remote approval decisions to a coordination mission.",
+      "description": "Apply remote approval decisions to a coordination mission atomically: all decisions are validated before any event is appended.",
       "input_schema": {
         "type": "object",
         "required": [
@@ -1950,7 +1950,7 @@
     },
     {
       "name": "coordination_promote",
-      "description": "Promote an accepted finding into the parent mission history.",
+      "description": "Promote an accepted, evidence-cited finding into the parent mission history. Refuses findings without a prior accepted review or without evidence unless force is set.",
       "input_schema": {
         "type": "object",
         "required": [
@@ -1967,6 +1967,10 @@
           "actor": {
             "type": "string",
             "default": "coordinator"
+          },
+          "force": {
+            "type": "boolean",
+            "default": false
           }
         },
         "additionalProperties": false

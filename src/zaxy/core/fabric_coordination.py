@@ -373,9 +373,12 @@ class CoordinationOps:
         finding_id: str,
         *,
         actor: str = "coordinator",
+        force: bool = False,
     ) -> Any:
         """Promote a finding into the parent mission history and project it."""
-        result = self._host._coordination_manager().promote_finding(mission_id, finding_id, actor=actor)
+        result = self._host._coordination_manager().promote_finding(
+            mission_id, finding_id, actor=actor, force=force
+        )
         await self._host._project_event(result.event, session_id=result.mission_id)
         return result
 
