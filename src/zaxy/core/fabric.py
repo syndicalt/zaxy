@@ -1344,11 +1344,11 @@ class MemoryFabric:
         )
 
     async def coordinate_promote_finding(
-        self, mission_id: str, finding_id: str, *, actor: str = "coordinator"
+        self, mission_id: str, finding_id: str, *, actor: str = "coordinator", force: bool = False
     ) -> Any:
         """Promote a finding into the parent mission history and project it."""
         return await self._coordination.coordinate_promote_finding(
-            mission_id, finding_id, actor=actor
+            mission_id, finding_id, actor=actor, force=force
         )
 
     async def coordinate_brief(self, mission_id: str) -> Any:

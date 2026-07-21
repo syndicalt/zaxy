@@ -946,6 +946,7 @@ def test_escalate_finding_to_fleet_cites_the_promoted_finding(tmp_path: Path) ->
         "w1",
         summary="cache must be pre-warmed",
         actor="w1",
+        evidence=[{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
         confidence=0.9,
         claim_key="auth.jwks",
         claim_value="prewarm",
@@ -978,6 +979,7 @@ def test_escalate_finding_as_skill_routes_through_gate(tmp_path: Path) -> None:
     coordination.create_worker("m1", "w1", actor="coordinator")
     finding = coordination.report_finding(
         "m1", "w1", summary="cache must be pre-warmed", actor="w1",
+        evidence=[{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
         confidence=0.9, claim_key="auth.jwks", claim_value="prewarm",
     )
     coordination.review_finding("m1", finding.finding_id, status="accepted", actor="coordinator")
@@ -1026,6 +1028,7 @@ def test_promote_finding_reinforcement_failure_is_best_effort(tmp_path: Path) ->
     coordination.create_worker("m1", "w1", actor="coordinator")
     finding = coordination.report_finding(
         "m1", "w1", summary="cache must be pre-warmed", actor="w1",
+        evidence=[{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
         confidence=0.9, claim_key="auth.jwks", claim_value="prewarm",
     )
     coordination.review_finding("m1", finding.finding_id, status="accepted", actor="coordinator")

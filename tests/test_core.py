@@ -4649,6 +4649,7 @@ class TestCoordinationAPI:
             "auth-api",
             summary="API failures trace to expired JWKS cache handling.",
             actor="auth-api-agent",
+            evidence=[{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
         )
         await fabric.coordinate_report_finding(
             "auth-main",

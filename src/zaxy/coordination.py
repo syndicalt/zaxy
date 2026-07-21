@@ -62,6 +62,17 @@ class WorkerState:
 
 
 @dataclass(frozen=True)
+class _ApprovalDecision:
+    """One validated approval decision, ready to append."""
+
+    finding_id: str
+    status: str
+    rationale: str | None
+    promote: bool
+    force: bool
+
+
+@dataclass(frozen=True)
 class FindingState:
     """A worker finding with review/promotion state."""
 
@@ -820,25 +831,38 @@ class CoordinationManager:
         finding_id: str,
         *,
         actor: str = "coordinator",
+        force: bool = False,
     ) -> CoordinationEventResult:
-        """Promote a finding into accepted parent mission state."""
+        """Promote a reviewed, cited finding into accepted parent mission state."""
         mission_sid = validate_session_id(mission_id)
         finding = self._find_finding(mission_sid, finding_id)
-        payload = validate_payload(
-            {
-                "mission_id": mission_sid,
-                "worker_id": finding.worker_id,
-                "finding_id": finding.finding_id,
-                "summary": finding.summary,
-                "evidence": finding.evidence,
-                "confidence": finding.confidence,
-                "claim_key": finding.claim_key,
-                "claim_value": finding.claim_value,
-                "source_event_seq": finding.source_event_seq,
-                "source_event_hash": finding.source_event_hash,
-                "status": "accepted",
-            }
-        )
+        # The log is append-only, so the policy gate must refuse before the first
+        # append: a promotion event cannot be retracted once written. This enforces
+        # the 'accepted_parent_state_with_citations_required' contract that purpose
+        # control only declares.
+        refusal = _promotion_refusal(finding)
+        if refusal is not None and not force:
+            raise ValueError(
+                f"Refusing to promote finding {finding.finding_id}: {refusal}. "
+                "Pass force to override."
+            )
+        payload_body: dict[str, Any] = {
+            "mission_id": mission_sid,
+            "worker_id": finding.worker_id,
+            "finding_id": finding.finding_id,
+            "summary": finding.summary,
+            "evidence": finding.evidence,
+            "confidence": finding.confidence,
+            "claim_key": finding.claim_key,
+            "claim_value": finding.claim_value,
+            "source_event_seq": finding.source_event_seq,
+            "source_event_hash": finding.source_event_hash,
+            "status": "accepted",
+        }
+        if refusal is not None:
+            payload_body["forced"] = True
+            payload_body["force_reason"] = refusal
+        payload = validate_payload(payload_body)
         event = self.session_manager.get(mission_sid).eventlog.append(
             "coordination.finding.promoted",
             actor=actor,
@@ -1358,16 +1382,45 @@ class CoordinationManager:
         *,
         actor: str = "coordinator",
     ) -> CoordinationApprovalDecisionResult:
-        """Apply remote approval decisions as normal review and promotion events."""
+        """Apply remote approval decisions atomically as review and promotion events."""
         mission_sid = validate_session_id(mission_id)
+        # An append-only log has no rollback, so a decision that fails halfway
+        # through a batch would strand the earlier ones as permanent, unsignalled
+        # state. Every decision is therefore validated against current mission
+        # state before the first event is appended.
+        planned: list[_ApprovalDecision] = []
+        for index, decision in enumerate(decisions):
+            finding_id = str(decision.get("finding_id") or "")
+            status = str(decision.get("status") or "")
+            promote = bool(decision.get("promote", False))
+            force = bool(decision.get("force", False))
+            if status not in REVIEW_STATUSES:
+                raise ValueError(f"Invalid finding status for decision {index}: {status}")
+            finding = self._find_finding(mission_sid, finding_id)
+            if promote and not force:
+                refusal = _promotion_refusal(finding, status=status)
+                if refusal is not None:
+                    raise ValueError(
+                        f"Refusing decision {index}: cannot promote finding {finding_id}: {refusal}. "
+                        "Pass force to override."
+                    )
+            planned.append(
+                _ApprovalDecision(
+                    finding_id=finding_id,
+                    status=status,
+                    rationale=_optional_str(decision.get("rationale")),
+                    promote=promote,
+                    force=force,
+                )
+            )
         events: list[Event] = []
         reviewed_count = 0
         promoted_count = 0
-        for decision in decisions:
-            finding_id = str(decision.get("finding_id") or "")
-            status = str(decision.get("status") or "")
-            rationale = _optional_str(decision.get("rationale"))
-            promote = bool(decision.get("promote", False))
+        for plan in planned:
+            finding_id = plan.finding_id
+            status = plan.status
+            rationale = plan.rationale
+            promote = plan.promote
             review = self.review_finding(
                 mission_sid,
                 finding_id,
@@ -1378,7 +1431,7 @@ class CoordinationManager:
             events.append(review.event)
             reviewed_count += 1
             if status == "accepted" and promote:
-                promotion = self.promote_finding(mission_sid, finding_id, actor=actor)
+                promotion = self.promote_finding(mission_sid, finding_id, actor=actor, force=plan.force)
                 events.append(promotion.event)
                 promoted_count += 1
         return CoordinationApprovalDecisionResult(
@@ -2220,6 +2273,16 @@ def _optional_float(value: object) -> float | None:
         return float(str(value))
     except (TypeError, ValueError):
         return None
+
+
+def _promotion_refusal(finding: FindingState, *, status: str | None = None) -> str | None:
+    """Return why the promotion policy gate rejects a finding, or None when it passes."""
+    effective = status if status is not None else finding.status
+    if effective != "accepted":
+        return f"no prior accepted review (status={effective})"
+    if not finding.evidence:
+        return "no evidence citations"
+    return None
 
 
 def _finding_status(value: str) -> FindingStatus:
