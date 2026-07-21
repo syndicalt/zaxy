@@ -160,3 +160,84 @@ def test_serve_sse_reaches_main_sse_when_loopback_or_authenticated(
 
     with pytest.raises(_SentinelReachedError):
         _call_serve(transport="sse", host=host)
+
+
+# ---- dashboard() behavioral guard --------------------------------------------
+#
+# The dashboard has no authentication at all, so unlike the SSE guard there is
+# no "auth configured" escape hatch: with review enabled a non-loopback bind is
+# refused outright, and read-only non-loopback binds warn rather than fail.
+
+
+def _call_dashboard(*, host: str, enable_coordinate_review: bool) -> None:
+    from zaxy.cli.serving import dashboard
+
+    dashboard(
+        workspace=None,
+        eventloom_path=None,
+        session_id=None,
+        domain=None,
+        host=host,
+        port=8765,
+        projection_backend=None,
+        neo4j_uri=None,
+        neo4j_user=None,
+        neo4j_password=None,
+        pggraph_dsn=None,
+        embedded_graph_path=None,
+        enable_coordinate_review=enable_coordinate_review,
+    )
+
+
+def _stub_run_dashboard(monkeypatch: pytest.MonkeyPatch, calls: list[object]) -> None:
+    from zaxy import dashboard as dashboard_module
+
+    def _tracking_run_dashboard(scope: object) -> None:
+        calls.append(scope)
+
+    monkeypatch.setattr(dashboard_module, "run_dashboard", _tracking_run_dashboard)
+
+
+def test_dashboard_refuses_non_loopback_bind_with_review_enabled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """--enable-coordinate-review on a non-loopback host must refuse before serving."""
+    monkeypatch.chdir(tmp_path)
+    get_settings.cache_clear()
+    calls: list[object] = []
+    _stub_run_dashboard(monkeypatch, calls)
+
+    with pytest.raises(typer.BadParameter):
+        _call_dashboard(host="0.0.0.0", enable_coordinate_review=True)
+
+    assert calls == []
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "::1"])
+def test_dashboard_allows_loopback_bind_with_review_enabled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path, host: str
+) -> None:
+    """Loopback binds keep the review controls working -- the guard is not a blanket block."""
+    monkeypatch.chdir(tmp_path)
+    get_settings.cache_clear()
+    calls: list[object] = []
+    _stub_run_dashboard(monkeypatch, calls)
+
+    _call_dashboard(host=host, enable_coordinate_review=True)
+
+    assert len(calls) == 1
+
+
+def test_dashboard_warns_but_serves_read_only_on_non_loopback(
+    monkeypatch: pytest.MonkeyPatch, tmp_path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A read-only non-loopback bind still serves, but warns that memory is exposed."""
+    monkeypatch.chdir(tmp_path)
+    get_settings.cache_clear()
+    calls: list[object] = []
+    _stub_run_dashboard(monkeypatch, calls)
+
+    _call_dashboard(host="0.0.0.0", enable_coordinate_review=False)
+
+    assert len(calls) == 1
+    assert "unauthenticated" in capsys.readouterr().err
