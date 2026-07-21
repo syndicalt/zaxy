@@ -357,6 +357,153 @@ async def test_compaction_defaults_off(tmp_path: Path) -> None:
     assert report.compaction is None
 
 
+@pytest.mark.asyncio
+async def test_failing_stage_still_appends_the_summary_event(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stage that raises must not prevent the crystallization.run.completed audit record."""
+    fabric = await _build_fabric(tmp_path)
+    try:
+        eventlog = _seed_crystallization_inputs(fabric, "crystal")
+
+        async def boom(*args: Any, **kwargs: Any) -> Any:
+            raise RuntimeError("consolidation projection unavailable")
+
+        monkeypatch.setattr(fabric, "propose_consolidation_candidates", boom)
+        report = await run_crystallization_pass(fabric, session_id="crystal")
+    finally:
+        await fabric.close()
+
+    summaries = _events_of_type(eventlog, CRYSTALLIZATION_EVENT_TYPE)
+    assert len(summaries) == 1
+    payload = summaries[0].payload
+    assert payload["ok"] is False
+    assert [entry["stage"] for entry in payload["stage_errors"]] == ["consolidation"]
+    assert payload["stage_errors"][0]["error_type"] == "RuntimeError"
+    assert "consolidation projection unavailable" in payload["stage_errors"][0]["error"]
+    # The failure is isolated: later stages still ran and are honestly counted.
+    assert payload["consolidation_candidates"] == 0
+    assert report.procedure_candidates == 1
+    assert report.ok is False
+
+
+@pytest.mark.asyncio
+async def test_successful_pass_reports_ok_with_no_stage_errors(tmp_path: Path) -> None:
+    """A pass where every stage succeeds reports ok with an empty stage_errors list."""
+    fabric = await _build_fabric(tmp_path)
+    try:
+        eventlog = _seed_crystallization_inputs(fabric, "crystal")
+        report = await run_crystallization_pass(fabric, session_id="crystal")
+    finally:
+        await fabric.close()
+
+    assert report.stage_errors == []
+    assert report.ok is True
+    assert report.to_dict()["ok"] is True
+    payload = _events_of_type(eventlog, CRYSTALLIZATION_EVENT_TYPE)[0].payload
+    assert payload["ok"] is True
+    assert payload["stage_errors"] == []
+
+
+@pytest.mark.asyncio
+async def test_independent_stage_failures_are_each_recorded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Multiple failing stages are each recorded rather than the first aborting the pass."""
+    fabric = await _build_fabric(tmp_path)
+    try:
+        _seed_crystallization_inputs(fabric, "crystal")
+
+        def mining_boom(*args: Any, **kwargs: Any) -> Any:
+            raise ValueError("mining index corrupt")
+
+        def salience_boom(*args: Any, **kwargs: Any) -> Any:
+            raise KeyError("salience ledger missing")
+
+        monkeypatch.setattr("zaxy.crystallization.mine_and_propose", mining_boom)
+        monkeypatch.setattr("zaxy.crystallization._top_salient", salience_boom)
+        report = await run_crystallization_pass(fabric, session_id="crystal")
+    finally:
+        await fabric.close()
+
+    stages = {entry["stage"]: entry for entry in report.stage_errors}
+    assert set(stages) == {"procedure_mining", "salience"}
+    assert stages["procedure_mining"]["error_type"] == "ValueError"
+    assert stages["salience"]["error_type"] == "KeyError"
+    # The consolidation stage was untouched and still did its work.
+    assert report.consolidation_candidates == 3
+    assert report.top_salient == []
+
+
+@pytest.mark.asyncio
+async def test_gate_failure_is_isolated_per_candidate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One un-gateable candidate is recorded without costing the rest their gate decisions."""
+    fabric = await _build_fabric(tmp_path)
+    original = fabric.evaluate_evolution_gate
+    calls: list[str] = []
+
+    try:
+        _seed_crystallization_inputs(fabric, "crystal")
+
+        async def flaky(op: Any, confidence: Any, **kwargs: Any) -> Any:
+            candidate_id = str(kwargs["candidate_ref"]["candidate_id"])
+            calls.append(candidate_id)
+            if len(calls) == 1:
+                raise RuntimeError(f"gate policy unreadable for {candidate_id}")
+            return await original(op, confidence, **kwargs)
+
+        monkeypatch.setattr(fabric, "evaluate_evolution_gate", flaky)
+        report = await run_crystallization_pass(fabric, session_id="crystal")
+    finally:
+        await fabric.close()
+
+    assert len(calls) == 4
+    assert len(report.gate_decisions) == 3
+    assert [entry["stage"] for entry in report.stage_errors] == ["gating"]
+    assert report.stage_errors[0]["candidate_id"] == calls[0]
+    # The failed candidate is counted neither accepted nor pending.
+    assert report.auto_accepted + report.left_pending == 3
+
+
+def test_cli_crystallize_exits_non_zero_when_a_stage_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stage failure must surface to cron as a non-zero exit with the error on stderr."""
+    from zaxy.event import EventLog
+    from zaxy.security import eventlog_path
+
+    eventloom = tmp_path / ".eventloom"
+    eventloom.mkdir(parents=True, exist_ok=True)
+    log = EventLog(str(eventlog_path(eventloom, "default")))
+    for name in _RECURRING:
+        spec = build_tool_call_completed_event(
+            tool_name=name, status="succeeded", session_id="default", result_summary=f"{name} ok"
+        )
+        log.append(spec["event_type"], actor=spec["actor"], payload=spec["payload"], thread="default")
+
+    (tmp_path / ".env.local").write_text(
+        "PROJECTION_BACKEND=embedded\n"
+        "EMBEDDED_GRAPH_PATH=.eventloom/projections/embedded.kuzu\n"
+        "NEO4J_AUTO_START=false\n"
+        "CRYSTALLIZATION_ENABLED=true\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    def mining_boom(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("mining index corrupt")
+
+    monkeypatch.setattr("zaxy.crystallization.mine_and_propose", mining_boom)
+
+    result = CliRunner().invoke(app, ["crystallize", "--json"])
+
+    assert result.exit_code == 1, result.output
+    assert "procedure_mining" in result.output
+    assert "mining index corrupt" in result.output
+
+
 def test_cli_crystallize_json_smoke(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from zaxy.event import EventLog
     from zaxy.security import eventlog_path
