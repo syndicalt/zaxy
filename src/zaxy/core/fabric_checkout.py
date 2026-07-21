@@ -135,6 +135,8 @@ class CheckoutHost(Protocol):
 
     async def _append_event_spec(self, event: dict[str, Any], *, session_id: str) -> Any: ...
 
+    def _enqueue_reinforcement(self, spec: dict[str, Any], *, session_id: str) -> None: ...
+
     async def _project_event(self, event: Any, *, session_id: str) -> None: ...
 
     async def _append_generated_inferences(
@@ -562,7 +564,7 @@ class CheckoutOps:
             salience_half_life_days=self._host._salience_half_life_days,
         )
         if record_reinforcement:
-            await self._record_surfaced_reinforcement(
+            self._record_surfaced_reinforcement(
                 checkout,
                 assembly,
                 session_id=checkout_session_id,
@@ -570,7 +572,7 @@ class CheckoutOps:
             )
         return checkout
 
-    async def _record_surfaced_reinforcement(
+    def _record_surfaced_reinforcement(
         self,
         checkout: MemoryCheckout,
         assembly: ContextAssembly,
@@ -578,12 +580,19 @@ class CheckoutOps:
         session_id: str,
         ref: MemoryRef | None,
     ) -> None:
-        """Append one batched 'surfaced' salience reinforcement for a checkout.
+        """Queue one batched 'surfaced' salience reinforcement for a checkout.
 
         Best-effort observability state: targets are the sealed event refs of
         the facts/evidence actually carried by the packet, resolved against
         the replay the checkout was computed from (no extra log scan). A
         failure here never fails the checkout itself.
+
+        Building the spec is pure and cheap; the append that lands it is a
+        synchronous JSONL write plus a graph projection, so it is handed to the
+        fabric's deferred queue rather than awaited. The returned packet is
+        unaffected either way — it is fully built before this runs — and the
+        queue guarantees the write still lands (drain task, ``close``, or the
+        process-exit hook). See ``zaxy/core/reinforcement_queue.py``.
         """
         try:
             events = assembly.replay_events
@@ -604,7 +613,7 @@ class CheckoutOps:
                 checkout_id=checkout_id,
                 targets=targets,
             )
-            await self._host._append_event_spec(spec, session_id=session_id)
+            self._host._enqueue_reinforcement(spec, session_id=session_id)
         except Exception:
             self._host._record_degraded_operation("append", "salience_reinforcement_unavailable")
 
