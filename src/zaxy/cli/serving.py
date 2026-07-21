@@ -339,6 +339,16 @@ def memory_checkout(
         min=0,
         help="Optional prompt token budget; elided sections are reported in diagnostics",
     ),
+    fleet_ids: list[str] | None = typer.Option(  # noqa: B008
+        None,
+        "--fleet-id",
+        help="Fleet ID to draw promoted memory from (repeatable); gated on --agent-id enrollment",
+    ),
+    agent_id: str | None = typer.Option(
+        None,
+        "--agent-id",
+        help="Fleet agent identity used to gate the fleet lane",
+    ),
     neo4j_uri: str | None = typer.Option(None, help="Neo4j Bolt URI"),
     neo4j_user: str | None = typer.Option(None, help="Neo4j username"),
     neo4j_password: str | None = typer.Option(None, help="Neo4j password"),
@@ -381,6 +391,8 @@ def memory_checkout(
                 replay_from_seq=replay_from_seq,
                 limit=limit,
                 max_recent_events=max_recent_events,
+                fleet_ids=list(fleet_ids) if fleet_ids else None,
+                agent_id=agent_id,
             )
             return cast(dict[str, object], checkout.to_dict())
         finally:

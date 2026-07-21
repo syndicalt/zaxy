@@ -2875,6 +2875,8 @@ def test_memory_checkout_json_output(mock_fabric_cls: MagicMock, tmp_path: Path)
         replay_from_seq=1,
         limit=10,
         max_recent_events=20,
+        fleet_ids=None,
+        agent_id=None,
     )
     fabric.close.assert_awaited_once()
     events = EventLog(tmp_path / ".eventloom" / "agent-1.jsonl").read_all()
@@ -3705,6 +3707,76 @@ def test_memory_checkout_degrades_gracefully_when_embedded_projection_locked(
     fallback.connect.assert_awaited_once()
     fallback.checkout_memory.assert_awaited_once()
     fallback.close.assert_awaited_once()
+
+
+@patch("zaxy.cli.runtime.MemoryFabric")
+def test_memory_checkout_forwards_fleet_flags(
+    mock_fabric_cls: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """--fleet-id (repeatable) and --agent-id should reach fabric.checkout_memory."""
+    checkout = MagicMock()
+    checkout.to_dict.return_value = {"session_id": "agent-1", "query": "jwks cache"}
+    fabric = AsyncMock()
+    fabric.checkout_memory.return_value = checkout
+    mock_fabric_cls.return_value = fabric
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "checkout",
+            "jwks cache",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "agent-1",
+            "--fleet-id",
+            "platform",
+            "--fleet-id",
+            "security",
+            "--agent-id",
+            "enrolled-agent",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    kwargs = fabric.checkout_memory.call_args.kwargs
+    assert kwargs["fleet_ids"] == ["platform", "security"]
+    assert kwargs["agent_id"] == "enrolled-agent"
+
+
+@patch("zaxy.cli.runtime.MemoryFabric")
+def test_memory_checkout_without_fleet_flags_passes_none(
+    mock_fabric_cls: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """Omitting the fleet flags should pass fleet_ids/agent_id as None, not empty values."""
+    checkout = MagicMock()
+    checkout.to_dict.return_value = {"session_id": "agent-1", "query": "jwks cache"}
+    fabric = AsyncMock()
+    fabric.checkout_memory.return_value = checkout
+    mock_fabric_cls.return_value = fabric
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "checkout",
+            "jwks cache",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    kwargs = fabric.checkout_memory.call_args.kwargs
+    assert kwargs["fleet_ids"] is None
+    assert kwargs["agent_id"] is None
 
 
 @patch("zaxy.cli.runtime._memory_fabric")

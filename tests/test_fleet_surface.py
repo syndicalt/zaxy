@@ -722,6 +722,113 @@ async def test_checkout_fleet_disabled_no_lane(tmp_path: Path) -> None:
         await fabric.close()
 
 
+async def test_mcp_checkout_fleet_lane_enrollment_gating(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Over MCP: an enrolled agent_id receives the fleet lane; a stranger does not."""
+    from zaxy.config import get_settings
+
+    monkeypatch.setenv("FLEET_ENABLED", "true")
+    get_settings.cache_clear()
+
+    server = _real_server(tmp_path)
+    base = tmp_path / ".eventloom"
+    source = _seed_source(base, "enrolled-agent")
+    await server.handle_fleet_create(
+        {"fleet_id": "platform", "summary": "Platform fleet", "actor": "founder"}
+    )
+    await server.handle_fleet_enroll(
+        {"fleet_id": "platform", "agent_id": "enrolled-agent", "actor": "founder"}
+    )
+    promoted = _text(
+        await server.handle_fleet_promote(
+            {
+                "fleet_id": "platform",
+                "kind": "outcome",
+                "outcome": "failure",
+                "summary": "Pre-warm the JWKS cache before the first token refresh",
+                "origin_session": "enrolled-agent",
+                "origin_actor": "enrolled-agent",
+                "actor": "enrolled-agent",
+                "confidence": 0.95,
+                "source_events": [source],
+                "claim_key": "auth.jwks.cache",
+            }
+        )
+    )
+    assert promoted["review_status"] == "active"
+
+    enrolled = _text(
+        await server.handle_memory_checkout(
+            {
+                "query": "jwks cache",
+                "session_id": "session-1",
+                "fleet_ids": ["platform"],
+                "agent_id": "enrolled-agent",
+            }
+        )
+    )
+    fleet_diag = enrolled["diagnostics"].get("fleet")
+    assert fleet_diag is not None
+    assert fleet_diag["count"] == 1
+    assert fleet_diag["non_authoritative"] is True
+    item = fleet_diag["items"][0]
+    assert item["fleet_id"] == "platform"
+    assert item["promotion_id"] == promoted["promotion_id"]
+    assert item["review_status"] == "active"
+    assert item["citation"]
+    assert enrolled["diagnostics"]["source_lanes"].get("fleet") == 1
+
+    stranger = _text(
+        await server.handle_memory_checkout(
+            {
+                "query": "jwks cache",
+                "session_id": "session-2",
+                "fleet_ids": ["platform"],
+                "agent_id": "stranger",
+            }
+        )
+    )
+    assert stranger["diagnostics"].get("fleet") is None
+    assert "fleet" not in stranger["diagnostics"].get("source_lanes", {})
+
+
+async def test_mcp_checkout_omitting_fleet_arguments_yields_no_fleet_lane(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Omitting fleet_ids/agent_id keeps memory_checkout on its pre-fleet behavior."""
+    from zaxy.config import get_settings
+
+    monkeypatch.setenv("FLEET_ENABLED", "true")
+    get_settings.cache_clear()
+
+    server = _real_server(tmp_path)
+    base = tmp_path / ".eventloom"
+    _platform_fleet(base, Settings(fleet_enabled=True))
+
+    checkout = _text(
+        await server.handle_memory_checkout({"query": "jwks cache", "session_id": "session-1"})
+    )
+    assert checkout["diagnostics"].get("fleet") is None
+
+
+def test_memory_checkout_schema_exposes_fleet_arguments() -> None:
+    """memory_checkout should advertise optional fleet_ids and agent_id arguments."""
+    from zaxy.mcp_server import TOOLS
+
+    schema = next(t for t in TOOLS if t.name == "memory_checkout").inputSchema
+    assert schema["properties"]["fleet_ids"] == {
+        "type": "array",
+        "items": {"type": "string"},
+        "description": (
+            "Fleet IDs whose promoted, non-authoritative memory should be "
+            "considered; each lane is gated on agent_id enrollment and trust."
+        ),
+    }
+    assert schema["properties"]["agent_id"]["type"] == "string"
+    assert schema["required"] == ["query"]
+
+
 def _fleet_memory_state(promotion_id: str, *, visibility_scope: str, review_status: str = "active") -> FleetMemoryState:
     return FleetMemoryState(
         promotion_id=promotion_id,

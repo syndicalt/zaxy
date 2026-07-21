@@ -2292,6 +2292,12 @@ class ZaxyMCPServer:
         max_recent_events = validate_limit(arguments.get("max_recent_events"), default=20)
         max_tokens = _optional_max_tokens(arguments.get("max_tokens"))
         ref = _optional_text(arguments.get("ref"))
+        # The fleet lane is opt-in per call: fleet_ids selects candidate fleets and
+        # agent_id is the identity the fabric checks enrollment/trust against. Both
+        # are passed through untouched — the enrollment gate lives in the fabric, so
+        # an unenrolled agent_id correctly yields no fleet lane rather than an error.
+        fleet_ids = _optional_text_list(arguments.get("fleet_ids")) or None
+        agent_id = _optional_text(arguments.get("agent_id"))
 
         # Delegate to the shared fabric checkout so the MCP and Python paths are
         # one. fabric.checkout_memory resolves the ref, assembles cited context,
@@ -2308,6 +2314,8 @@ class ZaxyMCPServer:
                 max_recent_events=max_recent_events,
                 ref=ref,
                 purpose=arguments.get("purpose"),
+                fleet_ids=fleet_ids,
+                agent_id=agent_id,
             )
         output = apply_checkout_budget(checkout.to_dict(), max_tokens=max_tokens)
         if self._projection_degraded is not None:
