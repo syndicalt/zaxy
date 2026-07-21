@@ -1475,3 +1475,105 @@ def test_zaxy_accepted_state_is_independent_of_benchmark_gold(tmp_path: Path) ->
 
     assert with_real_gold, "the workload must accept at least one finding for this to be meaningful"
     assert with_real_gold == with_corrupted_gold
+
+
+def test_zaxy_synthesis_metrics_are_measured_not_defaulted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The Zaxy path must actually invoke the synthesis scorers, not inherit a dataclass default."""
+    import zaxy_benchmarks.coordination_benchmark as module
+
+    invoked: list[str] = []
+    for name in ("_accepted_state_synthesis_quality", "_non_authoritative_leakage"):
+        original = getattr(module, name)
+
+        def record(case: object, payload: object, _name: str = name, _original: object = original) -> float:
+            invoked.append(_name)
+            return float(_original(case, payload))  # type: ignore[operator]
+
+        monkeypatch.setattr(module, name, record)
+
+    module.run_coordination_benchmark(tmp_path, missions=1, workers=3)
+
+    assert sorted(set(invoked)) == ["_accepted_state_synthesis_quality", "_non_authoritative_leakage"]
+
+
+def test_synthesis_gate_goes_red_when_adjudication_regresses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run that accepts the wrong claim must score below the synthesis gate and block it."""
+    import zaxy_benchmarks.coordination_benchmark as module
+    from zaxy.coordinationbench_adapter import FindingDecision
+
+    healthy = module.run_coordination_benchmark(tmp_path / "healthy", missions=1, workers=3)
+    assert coordination_purpose_synthesis_gate(healthy).status == "passed"
+
+    def accept_the_unsupported_claim(findings: list[dict[str, object]]) -> list[FindingDecision]:
+        # Invert the policy: promote the browser-refresh theory the honest
+        # adjudicator rejects, leaving the answer unsupported by parent state.
+        return [
+            FindingDecision(
+                finding_id=str(finding["finding_id"]),
+                status="accepted" if finding.get("claim_value") == "missing-browser-refresh" else "rejected",
+            )
+            for finding in findings
+        ]
+
+    monkeypatch.setattr(module, "decide_findings", accept_the_unsupported_claim)
+    degraded = module.run_coordination_benchmark(tmp_path / "degraded", missions=1, workers=3)
+
+    assert degraded.metrics.accepted_state_synthesis_quality < 1.0
+    assert degraded.metrics.non_authoritative_leakage < 1.0
+    gate = coordination_purpose_synthesis_gate(degraded)
+    assert gate.status == "blocked"
+    assert "accepted_state_synthesis_quality" in gate.blocked_metrics
+    assert "non_authoritative_leakage" in gate.blocked_metrics
+
+
+def test_uncomputed_synthesis_metrics_fail_closed() -> None:
+    """Synthesis metrics nobody computed must default to 0.0 so the gate blocks rather than passes."""
+    metrics = CoordinationBenchMetrics(
+        accepted_finding_precision=1.0,
+        accepted_finding_recall=1.0,
+        conflict_precision=1.0,
+        conflict_recall=1.0,
+        stale_claim_rejection=1.0,
+        duplicate_consolidation=1.0,
+        evidence_coverage=1.0,
+        parent_checkout_answerability=1.0,
+        citation_coverage=1.0,
+        eventloom_replayable=True,
+        returned_tokens=0,
+        injected_tokens=0,
+        brief_latency_ms=0.0,
+        promotion_latency_ms=0.0,
+    )
+
+    assert metrics.accepted_state_synthesis_quality == 0.0
+    assert metrics.non_authoritative_leakage == 0.0
+
+
+def test_public_questions_withhold_gold_answer_terms() -> None:
+    """Synthesis input carries the query only -- never the expected/forbidden term answer key."""
+    from zaxy_benchmarks.coordination_benchmark import _coordination_case, _public_questions
+
+    case = _coordination_case(workers=3)
+    questions = _public_questions(case.gold)
+
+    assert questions, "the case must ask at least one question for this to be meaningful"
+    assert [str(q["prompt"]) for q in questions] == [
+        str(item["query"]) for item in case.gold.final_questions
+    ]
+    for question in questions:
+        assert set(question) == {"question_id", "prompt"}
+
+
+def test_baseline_conflict_metrics_follow_the_ratio_convention() -> None:
+    """Baselines reporting no conflicts get vacuous precision and real recall, not hardcoded zeroes."""
+    from zaxy_benchmarks.coordination_benchmark import _coordination_case
+
+    case = _coordination_case(workers=3)
+    assert case.gold.expected_conflict_pairs, "case must expect conflicts for recall to be meaningful"
+
+    for name in ("flat_transcript", "markdown_notes"):
+        metrics = coordination_baseline_metrics(case, name)
+        assert metrics.conflict_precision == 1.0
+        assert metrics.conflict_recall == 0.0

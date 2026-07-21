@@ -347,3 +347,66 @@ def test_coordinationbench_adapter_scores_source_types() -> None:
     assert _evidence_kind("docs/runbook.md#step") == "document"
     assert _evidence_kind("logs/build.log#step") == "log"
     assert _evidence_kind("plain-reference") == "source"
+
+
+def test_build_synthesis_payload_supports_the_answer_from_accepted_state_only() -> None:
+    """Synthesis cites accepted parent findings and excludes stale/rejected ones from support."""
+    from zaxy.coordinationbench_adapter import build_synthesis_payload
+
+    findings = [
+        {
+            "finding_id": "f-accepted",
+            "worker_id": "w1",
+            "summary": "Expired JWKS cache is the current cause.",
+            "claim_key": "auth.failure.cause",
+            "claim_value": "expired-jwks-cache",
+            "evidence": ["ci://build/1"],
+        },
+        {
+            "finding_id": "f-stale",
+            "worker_id": "w2",
+            "summary": "Old flag-missing theory.",
+            "claim_key": "auth.failure.cause",
+            "claim_value": "flag-missing",
+            "evidence": ["chat://old/1"],
+        },
+    ]
+
+    payload = build_synthesis_payload(
+        findings,
+        [{"question_id": "q0", "prompt": "What is the cause of auth failures?"}],
+        accepted_ids=["f-accepted"],
+        stale_ids={"f-stale"},
+        rejected_ids={"f-stale"},
+    )
+
+    assert payload["support_source_ids"] == ["f-accepted"]
+    assert "f-stale" in payload["excluded_source_ids"]
+    assert "expired-jwks-cache" in payload["returned_text"]
+    assert "flag-missing" not in payload["returned_text"]
+    assert payload["non_authoritative_rows_injected"] == 0
+
+
+def test_build_synthesis_payload_reports_no_answer_without_accepted_state() -> None:
+    """With nothing accepted, synthesis returns an unsupported answer carrying no citations."""
+    from zaxy.coordinationbench_adapter import build_synthesis_payload
+
+    payload = build_synthesis_payload(
+        [
+            {
+                "finding_id": "f1",
+                "worker_id": "w1",
+                "summary": "A theory.",
+                "claim_key": "k",
+                "claim_value": "v",
+                "evidence": ["chat://x"],
+            }
+        ],
+        [{"question_id": "q0", "prompt": "What is k?"}],
+        accepted_ids=[],
+        stale_ids=set(),
+        rejected_ids={"f1"},
+    )
+
+    assert payload["support_source_ids"] == []
+    assert payload["returned_text"] == "No supported answer found."
