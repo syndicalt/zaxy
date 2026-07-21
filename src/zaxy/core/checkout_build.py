@@ -21,6 +21,7 @@ from zaxy.core.models import (
     ContextAssembly,
     MemoryCheckout,
 )
+from zaxy.editable import MEMORY_ROLLBACK_EVENT_TYPE
 from zaxy.event import (  # noqa: F401 - ReplayResult re-export for existing tests
     EventLog,
     IntegrityReport,
@@ -950,21 +951,37 @@ _GOVERNED_RULE_EVENT_TYPES = frozenset({"memory.rule.proposed", "memory.rule.gen
 
 
 def _governance_withheld_event_seqs(replay_events: list[Any]) -> frozenset[int]:
-    """Return replay seqs for rule events the evolution gate withheld from application."""
+    """Return replay seqs for rule events governance has excluded from application.
+
+    A rule is excluded when the evolution gate withheld it for review, or when an
+    operator rolled it back. Rollback is scoped to rule events on purpose:
+    ``consolidation.candidate.reviewed`` already has real reversal semantics
+    (``_reverts_descriptor`` restores the prior review status), so handling it
+    here as well would reverse it twice.
+    """
     withheld: set[int] = set()
+    rule_seqs: set[int] = set()
+    rolled_back_targets: set[int] = set()
     for event in replay_events:
-        if getattr(event, "type", None) not in _GOVERNED_RULE_EVENT_TYPES:
-            continue
+        event_type = getattr(event, "type", None)
         payload = getattr(event, "payload", None)
         if not isinstance(payload, dict):
             continue
-        status = str(payload.get("review_status") or "").casefold().strip()
-        if status not in _WITHHELD_REVIEW_STATUSES:
-            continue
         seq = getattr(event, "seq", None)
-        if isinstance(seq, int):
+        if event_type == MEMORY_ROLLBACK_EVENT_TYPE:
+            target = payload.get("target")
+            if isinstance(target, dict):
+                target_seq = target.get("seq")
+                if isinstance(target_seq, int) and not isinstance(target_seq, bool):
+                    rolled_back_targets.add(target_seq)
+            continue
+        if event_type not in _GOVERNED_RULE_EVENT_TYPES or not isinstance(seq, int):
+            continue
+        rule_seqs.add(seq)
+        status = str(payload.get("review_status") or "").casefold().strip()
+        if status in _WITHHELD_REVIEW_STATUSES:
             withheld.add(seq)
-    return frozenset(withheld)
+    return frozenset(withheld | (rolled_back_targets & rule_seqs))
 
 
 def _context_source_seq(context: Context) -> int | None:

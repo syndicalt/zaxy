@@ -496,3 +496,61 @@ class TestRecordOutcomeTargetResolution:
         finally:
             await fabric.close()
         assert result["reinforced"] == "confirmed"
+
+
+class TestRolledBackRuleIsNotAssembled:
+    """Rolling back an auto-applied rule must actually stop it governing the agent.
+
+    `auto_with_rollback` is the default autonomy tier (ZAXY-3 §11 decision 1) and
+    its whole promise is that an auto-applied change is reversible. A rollback
+    that reports success while the rule keeps reaching the prompt is worse than
+    no rollback, because the operator believes the change is undone.
+    """
+
+    _LESSON = "CANARY-rollback-me-refresh-the-token-when-batching"
+    _QUERY = "what should I know about batching tokens?"
+
+    async def _generate_rule(self, fabric: MemoryFabric) -> tuple[int, str]:
+        result = await fabric.record_outcome(
+            outcome="failure",
+            summary="token expired when batching",
+            lesson=self._LESSON,
+            trigger="when batching",
+            session_id="ext",
+        )
+        assert result["rule"]["review_status"] == "active"
+        events = fabric.session_manager.get("ext").eventlog.read_all()
+        rule_event = next(e for e in events if e.type == RULE_GENERATED_EVENT_TYPE)
+        return rule_event.seq, rule_event.hash
+
+    async def test_rolled_back_rule_leaves_the_prompt(self, tmp_path: Path) -> None:
+        """After rollback the rule no longer reaches the assembled prompt."""
+        fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
+        await fabric.connect()
+        try:
+            seq, event_hash = await self._generate_rule(fabric)
+            before = await fabric.checkout_memory(self._QUERY, session_id="ext", limit=25)
+            assert self._LESSON in before.prompt, "the rule must surface first for this to mean anything"
+
+            await fabric.rollback_memory(
+                target_seq=seq, target_hash=event_hash, reason="undo it", session_id="ext"
+            )
+            after = await fabric.checkout_memory(self._QUERY, session_id="ext", limit=25)
+        finally:
+            await fabric.close()
+        assert self._LESSON not in after.prompt
+
+    async def test_rollback_does_not_delete_the_rule_event(self, tmp_path: Path) -> None:
+        """Reversal is an assembly-time exclusion; the log keeps both events."""
+        fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
+        await fabric.connect()
+        try:
+            seq, event_hash = await self._generate_rule(fabric)
+            await fabric.rollback_memory(
+                target_seq=seq, target_hash=event_hash, reason="undo it", session_id="ext"
+            )
+        finally:
+            await fabric.close()
+        types = [e.type for e in fabric.session_manager.get("ext").eventlog.read_all()]
+        assert RULE_GENERATED_EVENT_TYPE in types
+        assert "memory.rolled_back" in types
