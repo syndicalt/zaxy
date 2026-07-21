@@ -623,9 +623,14 @@ Zaxy Coordinate is ready to headline the product when:
     harness adjudicated findings from `expected_accepted_claims` and then
     scored against them, so those two metrics were 1.0 by construction.
   - `accepted_state_synthesis_quality` and `non_authoritative_leakage` are
-    **still not computed on the Zaxy path** — they fall through to a `1.0`
-    dataclass default, so they cannot go red and must not be cited as
-    evidence until they are measured.
+    measured on the Zaxy path as of 2026-07-21. They previously fell through to
+    a `1.0` dataclass default that no caller ever set, so Zaxy scored perfect by
+    construction and the synthesis gate could not go red. Both are now computed
+    by the same scorers the competitor path uses, fed from a payload the adapter
+    builds out of the brief Zaxy actually produced; the defaults were flipped to
+    `0.0` so an uncomputed metric blocks the gate instead of passing it. Zaxy
+    earns 1.0 on the generated workload, and a regressed adjudicator now drives
+    both to 0.0 and blocks the gate.
 - Vector, non-coordinate Zaxy, and external competitor comparisons appear only
   when their pinned adapters have run through the same harness; otherwise they
   remain disclosure-only and are not used for public superiority claims.

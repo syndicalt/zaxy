@@ -16,7 +16,11 @@ from pathlib import Path
 from typing import Any
 
 from zaxy.coordination import ConflictState, CoordinationBrief, CoordinationManager, FindingState
-from zaxy.coordinationbench_adapter import decide_findings, decision_rationale
+from zaxy.coordinationbench_adapter import (
+    build_synthesis_payload,
+    decide_findings,
+    decision_rationale,
+)
 
 COORDINATION_WORKLOAD_VERSION = "coordination-v1"
 COORDINATION_BASELINE_DESCRIPTIONS = {
@@ -223,8 +227,13 @@ class CoordinationBenchMetrics:
     injected_tokens: int
     brief_latency_ms: float
     promotion_latency_ms: float
-    accepted_state_synthesis_quality: float = 1.0
-    non_authoritative_leakage: float = 1.0
+    # Fail closed. These three feed `coordination_purpose_synthesis_gate`, which
+    # requires 1.0, so a metric nobody computed must default to the value that
+    # blocks the gate. They previously defaulted to 1.0 and no caller on the Zaxy
+    # path ever set them, so Zaxy scored perfect by dataclass default and the
+    # gate could not go red on any regression.
+    accepted_state_synthesis_quality: float = 0.0
+    non_authoritative_leakage: float = 0.0
     purpose_feedback_coverage: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
@@ -547,8 +556,8 @@ def flat_eventlog_baseline_metrics(case: CoordinationBenchCase) -> CoordinationB
     return CoordinationBenchMetrics(
         accepted_finding_precision=_ratio(correct, len(findings)),
         accepted_finding_recall=_ratio(correct, len(case.gold.expected_accepted_claims)),
-        conflict_precision=0.0,
-        conflict_recall=0.0,
+        conflict_precision=_no_conflict_precision(),
+        conflict_recall=_no_conflict_recall(case),
         stale_claim_rejection=0.0 if stale_accepted else 1.0,
         duplicate_consolidation=0.0,
         evidence_coverage=_ratio(sum(1 for finding in findings if finding.get("evidence")), len(findings)),
@@ -1426,8 +1435,8 @@ def _score_retrieved_worker_context(
     return CoordinationBenchMetrics(
         accepted_finding_precision=_ratio(len(correct_findings), len(findings)),
         accepted_finding_recall=_ratio(len(expected_claims_found), len(case.gold.expected_accepted_claims)),
-        conflict_precision=0.0,
-        conflict_recall=0.0,
+        conflict_precision=_no_conflict_precision(),
+        conflict_recall=_no_conflict_recall(case),
         stale_claim_rejection=0.0 if stale_selected else 1.0,
         duplicate_consolidation=1.0 if not case.gold.expected_duplicate_groups else 0.0,
         evidence_coverage=_ratio(len(findings_with_evidence), len(findings)),
@@ -1493,11 +1502,55 @@ def _run_case(output_dir: Path, case: CoordinationBenchCase) -> CoordinationBenc
         brief_latency_ms=brief_latency_ms,
         promotion_latency_ms=promotion_latency_ms,
     )
+    payload = _zaxy_synthesis_payload(case, brief, findings)
     metrics = replace(
         metrics,
         purpose_feedback_coverage=_brief_purpose_feedback_coverage(case, brief),
+        accepted_state_synthesis_quality=_accepted_state_synthesis_quality(case, payload),
+        non_authoritative_leakage=_non_authoritative_leakage(case, payload),
     )
     return CoordinationBenchCaseResult(workload_case=case, gold=case.gold, brief=brief, metrics=metrics)
+
+
+def _zaxy_synthesis_payload(
+    case: CoordinationBenchCase,
+    brief: CoordinationBrief,
+    findings: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Project a Zaxy brief into the competitor payload shape the synthesis scorers read.
+
+    Reuses the adapter's synthesis so Zaxy and external adapters are measured by
+    one implementation. Only public workload findings and the brief Zaxy actually
+    produced feed in; gold is read later by the scorers, never here.
+    """
+    accepted_ids = sorted(finding.finding_id for finding in brief.accepted_findings)
+    accepted_id_set = set(accepted_ids)
+    stale_ids = {
+        finding.finding_id for finding in brief.stale_findings if finding.finding_id not in accepted_id_set
+    }
+    rejected_ids = {
+        finding.finding_id
+        for finding in [*brief.rejected_findings, *brief.conflicted_findings, *brief.deferred_findings]
+        if finding.finding_id not in accepted_id_set
+    }
+    synthesis = build_synthesis_payload(
+        findings,
+        _public_questions(case.gold),
+        accepted_ids=accepted_ids,
+        stale_ids=stale_ids,
+        rejected_ids=rejected_ids,
+    )
+    return {
+        **synthesis,
+        "accepted_findings": [
+            {
+                "finding_id": finding.finding_id,
+                "claim_key": finding.claim_key or "",
+                "claim_value": finding.claim_value or "",
+            }
+            for finding in brief.accepted_findings
+        ],
+    }
 
 
 def _coordination_case(*, workers: int) -> CoordinationBenchCase:
@@ -1812,6 +1865,21 @@ def _synthesis_answer_text(payload: dict[str, Any]) -> str:
     return " ".join(part for part in parts if part)
 
 
+def _public_questions(gold: CoordinationBenchGold) -> list[dict[str, Any]]:
+    """Project gold final questions down to the public prompt a solver may legitimately see.
+
+    ``final_questions`` stores each query next to its ``expected_terms`` and
+    ``forbidden_terms``. The query is the question being asked and is fair input;
+    the term lists are the answer key. Only the query crosses into synthesis --
+    forwarding the whole dict would let the answer key steer the answer that
+    ``_accepted_state_synthesis_quality`` then scores against it.
+    """
+    return [
+        {"question_id": f"q{index}", "prompt": str(question.get("query") or "")}
+        for index, question in enumerate(gold.final_questions)
+    ]
+
+
 def _final_question_terms(gold: CoordinationBenchGold, key: str) -> set[str]:
     return {
         str(term).casefold()
@@ -1857,6 +1925,21 @@ def _fingerprint(body: dict[str, Any]) -> str:
 
 def _sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _no_conflict_precision() -> float:
+    """Return conflict precision for a baseline that reports no conflicts at all.
+
+    These baselines assert zero conflict pairs, so precision has a zero
+    denominator and takes `_ratio`'s vacuous-truth convention. A hardcoded 0.0
+    charged them for false conflicts they never claimed.
+    """
+    return _ratio(0, 0)
+
+
+def _no_conflict_recall(case: CoordinationBenchCase) -> float:
+    """Return conflict recall for a baseline that reports no conflicts at all."""
+    return _ratio(0, len(case.gold.expected_conflict_pairs))
 
 
 def _ratio(numerator: int, denominator: int) -> float:

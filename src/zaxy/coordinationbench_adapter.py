@@ -113,19 +113,50 @@ def _case_result(
             if finding.finding_id not in accepted
         }
     )
-    accepted_groups = _accepted_value_groups(public_findings, accepted)
-    answer_packets = [
-        _answer(question, accepted_groups, public_findings, stale_ids=set(stale), rejected_ids=set(rejected))
-        for question in case.get("questions", [])
-    ]
-    final_packet = answer_packets[0] if answer_packets else _empty_answer_packet()
+    synthesis = build_synthesis_payload(
+        public_findings,
+        list(case.get("questions", [])),
+        accepted_ids=accepted,
+        stale_ids=set(stale),
+        rejected_ids=set(rejected),
+    )
     return {
         "case_id": case_id,
         "accepted_findings": accepted,
         "rejected_findings": rejected,
         "stale_findings": stale,
         "conflicts": _conflicts(brief.conflicts),
-        "answers": [packet["answer_payload"] for packet in answer_packets],
+        **synthesis,
+        "audit": {
+            "replayable": True,
+            "notes": _audit_notes(runtime_case),
+        },
+    }
+
+
+def build_synthesis_payload(
+    public_findings: list[dict[str, Any]],
+    questions: list[dict[str, Any]],
+    *,
+    accepted_ids: list[str],
+    stale_ids: set[str],
+    rejected_ids: set[str],
+) -> dict[str, Any]:
+    """Build the CoordinationBench synthesis payload fields from adjudicated parent state.
+
+    Shared by the adapter and the in-repo benchmark harness so both measure the
+    same synthesis. ``questions`` must carry only public prompt text: passing
+    gold ``expected_terms`` through here would let the answer key steer the
+    answer it is then scored against.
+    """
+    accepted_groups = _accepted_value_groups(public_findings, accepted_ids)
+    packets = [
+        _answer(question, accepted_groups, public_findings, stale_ids=stale_ids, rejected_ids=rejected_ids)
+        for question in questions
+    ]
+    final_packet = packets[0] if packets else _empty_answer_packet()
+    return {
+        "answers": [packet["answer_payload"] for packet in packets],
         "returned_text": final_packet["answer"],
         "injected_text": final_packet["answer"],
         "answer_candidate": final_packet["answer_candidate"],
@@ -133,10 +164,6 @@ def _case_result(
         "support_source_ids": final_packet["support_source_ids"],
         "excluded_source_ids": final_packet["excluded_source_ids"],
         "non_authoritative_rows_injected": final_packet["non_authoritative_rows_injected"],
-        "audit": {
-            "replayable": True,
-            "notes": _audit_notes(runtime_case),
-        },
     }
 
 
