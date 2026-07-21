@@ -11,13 +11,31 @@ MAX_CHANGED_FILES = 200
 MAX_WORKTREES = 50
 MAX_DIFF_SUMMARY_BYTES = 4000
 
+#: Wall-clock ceiling for each read-only git invocation. Capture runs on the
+#: interactive `coordinate report` path, so a wedged git (a stale index lock, a
+#: network-backed filesystem) must fail fast rather than hang the CLI forever.
+GIT_COMMAND_TIMEOUT_SECONDS = 10.0
+
+#: Suffix appended to a diff summary that hit MAX_DIFF_SUMMARY_BYTES, so a
+#: consumer can tell a bounded excerpt from a genuinely short diff.
+DIFF_TRUNCATION_MARKER = "\n[truncated]"
+
+
+class GitCaptureError(RuntimeError):
+    """Raised when read-only git metadata capture cannot complete."""
+
 
 def capture_git_metadata(
     workspace: str | Path,
     *,
     test_results: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Return branch, worktree, changed files, and diff summary for a git workspace."""
+    """Return branch, worktree, changed files, and diff summary for a git workspace.
+
+    Raises:
+        GitCaptureError: If git is unavailable, times out, or the workspace is
+            not a git repository.
+    """
     root = _git(workspace, "rev-parse", "--show-toplevel")
     worktree = Path(root).resolve()
     raw_branch = _git(worktree, "rev-parse", "--abbrev-ref", "HEAD")
@@ -25,7 +43,7 @@ def capture_git_metadata(
     branch = raw_branch if raw_branch else "HEAD"
     head = _git(worktree, "rev-parse", "HEAD")
     changed_files = _changed_files(worktree)
-    diff_summary = _bounded_text(_git(worktree, "diff", "--stat", "--summary"))
+    diff_summary, diff_truncated = _bounded_text(_git(worktree, "diff", "--stat", "--summary"))
     worktrees = _worktrees(worktree)
     return {
         "kind": "git",
@@ -38,6 +56,7 @@ def capture_git_metadata(
         "dirty": bool(changed_files),
         "changed_files": changed_files,
         "diff_summary": diff_summary,
+        "diff_summary_truncated": diff_truncated,
         "worktrees": worktrees,
         "test_results": test_results or [],
     }
@@ -135,23 +154,45 @@ def _git_status_operation(status: str) -> str:
     return "changed"
 
 
-def _bounded_text(value: str) -> str:
+def _bounded_text(value: str) -> tuple[str, bool]:
+    """Return the value bounded to MAX_DIFF_SUMMARY_BYTES plus whether it was cut."""
     encoded = value.encode("utf-8")
     if len(encoded) <= MAX_DIFF_SUMMARY_BYTES:
-        return value
-    return encoded[:MAX_DIFF_SUMMARY_BYTES].decode("utf-8", errors="ignore")
+        return value, False
+    # The marker is part of the budget, so a truncated summary still fits the
+    # documented ceiling instead of overshooting it by the marker's length.
+    budget = MAX_DIFF_SUMMARY_BYTES - len(DIFF_TRUNCATION_MARKER.encode("utf-8"))
+    kept = encoded[:budget].decode("utf-8", errors="ignore")
+    return kept + DIFF_TRUNCATION_MARKER, True
 
 
 def _git(workspace: str | Path, *args: str) -> str:
     env = dict(os.environ)
     env["GIT_OPTIONAL_LOCKS"] = "0"
-    completed = subprocess.run(
-        ["git", "--no-optional-locks", *args],
-        cwd=Path(workspace),
-        check=True,
-        capture_output=True,
-        text=True,
-        env=env,
-    )
+    label = " ".join(args)
+    try:
+        completed = subprocess.run(
+            ["git", "--no-optional-locks", *args],
+            cwd=Path(workspace),
+            check=True,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=GIT_COMMAND_TIMEOUT_SECONDS,
+        )
+    except FileNotFoundError as exc:
+        # A missing cwd also surfaces as ENOENT here, so separate the two rather
+        # than always blaming a missing git binary.
+        if not Path(workspace).is_dir():
+            raise GitCaptureError(f"git workspace {workspace} does not exist") from exc
+        raise GitCaptureError("git executable not found on PATH") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise GitCaptureError(
+            f"git {label} timed out after {GIT_COMMAND_TIMEOUT_SECONDS:g}s in {workspace}"
+        ) from exc
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or "").strip().splitlines()
+        reason = detail[-1] if detail else f"exit status {exc.returncode}"
+        raise GitCaptureError(f"git {label} failed in {workspace}: {reason}") from exc
     return completed.stdout.rstrip("\n")
 

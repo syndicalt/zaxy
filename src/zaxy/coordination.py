@@ -2171,6 +2171,7 @@ def _normalize_evidence(item: dict[str, Any]) -> dict[str, Any]:
                 "dirty": bool(item.get("dirty", False)),
                 "changed_files": item.get("changed_files") if isinstance(item.get("changed_files"), list) else [],
                 "diff_summary": item.get("diff_summary"),
+                "diff_summary_truncated": bool(item.get("diff_summary_truncated", False)),
                 "worktrees": item.get("worktrees") if isinstance(item.get("worktrees"), list) else [],
                 "test_results": item.get("test_results") if isinstance(item.get("test_results"), list) else [],
             }
