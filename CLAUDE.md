@@ -103,6 +103,12 @@ trust it over current code or `docs/benchmarks.md`.
    segfaults/hangs locally (ladybug native lib quirk on this machine); CI is fine.
    → Rule: locally run `pytest -m "not integration" --ignore=tests/test_doctor.py
    --benchmark-disable -p no:randomly`; CI is the authority for doctor + coverage.
+   **Then expect exactly 17 failures and treat them as the floor, not a signal:**
+   `test_harvey_lab_benchmark.py` (11, needs podman + a host docx reader) and
+   `test_packaging.py` (4) / `test_coverage_ratchet.py` (2), which shell out to
+   bare `python` — absent here, only `python3` and the venv exist. All 17 pass in
+   CI. → Rule: baseline the count *before* your change and compare; "17 failed"
+   alone is not a regression, and chasing them wastes a session.
 7. **Believing `--cov-fail-under=90` in pytest addopts.** Dead config. The real gate
    is the ratchet: `[tool.zaxy.coverage] min_total_percent = "92.00"` enforced by
    `scripts/check-coverage.py` on the 3.13 CI job — and it currently sits ~92.0x,
@@ -194,6 +200,11 @@ trust it over current code or `docs/benchmarks.md`.
 
 ## Local environment quirks
 
+- **There may be no dev environment checked out.** `ruff`/`mypy`/`pytest` are not
+  on PATH by default and the `zaxy` on PATH is a `uv` tool install, *not* this
+  source tree (mistake #5). Nothing is verifiable until you build one:
+  `uv venv .venv && VIRTUAL_ENV=.venv uv pip install -e ".[dev,embedded,export]"
+  -c constraints/ci.txt`. The `-c` matches CI's pinned resolution.
 - `secrets/` is gitignored, file-based creds; never commit, never echo contents.
 - Zaxy's own memory hooks run in this repo (`.claude/settings.local.json`): session
   `zaxy-default`, with Stop-hook transcript capture. Breaking `Settings()` breaks them.
