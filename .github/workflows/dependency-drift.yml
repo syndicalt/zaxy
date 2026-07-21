@@ -1,0 +1,56 @@
+name: Dependency drift
+
+# CI installs from constraints/ci.txt so a green run stays green. That
+# reproducibility has a cost: it also hides upstream releases that would break
+# us. This job is the other half — it resolves dependencies *unpinned*, the way
+# CI used to, so drift shows up here on a schedule instead of ambushing whoever
+# opens the next PR.
+#
+# A failure here is not a broken build. It means "the pins are now behind
+# reality" and the fix is a deliberate refresh:
+#
+#     uv pip compile --extra dev --python-version 3.11 \
+#       --output-file constraints/ci.txt pyproject.toml
+#
+# then fix whatever the new versions surfaced, in that same PR.
+
+on:
+  schedule:
+    # Mondays 06:00 UTC — early enough in the week to act on it.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  unpinned:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies (deliberately unpinned)
+        run: |
+          pip install -e ".[dev]"
+
+      - name: Report the resolved versions
+        run: pip freeze
+
+      - name: Lint with ruff
+        run: ruff check src tests zaxy_benchmarks
+
+      - name: Type check with mypy
+        run: mypy src zaxy_benchmarks
+
+      - name: Run unit tests
+        run: pytest -m "not integration" --benchmark-disable --no-cov

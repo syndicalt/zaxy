@@ -22,7 +22,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -e ".[dev]"
+          pip install -e ".[dev]" -c constraints/ci.txt
 
       - name: Lint with ruff
         run: ruff check src tests zaxy_benchmarks
@@ -46,7 +46,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -e ".[dev]"
+          pip install -e ".[dev]" -c constraints/ci.txt
 
       - name: Run unit tests
         run: pytest -m "not integration" --benchmark-disable --cov --cov-report=xml
@@ -75,7 +75,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -e ".[dev]"
+          pip install -e ".[dev]" -c constraints/ci.txt
 
       - name: Build and check distribution artifacts
         run: scripts/build-dist.sh --root .
@@ -98,7 +98,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -e ".[dev]"
+          pip install -e ".[dev]" -c constraints/ci.txt
 
       - name: Wait for Neo4j
         run: |
