@@ -1,6 +1,6 @@
 # Roadmap gap audit — findings and execution plan
 
-- **Status:** in progress — P0 governance fix landed; benchmark-integrity items blocked on user decision (agree before code)
+- **Status:** audit complete; all findings dispositioned. 13 PRs open and CI-green (#139-#151). Remaining work is listed in §8 with evidence.
 - **Date:** 2026-07-21
 - **Owner:** Claude Opus 4.8 (orchestrator), with five parallel audit agents
 
@@ -69,10 +69,12 @@ the type gate**, invisibly to the green run list.
 Fixed by parametrizing both streams as MCP's own transports do. The underlying
 cause — unpinned dev dependencies — remains and will recur (see §5).
 
-## 3. Findings reported by auditors, not yet independently reproduced
+## 3. Findings surfaced by the audit
 
-Ranked by severity. Each carries the auditor's cited evidence; none has been
-acted on yet.
+Each was reproduced before being fixed — the reproduction output is quoted in the
+corresponding PR. None was acted on from an agent's report alone.
+
+Ranked by severity as first written; see §4 for disposition.
 
 ### 3.1 CoordinationBench scores against its own gold answers (CRITICAL, blocked)
 
@@ -183,30 +185,24 @@ where `edit_memory`/`rollback_memory`/`verified_forget` all call
 - BETA.md was last edited when `version = "0.1.0"`, 309 commits ago; its Neo4j-
   primary framing contradicts the embedded-default architecture throughout.
 
-## 4. Execution order
+## 4. Disposition — every finding, with its PR
 
-Landed:
+| # | Finding | Disposition |
+|---|---|---|
+| §2.2 | `mypy` broken by unpinned `anyio` drift | **#139** |
+| §2.1 | Gate-withheld rules reached the prompt | **#140** |
+| §3.3 | Dashboard published unauthenticated writes | **#141** |
+| §3.8 | `record_outcome` cited nonexistent events | **#142** |
+| §3.1 | CoordinationBench scored against its own gold | **#143** + **#149** |
+| §3.5 | Fleet plane unreachable from MCP | **#144** |
+| — | git capture could hang; crystallization lost its audit record | **#145** |
+| §3.2 | Promotion accepted unreviewed/evidence-free findings; batches non-atomic | **#146** |
+| §3.6 | Rule rollback was a silent no-op | **#147** |
+| — | BETA.md predated 3.0.0; `capture-soak` deprecated form in docs + gates | **#148** |
+| §3.4 | Trust scoring / `inferred_context` no-ops on the default backend | **#150** |
+| — | Reinforcement write blocked the checkout response path | **#151** |
 
-1. `mypy`/anyio CI fix (§2.2) — branch `fix/mypy-anyio-generic-streams`.
-2. Gate-withheld rule assembly exclusion (§2.1) — same branch, 4 tests.
-
-Proceeding without asking (internal correctness, tests in same commit):
-
-3. Dashboard loopback guard (§3.3) — reuse the existing helper.
-4. `apply_approval_decisions` atomicity; git capture hardening.
-5. `record_outcome` target validation (§3.8).
-6. Per-op threshold plumbing, or delete the dead field (§3.7).
-7. `fleet_ids` on the `memory_checkout` MCP tool + CLI (§3.5), regenerating
-   `docs/examples/mcp-tool-contract.json` in the same PR.
-8. Rollback: narrow the declared set to what reverses, or implement the rest
-   (§3.6) — narrowing is the honest default.
-
-Requires user decision before any code (§6):
-
-9. CoordinationBench oracle removal (§3.1) and the roadmap Success Criterion.
-10. Promotion policy gate (§3.2) — behaviour change to a shipped surface.
-11. Embedded-backend parity for trust scoring (§3.4) — large, and the honest
-    interim is to scope the claim.
+Nothing was merged; every PR is green and awaiting review.
 
 ## 5. Cross-cutting recommendation
 
@@ -215,25 +211,78 @@ without a code change. A constraints file or pinned dev deps would convert these
 silent breakages into deliberate upgrades. Not done unilaterally — it touches
 release/CI policy.
 
-## 6. Open questions (agree before code)
+## 6. Still open (with evidence, ranked)
 
-1. **CoordinationBench oracle.** Remove the gold oracle and wire the existing
-   honest adjudicator, accepting that precision/recall will drop below 1.0? And
-   should the Success Criterion's token-efficiency clause be retracted, given the
-   repo's own artifact contradicts it?
-2. **Promotion gate.** Should `promote_finding` refuse unreviewed or
-   evidence-free findings by default (with `--force`), or is the current
-   always-manual-but-unchecked behaviour intended?
-3. **Embedded parity vs scoping.** Implement `_path_inferred_*` on the embedded
-   backend (L), or scope the claims in BETA.md/docs to Neo4j and file parity as
-   known work?
-4. **BETA.md.** It predates 3.0.0 entirely. Rewrite against current reality, or
-   retire it the way AGENTS.md's stale checklist was retired?
+1. **Unpinned dev dependencies** — the root cause of #139, which will recur. A
+   constraints file or pinned dev deps converts silent breakage into deliberate
+   upgrades. Untouched because it changes release/CI policy.
+2. **`_project_event` in the reinforcement drain** costs 15.1 ms and provably
+   produces nothing for `memory.reinforcement` (its extractor returns empty
+   entities and edges). Removing it cuts real work rather than moving it — the
+   change that would actually improve tight-loop throughput (#151 only moves the
+   cost off the response path).
+3. **Rollback is still a no-op for three declared types** —
+   `MEMORY_CORRECTED_EVENT_TYPE` verified as such, plus `evolution.gate.evaluated`
+   and `fleet.promotion.reviewed`. Documented per-type in #147; making them
+   effective is open.
+4. **Benchmark workload fingerprints are not pinned** — computed deterministically
+   but no drift guard, so a generator edit changes them silently.
+5. **`_check_beta_roadmap` is a tautological keyword grep** against BETA.md
+   itself; it proves nothing about the code.
+6. **I2 amortized learned-context precompute** is MISSING (compaction is
+   report-only), so I3's "lean on I2's precomputed context" still dangles.
+   **I3 long-span relevance scoring** is MISSING (remote-tier score is authoring
+   confidence with a hardcoded 0.5 fallback). **I6 out-of-process plugin loading**
+   is MISSING and openly disclaimed in-code; code-intelligence was never packaged
+   as the reference plugin, so the API is unproven against a real vertical.
+7. **No archived capture-soak evidence** under `reports/`, and no
+   `manifest.json` for the CoordinationBench report package.
+8. **`<300 ms` warm checkout at real scale is unproven.** #151 measures 23 ms at
+   500 events and 48.7 ms at 3,000. The quoted ~1.0-1.6 s figure came from a
+   ~78k-event store that was not reproduced; the read side scales with corpus
+   size, and no reproducible latency harness exists at that scale. Do not put a
+   `<300 ms` number on any public surface until measured where it is claimed.
 
-## 7. Done-when
+## 7. Open questions — resolved 2026-07-21
 
-- Every §2 finding has a regression test that fails without the fix. *(met)*
-- Every §3 item is either fixed with tests, or explicitly scoped/retracted in the
-  controlling doc with the user's agreement recorded.
+All four were put to the user and answered; each answer is reflected above.
+
+1. **CoordinationBench oracle** → remove it and wire the honest adjudicator
+   (#143), and retract the token-efficiency clause. Done. Precision/recall
+   stayed 1.0, but earned: the public-signal policy independently selects the
+   same finding, proven by corrupting the answer key.
+2. **Promotion gate** → enforce it (#146). Requires *both* an accepted review
+   and evidence, with an auditable `force` escape. The wider of the two options,
+   chosen because the banner, the roadmap, and the approval packet's own
+   advisory all promise citations.
+3. **Embedded parity vs scoping** → both. Scoped honestly in BETA.md (#148),
+   then actually fixed (#150) at parity with the Neo4j UAT's pinned values.
+4. **BETA.md** → restated against 3.2.0 rather than retired (#148).
+
+## 8. Done-when
+
+- Every §2 and §3 finding has a regression test that fails without its fix,
+  verified by reverting the source change and keeping the test. *(met)*
+- Every finding is fixed with tests, or explicitly scoped in the controlling doc
+  with the decision recorded. *(met — see §4 and §7)*
 - `ruff` + `mypy` clean; local suite green against the documented exclusions.
-- No benchmark claim changes without §6.1 resolved.
+  *(met — 4180 passed, 17 known-environmental failures)*
+- Benchmark-claim changes carry the user's recorded agreement. *(met — §7.1)*
+- Remaining work is enumerated with evidence rather than left implicit.
+  *(met — §6)*
+
+**Not done-when:** nothing here is merged. All 13 PRs are green and awaiting
+review; merging is the user's call.
+
+## 9. A note on the local test baseline
+
+17 tests fail on this machine regardless of any change here, and they are not
+regressions: `tests/test_harvey_lab_benchmark.py` (11) needs podman and a host
+docx reader; `tests/test_packaging.py` (4) and `tests/test_coverage_ratchet.py`
+(2) shell out to bare `python`, which does not exist in this environment (only
+`python3` and the venv). Verified identical on clean master before any work
+began, so a "17 failed" line is the floor, not a signal. CI, which has `python`
+on PATH, is green on all of them.
+
+This is worth adding to CLAUDE.md's local-quirks list alongside the documented
+`test_doctor` hang.
