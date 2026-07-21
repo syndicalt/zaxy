@@ -1,5 +1,12 @@
 # CoordinationBench
 
+> **SUPERSEDED — do not cite these numbers.** This run predates two fixes to the
+> Zaxy measurement path. `accepted_finding_precision` and `accepted_finding_recall`
+> were produced by a gold oracle that promoted exactly the answer-key findings, and
+> `accepted_state_synthesis_quality` and `non_authoritative_leakage` were dataclass
+> constants no caller ever set. See `manifest.json` in this directory for the full
+> defect record and the condition for regenerating this report.
+
 - version: `coordination-real-v1`
 - workload: `b63e156150b92c9aa7d8895604741484f85f4c231d4c7d2097a2467fdaf14bd0`
 

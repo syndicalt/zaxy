@@ -1,0 +1,41 @@
+{
+  "contract": "zaxy.benchmark.workload-fingerprints",
+  "description": "Frozen SHA-256 fingerprints for the four MemPalace-comparable benchmark lanes. Regenerate with: zaxy benchmark-inventory --json",
+  "generator": "zaxy benchmark-inventory",
+  "parameters": {
+    "subjects": 100,
+    "documents": 100,
+    "sessions": 50
+  },
+  "recorded_at_commit": "f19bd0e7fe354a03e3ff50aa35ea17563d2e97c1",
+  "lanes": [
+    {
+      "lane": "temporal-recall",
+      "version": "mempalace-temporal-recall-v1",
+      "sha256": "c189a789b03a6f98818ea327baddb681cd4de59ef92a9570cca7051371e639a6",
+      "event_count": 300,
+      "case_count": 300
+    },
+    {
+      "lane": "source-recall",
+      "version": "mempalace-source-recall-v1",
+      "sha256": "1bbe34837af0447483298a7e68d9cf7de21c00a56cfd4bd5cceab1029d12128f",
+      "event_count": 200,
+      "case_count": 100
+    },
+    {
+      "lane": "graph-traversal",
+      "version": "mempalace-graph-traversal-v1",
+      "sha256": "8b77533300dec30e7f3287fce6d0001ce28b4993596850d544f55a567b233298",
+      "event_count": 400,
+      "case_count": 100
+    },
+    {
+      "lane": "context-collapse",
+      "version": "mempalace-context-collapse-v1",
+      "sha256": "8e39f02c655ec4e30283ab84f01fc405ab1ada7d788735a5ac75c16d462aa67e",
+      "event_count": 2050,
+      "case_count": 50
+    }
+  ]
+}

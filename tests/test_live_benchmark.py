@@ -9,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
 from typer.testing import CliRunner
 
 from zaxy.__main__ import app
@@ -381,6 +382,54 @@ def test_mempalace_inventory_lists_required_product_proof_lanes(tmp_path: Path) 
     assert "MemPalace-Comparable Benchmark Inventory" in text
     assert "| context-collapse |" in text
     assert "checkpoint recovery after noisy transcript context" in text
+
+
+WORKLOAD_FINGERPRINT_SNAPSHOT = Path("docs/examples/benchmark-workload-fingerprints.json")
+
+
+def test_mempalace_workload_fingerprints_match_frozen_snapshot(tmp_path: Path) -> None:
+    """Frozen workload fingerprints should still reproduce byte-for-byte from the generators."""
+    snapshot = json.loads(WORKLOAD_FINGERPRINT_SNAPSHOT.read_text(encoding="utf-8"))
+    parameters = snapshot["parameters"]
+    inventory = build_mempalace_workload_inventory(
+        tmp_path,
+        subjects=parameters["subjects"],
+        documents=parameters["documents"],
+        sessions=parameters["sessions"],
+    )
+
+    observed = {
+        entry.lane: {
+            "lane": entry.lane,
+            "version": entry.version,
+            "sha256": entry.sha256,
+            "event_count": entry.event_count,
+            "case_count": entry.case_count,
+        }
+        for entry in inventory
+    }
+    expected = {lane["lane"]: lane for lane in snapshot["lanes"]}
+
+    if observed != expected:
+        drifted = sorted(set(observed) | set(expected))
+        details = "\n".join(
+            f"  {lane}:\n    pinned:   {expected.get(lane)}\n    observed: {observed.get(lane)}"
+            for lane in drifted
+            if observed.get(lane) != expected.get(lane)
+        )
+        pytest.fail(
+            "MemPalace benchmark workload fingerprints drifted from the frozen pin in "
+            f"{WORKLOAD_FINGERPRINT_SNAPSHOT}.\n"
+            f"{details}\n\n"
+            "A changed fingerprint means the workload itself changed, so every previously "
+            "published number for the affected lane was measured on a DIFFERENT dataset and "
+            "is no longer comparable.\n"
+            "If the change was unintentional, revert the workload generator.\n"
+            "If it was intentional, in the SAME pull request you must: (1) regenerate the pin "
+            "with `zaxy benchmark-inventory --json`, (2) bump the lane's workload version "
+            "constant in zaxy_benchmarks/live_benchmark.py, and (3) disclose in CHANGELOG.md "
+            "that prior results for that lane are superseded and not comparable."
+        )
 
 
 def test_benchmark_inventory_command_emits_json(tmp_path: Path) -> None:
