@@ -232,11 +232,42 @@ release/CI policy.
 1. **Unpinned dev dependencies** — the root cause of #139, which will recur. A
    constraints file or pinned dev deps converts silent breakage into deliberate
    upgrades. Untouched because it changes release/CI policy.
-2. **`_project_event` in the reinforcement drain** costs 15.1 ms and provably
-   produces nothing for `memory.reinforcement` (its extractor returns empty
-   entities and edges). Removing it cuts real work rather than moving it — the
-   change that would actually improve tight-loop throughput (#151 only moves the
-   cost off the response path).
+2. ~~**`_project_event` in the reinforcement drain** is dead work.~~
+   **RETRACTED 2026-07-21 — this item was wrong, and acting on it would have
+   corrupted stores.** The premise was half-true: the `memory.reinforcement`
+   extractor does return empty entities and edges. But `_project_event` is not
+   only the extractor — `upsert_extraction` unconditionally MERGEs an `Event`
+   node and its `NEXT_EVENT`/`PREVIOUS_EVENT` chain edges *before* it consults
+   entities (`embedded_graph_store.py:448`). That chain mirror is ~13.6 ms of
+   the ~13.8 ms, and it is real work with a real consumer:
+   `inspect_event_projection_status` derives `integrity_ok` from chain
+   contiguity, reachable from `zaxy memory status --graph`.
+
+   Verified by skipping projection for reinforcement events on an interleaved
+   workload ending on a reinforcement (what a checkout turn actually looks like):
+
+   | field | baseline | skipping |
+   |---|---|---|
+   | `integrity_ok` | True | **False** |
+   | `missing_chain_links` | 0 | **4** |
+   | `projection_lag` | 0 | **1** |
+   | `latest_hash_matches` | True | **False** |
+
+   A skipped event leaves the *following* event's `prev_hash` dangling, so each
+   skip corrupts a link it does not own. Users would have seen "your store is
+   corrupt."
+
+   Two things worth keeping from the investigation. The cost is **not** an
+   unindexed scan — measured roughly flat at 13.6/13.8/15.2 ms across 115/645/2475
+   events, so it is fixed per-write transaction overhead and "add an index" would
+   not have helped either. And `memory.reinforced` / `memory.evidence.reinforced`
+   are *different* event types that **do** project entities, so any rule here must
+   match `memory.reinforcement` exactly — a prefix match would silently destroy
+   real projection state.
+
+   Remaining unmeasured levers for tight-loop throughput: batching the two chain
+   statements into one transaction, or moving the drain off the request path
+   entirely. Neither is measured, so neither is claimed.
 3. **Rollback is still a no-op for three declared types** —
    `MEMORY_CORRECTED_EVENT_TYPE` verified as such, plus `evolution.gate.evaluated`
    and `fleet.promotion.reviewed`. Documented per-type in #147; making them
