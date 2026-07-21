@@ -39,6 +39,7 @@ from zaxy.salience import (
     cue_overlap,
     cue_pairs,
     event_ref_index,
+    parse_reinforcement_multipliers,
     prediction_error_weight,
     reinforcement_targets_from_citations,
     resolve_citation_target,
@@ -370,6 +371,83 @@ def test_half_life_is_overridable() -> None:
 def test_ledger_rejects_invalid_half_life(half_life_days: float) -> None:
     with pytest.raises(ValueError, match="half_life_days"):
         SalienceLedger(half_life_days=half_life_days)
+
+
+# ----------------------------------------------------------------------
+# Per-deployment reinforcement multipliers (ZAXY-3 I1c)
+# ----------------------------------------------------------------------
+
+
+def test_parse_reinforcement_multipliers_defaults_to_the_builtin_table() -> None:
+    """No override spec yields the built-in multiplier table unchanged."""
+    assert parse_reinforcement_multipliers(None) == dict(SALIENCE_REINFORCEMENT_MULTIPLIERS)
+    assert parse_reinforcement_multipliers("") == dict(SALIENCE_REINFORCEMENT_MULTIPLIERS)
+
+
+def test_parse_reinforcement_multipliers_layers_overrides_over_defaults() -> None:
+    """Named kinds are overridden; every unnamed kind keeps its default strength."""
+    table = parse_reinforcement_multipliers("confirmed=1.25, invalidated=0.5")
+    assert table["confirmed"] == 1.25
+    assert table["invalidated"] == 0.5
+    assert table["surfaced"] == SALIENCE_REINFORCEMENT_MULTIPLIERS["surfaced"]
+    assert table["promoted"] == SALIENCE_REINFORCEMENT_MULTIPLIERS["promoted"]
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "confirmed",
+        "teleported=1.5",
+        "confirmed=yolo",
+        "confirmed=0",
+        "confirmed=-1",
+        "confirmed=nan",
+        "confirmed=inf",
+        f"confirmed={MAX_REINFORCEMENT_WEIGHT + 1}",
+        "confirmed=",
+        5,
+    ],
+)
+def test_parse_reinforcement_multipliers_rejects_malformed(bad: object) -> None:
+    """Malformed, unknown-kind and out-of-range multiplier specs raise rather than default."""
+    with pytest.raises(ValueError):
+        parse_reinforcement_multipliers(bad)
+
+
+def test_configured_multipliers_change_the_replayed_score() -> None:
+    """A ledger built with an override table scores the same log differently."""
+    events = [_confirmed_at(T0)]
+    default_score = SalienceLedger().replay(events, now=T0)[REF].score
+    tuned_score = SalienceLedger(
+        multipliers=parse_reinforcement_multipliers("confirmed=3.0")
+    ).replay(events, now=T0)[REF].score
+
+    assert default_score == pytest.approx(1.5)
+    assert tuned_score == pytest.approx(3.0)
+
+
+def test_explicit_event_weight_still_overrides_configured_multipliers() -> None:
+    """A per-event weight in the payload wins over the deployment multiplier table."""
+    spec = build_confirmed_reinforcement_event(
+        actor="agent",
+        session_id="agent-1",
+        feedback_id="feedback:0001",
+        targets=[TARGET],
+        weight=2.5,
+    )
+    ledger = SalienceLedger(multipliers=parse_reinforcement_multipliers("confirmed=3.0"))
+
+    assert ledger.replay([_logged(spec, at=T0)], now=T0)[REF].score == pytest.approx(2.5)
+
+
+def test_prediction_error_weight_stays_continuous_with_configured_multipliers() -> None:
+    """Surprise scaling anchors on the deployment table, not the built-in one."""
+    table = parse_reinforcement_multipliers("confirmed=3.0")
+    assert prediction_error_weight("confirmed", 0.5, multipliers=table) == pytest.approx(3.0)
+    assert prediction_error_weight("confirmed", 0.0, multipliers=table) == pytest.approx(1.0)
+    assert prediction_error_weight("confirmed", 0.5) == pytest.approx(
+        SALIENCE_REINFORCEMENT_MULTIPLIERS["confirmed"]
+    )
 
 
 def test_invalidation_dominates_prior_confirmation() -> None:

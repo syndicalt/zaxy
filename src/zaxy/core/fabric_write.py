@@ -172,6 +172,8 @@ class WriteHost(Protocol):
     _encoding_gate_enabled: bool
     _salience_floor: Any
     _salience_half_life_days: Any
+    _salience_multipliers: Any
+    _rule_confidence: Any
 
     async def connect(self) -> None: ...
 
@@ -522,7 +524,13 @@ class WriteEngine:
         if target is not None and outcome in ("success", "failure"):
             citation = f"eventloom://{sid}/events/{outcome_event.seq}#{outcome_event.hash}"
             kind = "confirmed" if outcome == "success" else "invalidated"
-            weight = prediction_error_weight(kind, pe) if pe is not None else None
+            weight = (
+                prediction_error_weight(
+                    kind, pe, multipliers=self._host._salience_multipliers
+                )
+                if pe is not None
+                else None
+            )
             if outcome == "success":
                 reinforce_spec = build_confirmed_reinforcement_event(
                     actor=actor,
@@ -545,7 +553,9 @@ class WriteEngine:
             result["reinforced"] = "confirmed" if outcome == "success" else "invalidated"
 
         if outcome in ("failure", "partial") and lesson:
-            rule_confidence = preventive_rule_confidence(outcome, confidence)
+            rule_confidence = preventive_rule_confidence(
+                outcome, confidence, defaults=self._host._rule_confidence
+            )
             decision = await self._host.evaluate_evolution_gate(
                 "rule_generate", rule_confidence, candidate_ref=outcome_ref, actor=actor, session_id=sid
             )
@@ -1096,7 +1106,10 @@ class WriteEngine:
         salience (1.0) and are always above the default floor.
         """
         events = self._host.session_manager.get(session_id).eventlog.read_all()
-        ledger = SalienceLedger(half_life_days=self._host._salience_half_life_days)
+        ledger = SalienceLedger(
+            half_life_days=self._host._salience_half_life_days,
+            multipliers=self._host._salience_multipliers,
+        )
         states = ledger.replay(events, now=datetime.now(UTC))
         state = states.get(EventRef(seq=int(target["seq"]), hash=str(target["hash"])))
         score = state.score if state is not None else SALIENCE_BASE

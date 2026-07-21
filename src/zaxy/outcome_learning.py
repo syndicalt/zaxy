@@ -28,8 +28,15 @@ RULE_GENERATED_EVENT_TYPE = "memory.rule.generated"
 
 #: Default confidence the loop assigns to a preventive rule by the outcome that
 #: produced it. Failure is a strong signal (auto-applies under the default
-#: ``auto_with_rollback`` tier); partial is weaker (held for review by default).
+#: ``auto_with_rollback`` tier and the default 0.85 threshold); partial is weaker
+#: (held for review by default). Both ends are per-deployment tunable via
+#: ``outcome_rule_confidence_failure`` / ``outcome_rule_confidence_partial``,
+#: which is the knob that — together with ``evolution_confidence_threshold`` —
+#: decides which outcomes may auto-apply at all.
 DEFAULT_RULE_CONFIDENCE: Mapping[str, float] = {"failure": 0.9, "partial": 0.7}
+
+#: Confidence used for an outcome with no entry in the confidence table.
+FALLBACK_RULE_CONFIDENCE = 0.7
 
 #: The observed outcome value the loop compares against the agent's prior to
 #: derive prediction error (surprise): success and failure anchor the ends,
@@ -47,8 +54,17 @@ def validate_outcome(outcome: object) -> str:
     return str(outcome)
 
 
-def preventive_rule_confidence(outcome: str, explicit: float | None = None) -> float:
-    """Return the confidence for a preventive rule from its outcome (or explicit)."""
+def preventive_rule_confidence(
+    outcome: str,
+    explicit: float | None = None,
+    *,
+    defaults: Mapping[str, float] | None = None,
+) -> float:
+    """Return the confidence for a preventive rule from its outcome (or explicit).
+
+    ``defaults`` overrides the built-in per-outcome table (see
+    :func:`resolve_rule_confidence`); an explicit confidence always wins over both.
+    """
     if explicit is not None:
         if (
             isinstance(explicit, bool)
@@ -57,7 +73,32 @@ def preventive_rule_confidence(outcome: str, explicit: float | None = None) -> f
         ):
             raise ValueError("confidence must be between 0.0 and 1.0")
         return float(explicit)
-    return DEFAULT_RULE_CONFIDENCE.get(validate_outcome(outcome), 0.7)
+    table = DEFAULT_RULE_CONFIDENCE if defaults is None else defaults
+    return table.get(validate_outcome(outcome), FALLBACK_RULE_CONFIDENCE)
+
+
+def resolve_rule_confidence(settings: Any) -> dict[str, float]:
+    """Build the per-outcome preventive-rule confidence table from Settings.
+
+    Reads ``outcome_rule_confidence_failure`` / ``outcome_rule_confidence_partial``
+    defensively so a minimal or mocked settings object still yields the built-in
+    defaults. Raises ``ValueError`` on a present-but-out-of-range value rather than
+    silently falling back, so misconfiguration fails fast.
+    """
+    table = dict(DEFAULT_RULE_CONFIDENCE)
+    for outcome, attribute in (
+        ("failure", "outcome_rule_confidence_failure"),
+        ("partial", "outcome_rule_confidence_partial"),
+    ):
+        value = getattr(settings, attribute, None)
+        if value is None:
+            continue
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            raise ValueError(f"{attribute} must be a number between 0.0 and 1.0")
+        if not 0.0 <= float(value) <= 1.0:
+            raise ValueError(f"{attribute} must be between 0.0 and 1.0")
+        table[outcome] = float(value)
+    return table
 
 
 def prediction_error(outcome: str, prior: float) -> float:

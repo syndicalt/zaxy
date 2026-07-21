@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from zaxy.core.fabric import MemoryFabric
+from zaxy.evolution_policy import evaluate_evolution_gate, resolve_evolution_policy
 from zaxy.outcome_learning import (
     OUTCOME_ACTUAL,
     OUTCOME_EVENT_TYPE,
@@ -18,6 +20,7 @@ from zaxy.outcome_learning import (
     build_rule_event,
     prediction_error,
     preventive_rule_confidence,
+    resolve_rule_confidence,
     validate_outcome,
 )
 from zaxy.salience import SALIENCE_REINFORCEMENT_MULTIPLIERS
@@ -37,6 +40,57 @@ class TestContracts:
         assert preventive_rule_confidence("failure", 0.42) == 0.42
         with pytest.raises(ValueError):
             preventive_rule_confidence("failure", 1.5)
+
+    def test_resolve_rule_confidence_defaults_preserve_the_builtin_table(self) -> None:
+        """A settings object configuring nothing yields the historical 0.9/0.7 split."""
+        table = resolve_rule_confidence(SimpleNamespace())
+        assert table == {"failure": 0.9, "partial": 0.7}
+
+    def test_resolve_rule_confidence_reads_configured_values(self) -> None:
+        """Per-deployment settings retune each outcome's rule confidence independently."""
+        table = resolve_rule_confidence(
+            SimpleNamespace(
+                outcome_rule_confidence_failure=0.6,
+                outcome_rule_confidence_partial=0.95,
+            )
+        )
+        assert table == {"failure": 0.6, "partial": 0.95}
+
+    @pytest.mark.parametrize(
+        "settings",
+        [
+            SimpleNamespace(outcome_rule_confidence_failure=1.5),
+            SimpleNamespace(outcome_rule_confidence_failure=-0.1),
+            SimpleNamespace(outcome_rule_confidence_partial="high"),
+            SimpleNamespace(outcome_rule_confidence_partial=True),
+        ],
+    )
+    def test_resolve_rule_confidence_rejects_malformed(self, settings: object) -> None:
+        """Out-of-range and non-numeric rule confidences raise rather than silently default."""
+        with pytest.raises(ValueError):
+            resolve_rule_confidence(settings)
+
+    def test_configured_confidence_flips_partial_rules_over_the_gate_threshold(self) -> None:
+        """Raising partial confidence lets partial-outcome rules auto-apply at the 0.85 default."""
+        policy = resolve_evolution_policy(SimpleNamespace())
+
+        default_table = resolve_rule_confidence(SimpleNamespace())
+        default_confidence = preventive_rule_confidence("partial", defaults=default_table)
+        assert (
+            evaluate_evolution_gate(
+                "rule_generate", default_confidence, policy=policy
+            ).auto_apply
+            is False
+        )
+
+        tuned_table = resolve_rule_confidence(
+            SimpleNamespace(outcome_rule_confidence_partial=0.95)
+        )
+        tuned_confidence = preventive_rule_confidence("partial", defaults=tuned_table)
+        assert (
+            evaluate_evolution_gate("rule_generate", tuned_confidence, policy=policy).auto_apply
+            is True
+        )
 
     def test_build_outcome_event_is_non_authoritative(self) -> None:
         spec = build_outcome_event(

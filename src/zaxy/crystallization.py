@@ -541,7 +541,10 @@ def _top_salient(
     limit: int,
 ) -> list[dict[str, Any]]:
     """Return the top-``limit`` salient memory citations (read-only diagnostic)."""
-    ledger = SalienceLedger(half_life_days=fabric._salience_half_life_days)
+    ledger = SalienceLedger(
+        half_life_days=fabric._salience_half_life_days,
+        multipliers=fabric._salience_multipliers,
+    )
     states = ledger.replay(eventlog.read_all(), now=now)
     ranked = sorted(states.items(), key=lambda item: (-item[1].score, item[0].seq, item[0].hash))
     return [

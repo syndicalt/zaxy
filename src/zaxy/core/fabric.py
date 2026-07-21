@@ -60,6 +60,7 @@ from zaxy.evolution_policy import (
     EvolutionGateDecision,
 )
 from zaxy.metrics import get_metrics
+from zaxy.outcome_learning import resolve_rule_confidence
 from zaxy.projection_backends import ProjectionBackendConfig, build_projection_store
 from zaxy.purpose import PurposeProfile
 from zaxy.query import QueryRouter, ScoringProfile, build_reranker, build_retention_policy
@@ -75,6 +76,7 @@ from zaxy.retrieval_profile import (
 )
 from zaxy.salience import (
     build_invalidated_reinforcement_event,
+    parse_reinforcement_multipliers,
 )
 from zaxy.security import (
     validate_session_id,
@@ -205,6 +207,10 @@ class MemoryFabric:
         )
         self._salience_half_life_days = float(resolved_settings.salience_half_life_days)
         self._salience_floor = float(resolved_settings.salience_floor)
+        self._salience_multipliers = parse_reinforcement_multipliers(
+            getattr(resolved_settings, "salience_reinforcement_multipliers", None)
+        )
+        self._rule_confidence = resolve_rule_confidence(resolved_settings)
         self._encoding_gate_enabled = bool(resolved_settings.encoding_gate_enabled)
         self.embedding_provider = build_embedding_provider(resolved_settings)
         self.tracer = (

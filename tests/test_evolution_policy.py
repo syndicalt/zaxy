@@ -15,6 +15,7 @@ from zaxy.evolution_policy import (
     build_evolution_gate_event,
     evaluate_evolution_gate,
     parse_op_autonomy,
+    parse_op_thresholds,
     resolve_evolution_policy,
 )
 
@@ -217,6 +218,77 @@ class TestPerOpAutonomyConfig:
                 parse_op_autonomy(bad)  # type: ignore[arg-type]
 
 
+class TestPerOpConfidenceThresholdConfig:
+    """Per-op confidence thresholds are live config, not decorative output."""
+
+    def test_resolve_defaults_every_op_to_the_default_threshold(self) -> None:
+        """With nothing configured every op keeps the historical 0.85 threshold."""
+        policy = resolve_evolution_policy(SimpleNamespace())
+        assert policy.default_threshold == 0.85
+        for op in ("update", "consolidate", "forget", "rule_generate", "promote"):
+            assert policy.threshold_for(op) == 0.85
+
+    def test_settings_default_threshold_moves_every_op(self) -> None:
+        """evolution_confidence_threshold retunes all ops lacking an override."""
+        policy = resolve_evolution_policy(
+            SimpleNamespace(evolution_confidence_threshold=0.5)
+        )
+        assert policy.default_threshold == 0.5
+        assert policy.threshold_for("forget") == 0.5
+
+    def test_per_op_override_beats_the_default_threshold(self) -> None:
+        """evolution_op_thresholds overrides only the named ops."""
+        policy = resolve_evolution_policy(
+            SimpleNamespace(
+                evolution_confidence_threshold=0.5,
+                evolution_op_thresholds="forget=0.99,promote=0.6",
+            )
+        )
+        assert policy.threshold_for("forget") == 0.99
+        assert policy.threshold_for("promote") == 0.6
+        assert policy.threshold_for("update") == 0.5
+
+    def test_configured_threshold_changes_the_gate_decision(self) -> None:
+        """A tightened per-op threshold flips an otherwise auto-applying evolution to review."""
+        confidence = 0.9
+        loose = resolve_evolution_policy(SimpleNamespace())
+        assert evaluate_evolution_gate("forget", confidence, policy=loose).auto_apply is True
+
+        tight = resolve_evolution_policy(
+            SimpleNamespace(evolution_op_thresholds="forget=0.95")
+        )
+        decision = evaluate_evolution_gate("forget", confidence, policy=tight)
+        assert decision.auto_apply is False
+        assert decision.requires_review is True
+        assert decision.threshold == 0.95
+
+    def test_parse_op_thresholds(self) -> None:
+        """Well-formed threshold specs parse into a validated per-op map."""
+        assert parse_op_thresholds(None) == {}
+        assert parse_op_thresholds("") == {}
+        assert parse_op_thresholds("update=0.9, forget=0.75") == {
+            "update": 0.9,
+            "forget": 0.75,
+        }
+        assert parse_op_thresholds("promote=0") == {"promote": 0.0}
+        assert parse_op_thresholds("promote=1") == {"promote": 1.0}
+
+    def test_parse_op_thresholds_rejects_malformed(self) -> None:
+        """Malformed, unknown-op, non-numeric and out-of-range specs raise rather than default."""
+        for bad in (
+            "update",
+            "teleport=0.5",
+            "update=yolo",
+            "update=1.5",
+            "update=-0.1",
+            "update=nan",
+            "update=",
+            5,
+        ):
+            with pytest.raises(ValueError):
+                parse_op_thresholds(bad)  # type: ignore[arg-type]
+
+
 class TestInferredEdgeGate:
     """The inferred-edge producer routes through the gate (I4.3, option A)."""
 
@@ -261,3 +333,70 @@ class TestInferredEdgeGate:
         assert gate_events[0].payload["op"] == "update"
         assert gate_events[0].payload["auto_apply"] is False
         assert gate_events[0].payload["authority_status"] == "non_authoritative"
+
+
+class TestUnchangedDefaults:
+    """A deployment that configures nothing behaves exactly as it did pre-3.2.1.
+
+    The newly-added settings (evolution thresholds, salience multipliers, rule
+    confidences) are only defensible if their defaults are behaviour-preserving,
+    so this pins each one against the constant it replaced.
+    """
+
+    def test_real_settings_resolve_to_the_historical_policy(self) -> None:
+        """Resolving a stock Settings yields byte-identical policy fields to the dataclass defaults."""
+        from zaxy.config import Settings
+
+        policy = resolve_evolution_policy(Settings())
+        baseline = MemoryEvolutionPolicy()
+
+        assert policy.default_tier == baseline.default_tier == "auto_with_rollback"
+        assert policy.default_threshold == baseline.default_threshold == 0.85
+        assert dict(policy.op_thresholds) == {}
+        assert dict(policy.op_tiers) == {}
+        assert policy.rollback_window_seconds == baseline.rollback_window_seconds == 86400
+
+    def test_stock_settings_keep_every_op_at_the_historical_threshold(self) -> None:
+        """Every governed op still gates at DEFAULT_CONFIDENCE_THRESHOLD out of the box."""
+        from zaxy.config import Settings
+        from zaxy.evolution_policy import DEFAULT_CONFIDENCE_THRESHOLD, EVOLUTION_OPS
+
+        policy = resolve_evolution_policy(Settings())
+        for op in EVOLUTION_OPS:
+            assert policy.threshold_for(op) == DEFAULT_CONFIDENCE_THRESHOLD
+
+    def test_stock_settings_preserve_the_failure_partial_auto_apply_split(self) -> None:
+        """Failure rules still auto-apply and partial rules still hold for review by default."""
+        from zaxy.config import Settings
+        from zaxy.outcome_learning import preventive_rule_confidence, resolve_rule_confidence
+
+        table = resolve_rule_confidence(Settings())
+        policy = resolve_evolution_policy(Settings())
+
+        failure = preventive_rule_confidence("failure", defaults=table)
+        partial = preventive_rule_confidence("partial", defaults=table)
+        assert (failure, partial) == (0.9, 0.7)
+        assert evaluate_evolution_gate("rule_generate", failure, policy=policy).auto_apply is True
+        assert evaluate_evolution_gate("rule_generate", partial, policy=policy).auto_apply is False
+
+    def test_stock_settings_preserve_the_builtin_salience_multipliers(self) -> None:
+        """Stock settings replay salience with the unmodified built-in multiplier table."""
+        from zaxy.config import Settings
+        from zaxy.salience import (
+            SALIENCE_REINFORCEMENT_MULTIPLIERS,
+            parse_reinforcement_multipliers,
+        )
+
+        table = parse_reinforcement_multipliers(
+            Settings().salience_reinforcement_multipliers
+        )
+        assert table == dict(SALIENCE_REINFORCEMENT_MULTIPLIERS)
+
+    def test_stock_fabric_carries_behaviour_preserving_resolved_config(self, tmp_path: Path) -> None:
+        """A fabric built from stock settings holds the historical multiplier and confidence tables."""
+        from zaxy.salience import SALIENCE_REINFORCEMENT_MULTIPLIERS
+
+        fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
+        assert fabric._salience_multipliers == dict(SALIENCE_REINFORCEMENT_MULTIPLIERS)
+        assert fabric._rule_confidence == {"failure": 0.9, "partial": 0.7}
+        assert fabric._salience_half_life_days == 30.0

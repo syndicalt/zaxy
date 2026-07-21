@@ -170,6 +170,22 @@ class Settings(BaseSettings):
             "(e.g. 'forget=propose_only') to tighten guardrails for specific ops"
         ),
     )
+    evolution_confidence_threshold: float = Field(
+        default=0.85,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Default confidence at or above which an evolution op may auto-apply "
+            "under the auto_with_rollback tier"
+        ),
+    )
+    evolution_op_thresholds: str | None = Field(
+        default=None,
+        description=(
+            "Optional per-op confidence-threshold overrides as 'op=0.9,op=0.7' "
+            "(e.g. 'forget=0.95') layered over evolution_confidence_threshold"
+        ),
+    )
     crystallization_enabled: bool = Field(
         default=False,
         description=(
@@ -430,6 +446,31 @@ class Settings(BaseSettings):
         default=30.0,
         gt=0,
         description="Half-life in days for salience recency decay in the reinforcement ledger",
+    )
+    salience_reinforcement_multipliers: str | None = Field(
+        default=None,
+        description=(
+            "Optional per-kind reinforcement-strength overrides as 'kind=1.5,kind=0.2' "
+            "(e.g. 'surfaced=1.02') layered over the built-in multiplier table"
+        ),
+    )
+    outcome_rule_confidence_failure: float = Field(
+        default=0.9,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Confidence assigned to a preventive rule proposed from a failure outcome; "
+            "compare against evolution_confidence_threshold to decide auto-apply"
+        ),
+    )
+    outcome_rule_confidence_partial: float = Field(
+        default=0.7,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Confidence assigned to a preventive rule proposed from a partial outcome; "
+            "compare against evolution_confidence_threshold to decide auto-apply"
+        ),
     )
     salience_floor: float = Field(
         default=0.15,

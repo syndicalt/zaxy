@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -48,6 +49,7 @@ from zaxy.salience import (
     SALIENCE_HALF_LIFE_DAYS,
     SALIENCE_MAX,
     SALIENCE_MIN,
+    SALIENCE_REINFORCEMENT_MULTIPLIERS,
     EventRef,
     SalienceLedger,
     SalienceState,
@@ -533,6 +535,7 @@ def build_memory_checkout(
     cues: dict[str, str] | None = None,
     salience_floor: float = 0.15,
     salience_half_life_days: float = SALIENCE_HALF_LIFE_DAYS,
+    salience_multipliers: Mapping[str, float] = SALIENCE_REINFORCEMENT_MULTIPLIERS,
 ) -> MemoryCheckout:
     """Build the Memory Checkout contract from assembled context.
 
@@ -560,9 +563,9 @@ def build_memory_checkout(
     # and half-life, so compute it a single time here rather than folding the
     # whole log twice.
     salience_states = (
-        SalienceLedger(half_life_days=salience_half_life_days).replay(
-            assembly.replay_events, now=checkout_now
-        )
+        SalienceLedger(
+            half_life_days=salience_half_life_days, multipliers=salience_multipliers
+        ).replay(assembly.replay_events, now=checkout_now)
         if assembly.replay_events
         else {}
     )
@@ -575,6 +578,7 @@ def build_memory_checkout(
             cues=cues,
             salience_floor=salience_floor,
             salience_half_life_days=salience_half_life_days,
+            salience_multipliers=salience_multipliers,
             now=checkout_now,
             precomputed_states=salience_states,
         )
@@ -672,6 +676,7 @@ def build_memory_checkout(
         evidence=evidence,
         now=checkout_now,
         half_life_days=salience_half_life_days,
+        multipliers=salience_multipliers,
         precomputed_states=salience_states,
     )
     if salience is not None:
@@ -738,6 +743,7 @@ def _rank_cognitive_contexts(
     cues: dict[str, str] | None,
     salience_floor: float,
     salience_half_life_days: float,
+    salience_multipliers: Mapping[str, float] = SALIENCE_REINFORCEMENT_MULTIPLIERS,
     now: datetime,
     precomputed_states: dict[EventRef, SalienceState] | None = None,
 ) -> tuple[list[Context], dict[str, Any] | None]:
@@ -773,10 +779,9 @@ def _rank_cognitive_contexts(
         states = (
             precomputed_states
             if precomputed_states is not None
-            else SalienceLedger(half_life_days=salience_half_life_days).replay(
-                replay_events,
-                now=now,
-            )
+            else SalienceLedger(
+                half_life_days=salience_half_life_days, multipliers=salience_multipliers
+            ).replay(replay_events, now=now)
         )
     query_cues = cue_pairs(cues) if retrieval_profile.cue_blending else frozenset()
     ranked: list[tuple[tuple[float, int, int, int, float, str, float], Context]] = []
@@ -887,6 +892,7 @@ def _checkout_salience_diagnostics(
     evidence: list[dict[str, Any]],
     now: datetime,
     half_life_days: float = SALIENCE_HALF_LIFE_DAYS,
+    multipliers: Mapping[str, float] = SALIENCE_REINFORCEMENT_MULTIPLIERS,
     precomputed_states: dict[EventRef, SalienceState] | None = None,
 ) -> dict[str, Any] | None:
     """Replay salience over the checkout's own replay for diagnostics only.
@@ -907,7 +913,9 @@ def _checkout_salience_diagnostics(
     states = (
         precomputed_states
         if precomputed_states is not None
-        else SalienceLedger(half_life_days=half_life_days).replay(replay_events, now=now)
+        else SalienceLedger(half_life_days=half_life_days, multipliers=multipliers).replay(
+            replay_events, now=now
+        )
     )
     if not states:
         return None
