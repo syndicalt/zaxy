@@ -15,12 +15,14 @@ from zaxy.event import EventLog
 from zaxy.external_validation import validate_external_validation_report
 from zaxy.release import (
     ACTIVATION_FIXTURE_NOW,
+    BETA_BENCHMARK_LANES,
     _activation_checkout_freshness_errors,
     _activation_token_efficiency_errors,
+    _beta_cli_claims,
     _check_activation_release_fixture,
     _check_backend_report_inputs,
     _check_benchmark_no_regression,
-    _check_beta_roadmap,
+    _check_beta_roadmap_claims,
     _check_capture_happy_path,
     _check_changelog,
     _check_coordination_competitor_claim_posture,
@@ -968,25 +970,106 @@ def test_beta_readiness_requires_maintained_beta_roadmap(tmp_path: Path) -> None
 
     checks = {check["name"]: check for check in report["checks"]}
     assert report["status"] == "error"
-    assert checks["beta_roadmap"]["status"] == "error"
-    assert checks["beta_roadmap"]["action"] == "Add BETA.md with beta goals, remaining work, gates, and exit criteria."
+    assert checks["beta_roadmap_claims"]["status"] == "error"
+    assert checks["beta_roadmap_claims"]["action"] == "Add BETA.md with beta goals, remaining work, gates, and exit criteria."
 
 
-def test_beta_roadmap_tracks_post_uat_product_work() -> None:
-    """The beta roadmap should point beyond gate plumbing into product-grade memory behavior."""
-    roadmap = Path("BETA.md").read_text(encoding="utf-8")
+def _write_roadmap(root: Path, body: str) -> Path:
+    """Write a BETA.md fixture whose claims the roadmap gate can resolve."""
+    path = root / "BETA.md"
+    path.write_text(body, encoding="utf-8")
+    return path
 
-    assert "Git for LLM memory" in roadmap
-    assert "MemPalace-comparable" in roadmap
-    assert "temporal recall" in roadmap
-    assert "source recall" in roadmap
-    assert "graph traversal" in roadmap
-    assert "context-collapse" in roadmap
-    assert "zaxy benchmark-inventory" in roadmap
-    assert "CrewAI" in roadmap
-    assert "capture soak" in roadmap
-    assert "zaxy capture soak" in roadmap
-    assert "release criteria" in roadmap
+
+_ROADMAP_LANES = "\n".join(f"- `--workload {lane}` lane" for lane in BETA_BENCHMARK_LANES)
+_VALID_ROADMAP = (
+    f"{_ROADMAP_LANES}\n"
+    "- `zaxy benchmark-inventory` inventories the lanes.\n"
+    "- `zaxy capture soak` reports capture coverage.\n"
+    "- `zaxy memory inferred-status` reports inferred edges.\n"
+    "- CrewAI and LangGraph adapters are maintained.\n"
+)
+
+
+def test_beta_roadmap_claims_pass_against_the_live_repository() -> None:
+    """The shipped BETA.md's lane, command, and adapter claims resolve against the live code."""
+    result = _check_beta_roadmap_claims(Path("."))
+
+    assert result["status"] == "ok", result["message"]
+
+
+def test_beta_roadmap_claims_accept_a_roadmap_whose_claims_all_resolve(tmp_path: Path) -> None:
+    """A roadmap naming only real lanes, canonical commands, and real adapters passes."""
+    _write_roadmap(tmp_path, _VALID_ROADMAP)
+
+    assert _check_beta_roadmap_claims(tmp_path)["status"] == "ok"
+
+
+def test_beta_roadmap_claims_reject_an_unregistered_workload_lane(tmp_path: Path) -> None:
+    """A lane BETA.md claims but the benchmark CLI does not accept turns the gate red."""
+    _write_roadmap(tmp_path, _VALID_ROADMAP.replace("--workload source-recall", "--workload sources"))
+
+    result = _check_beta_roadmap_claims(tmp_path)
+
+    assert result["status"] == "error"
+    assert "`--workload source-recall`" in result["message"]
+    assert "BETA_BENCHMARK_LANES" not in result["message"]
+
+
+def test_beta_roadmap_claims_reject_a_dropped_lane_claim(tmp_path: Path) -> None:
+    """Deleting a lane claim from BETA.md cannot make the gate vacuously pass."""
+    _write_roadmap(tmp_path, _VALID_ROADMAP.replace("- `--workload graph-traversal` lane\n", ""))
+
+    result = _check_beta_roadmap_claims(tmp_path)
+
+    assert result["status"] == "error"
+    assert "no longer claims the `--workload graph-traversal` lane" in result["message"]
+
+
+def test_beta_roadmap_claims_reject_a_command_that_does_not_exist(tmp_path: Path) -> None:
+    """A `zaxy ...` command BETA.md cites that the Typer tree cannot resolve turns the gate red."""
+    _write_roadmap(tmp_path, _VALID_ROADMAP.replace("zaxy benchmark-inventory", "zaxy benchmark-manifest"))
+
+    result = _check_beta_roadmap_claims(tmp_path)
+
+    assert result["status"] == "error"
+    assert "cites `zaxy benchmark-manifest` but no such command exists" in result["message"]
+
+
+def test_beta_roadmap_claims_reject_a_deprecated_command_alias(tmp_path: Path) -> None:
+    """Citing a deprecated flat alias instead of its canonical grouped form turns the gate red."""
+    _write_roadmap(tmp_path, _VALID_ROADMAP.replace("zaxy capture soak", "zaxy capture-soak"))
+
+    result = _check_beta_roadmap_claims(tmp_path)
+
+    assert result["status"] == "error"
+    assert "deprecated alias `zaxy capture-soak`" in result["message"]
+    assert "use `zaxy capture soak`" in result["message"]
+
+
+def test_beta_roadmap_claims_reject_an_adapter_that_cannot_import(tmp_path: Path) -> None:
+    """An adapter BETA.md claims that fails to import turns the gate red naming the module."""
+    _write_roadmap(tmp_path, _VALID_ROADMAP)
+
+    import zaxy.release as release_module
+
+    original = dict(release_module.BETA_ADAPTER_MODULES)
+    release_module.BETA_ADAPTER_MODULES["CrewAI"] = "zaxy.adapters.not_an_adapter"
+    try:
+        result = _check_beta_roadmap_claims(tmp_path)
+    finally:
+        release_module.BETA_ADAPTER_MODULES.clear()
+        release_module.BETA_ADAPTER_MODULES.update(original)
+
+    assert result["status"] == "error"
+    assert "zaxy.adapters.not_an_adapter" in result["message"]
+
+
+def test_beta_cli_claims_extracts_grouped_and_flat_command_paths() -> None:
+    """CLI claim extraction yields at most two words per backticked `zaxy ...` reference."""
+    claims = _beta_cli_claims("`zaxy capture soak` and `zaxy doctor --beta-readiness`")
+
+    assert claims == ["capture soak", "doctor"]
 
 
 def test_beta_readiness_reports_missing_clean_repo_uat(tmp_path: Path) -> None:
@@ -1345,7 +1428,7 @@ def test_release_doc_gates_report_missing_happy_path_references(tmp_path: Path) 
 
     docs_result = _check_docs_happy_path(tmp_path)
     capture_result = _check_capture_happy_path(tmp_path)
-    roadmap_result = _check_beta_roadmap(tmp_path)
+    roadmap_result = _check_beta_roadmap_claims(tmp_path)
 
     assert docs_result["status"] == "error"
     assert "pipx install zaxy-memory" in docs_result["message"]
@@ -1370,15 +1453,11 @@ def test_release_doc_gates_accept_complete_happy_path_references(tmp_path: Path)
     (docs / "testing.md").write_text("scripts/beta-uat.sh\n", encoding="utf-8")
     (docs / "hooks.md").write_text("zaxy hook-status\nobservation coverage\n", encoding="utf-8")
     (docs / "mcp.md").write_text("zaxy capture soak\n", encoding="utf-8")
-    (tmp_path / "BETA.md").write_text(
-        "Git for LLM memory\nMemPalace-comparable\ntemporal recall\nsource recall\n"
-        "graph traversal\ncontext-collapse\nCrewAI\ncapture soak\nrelease criteria\n",
-        encoding="utf-8",
-    )
+    _write_roadmap(tmp_path, _VALID_ROADMAP)
 
     assert _check_docs_happy_path(tmp_path)["status"] == "ok"
     assert _check_capture_happy_path(tmp_path)["status"] == "ok"
-    assert _check_beta_roadmap(tmp_path)["status"] == "ok"
+    assert _check_beta_roadmap_claims(tmp_path)["status"] == "ok"
 
 
 def test_coordination_competitor_posture_reports_completed_adapter_audit_defects(tmp_path: Path) -> None:
@@ -1575,12 +1654,7 @@ def test_beta_readiness_allows_release_without_external_validation_evidence(tmp_
     """Beta readiness should not block v1.0 when outside validation is unavailable."""
     _write_minimal_beta_ready_project(tmp_path)
     _write_backend_report_inputs(tmp_path)
-    (tmp_path / "BETA.md").write_text(
-        "# Beta Roadmap\n\n"
-        "Git for LLM memory, MemPalace-comparable temporal recall, source recall, "
-        "graph traversal, context-collapse, CrewAI, capture soak, and release criteria.\n",
-        encoding="utf-8",
-    )
+    _write_roadmap(tmp_path, "# Beta Roadmap\n\n" + _VALID_ROADMAP)
 
     report = run_beta_readiness(project_root=tmp_path)
 

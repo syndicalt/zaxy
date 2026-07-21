@@ -20,6 +20,21 @@ ACTIVATION_FIXTURE_NOW = datetime(2026, 5, 20, 12, 0, tzinfo=UTC)
 ACTIVATION_FIXTURE_MAX_CHECKOUT_AGE_MINUTES = 120
 ACTIVATION_FIXTURE_MAX_PROMPT_TOKENS = 5000
 ACTIVATION_FIXTURE_MIN_FACTS_PER_1K_PROMPT_TOKENS = 0.1
+# The four MemPalace-comparable benchmark lanes BETA.md commits to. Held here
+# rather than derived from BETA.md so the roadmap cannot be emptied of claims to
+# make the gate pass vacuously.
+BETA_BENCHMARK_LANES: tuple[str, ...] = (
+    "context-collapse",
+    "graph-traversal",
+    "source-recall",
+    "temporal-recall",
+)
+# Framework token as written in BETA.md -> the adapter module that backs it.
+BETA_ADAPTER_MODULES: dict[str, str] = {
+    "CrewAI": "zaxy.adapters.crewai",
+    "LangGraph": "zaxy.adapters.langgraph",
+}
+_BETA_CLI_CLAIM_RE = re.compile(r"`zaxy((?: +[a-z][a-z0-9-]*){1,2})")
 HIGH_CONTEXT_EVENT_TYPES = {
     "command.completed",
     "file.edit.applied",
@@ -265,7 +280,7 @@ def run_beta_readiness(
         _check_first_run_timing(root),
         _check_docs_happy_path(root),
         _check_capture_happy_path(root),
-        _check_beta_roadmap(root),
+        _check_beta_roadmap_claims(root),
     ]
     return {
         "status": _overall_status(checks),
@@ -1632,39 +1647,119 @@ def _check_capture_happy_path(root: Path) -> dict[str, str]:
     }
 
 
-def _check_beta_roadmap(root: Path) -> dict[str, str]:
+def _beta_cli_claims(roadmap: str) -> list[str]:
+    """Return the ``zaxy`` command paths BETA.md cites, longest path first."""
+    claims: list[str] = []
+    for match in _BETA_CLI_CLAIM_RE.finditer(roadmap):
+        words = [word for word in (match.group(1) or "").split() if word]
+        if not words:
+            continue
+        claims.append(" ".join(words[:2]))
+    return sorted(set(claims))
+
+
+def _resolve_cli_path(root_command: Any, path: str) -> tuple[bool, str]:
+    """Resolve a space-separated command path against a click command tree."""
+    node = root_command
+    parts = path.split()
+    resolved: list[str] = []
+    for part in parts:
+        commands = getattr(node, "commands", None)
+        if not commands or part not in commands:
+            # A two-word claim whose first word alone is a real command is a
+            # command plus an argument (``zaxy doctor --beta-readiness`` reads as
+            # ``doctor``), not a missing subcommand.
+            if resolved:
+                return True, " ".join(resolved)
+            return False, path
+        node = commands[part]
+        resolved.append(part)
+    return True, " ".join(resolved)
+
+
+def _check_beta_roadmap_claims(root: Path) -> dict[str, str]:
+    """Verify BETA.md's benchmark, CLI, and adapter claims against the live code."""
     try:
         roadmap = (root / "BETA.md").read_text(encoding="utf-8")
     except OSError as exc:
         return {
-            "name": "beta_roadmap",
+            "name": "beta_roadmap_claims",
             "status": "error",
             "message": f"BETA.md is missing or unreadable: {exc}",
             "action": "Add BETA.md with beta goals, remaining work, gates, and exit criteria.",
         }
-    required = [
-        "Git for LLM memory",
-        "MemPalace-comparable",
-        "temporal recall",
-        "source recall",
-        "graph traversal",
-        "context-collapse",
-        "CrewAI",
-        "capture soak",
-        "release criteria",
-    ]
-    missing = [item for item in required if item not in roadmap]
-    if missing:
+
+    problems: list[str] = []
+
+    # 1. Benchmark lanes. The lane names are checked in both directions: BETA.md
+    # must still name all four (so the claim set cannot be emptied to make the
+    # gate vacuous), and the CLI must still accept each one as a --workload value.
+    try:
+        benchmarks_module = import_module("zaxy.cli.benchmarks")
+        registered_workloads = tuple(benchmarks_module.BENCHMARK_WORKLOADS)
+    except Exception as exc:
+        registered_workloads = ()
+        problems.append(f"zaxy.cli.benchmarks.BENCHMARK_WORKLOADS is unavailable: {exc}")
+    for lane in BETA_BENCHMARK_LANES:
+        if f"--workload {lane}" not in roadmap:
+            problems.append(f"BETA.md no longer claims the `--workload {lane}` lane")
+        if registered_workloads and lane not in registered_workloads:
+            problems.append(
+                f"`--workload {lane}` is claimed in BETA.md but is not in "
+                "zaxy.cli.benchmarks.BENCHMARK_WORKLOADS"
+            )
+
+    # 2. CLI commands. Every ``zaxy ...`` invocation BETA.md cites must resolve in
+    # the live Typer tree and must be the canonical form, not a deprecated alias.
+    try:
+        runtime = import_module("zaxy.cli.runtime")
+        typer_main = import_module("typer.main")
+        root_command = typer_main.get_command(runtime.app)
+        deprecated_aliases = dict(runtime._DEPRECATED_ALIASES)
+    except Exception as exc:
+        problems.append(f"could not build the zaxy CLI command tree: {exc}")
+    else:
+        for claim in _beta_cli_claims(roadmap):
+            resolved, path = _resolve_cli_path(root_command, claim)
+            if not resolved:
+                problems.append(f"BETA.md cites `zaxy {claim}` but no such command exists")
+                continue
+            head = path.split()[0]
+            if head in deprecated_aliases:
+                problems.append(
+                    f"BETA.md cites the deprecated alias `zaxy {head}`; "
+                    f"use `zaxy {deprecated_aliases[head]}`"
+                )
+
+    # 3. Adapters. Importing these with neither framework installed is what
+    # substantiates BETA.md's "dependency-light, duck-typed, never imports the
+    # framework" claim.
+    for token, module_name in BETA_ADAPTER_MODULES.items():
+        if token.casefold() not in roadmap.casefold():
+            continue
+        try:
+            import_module(module_name)
+        except Exception as exc:
+            problems.append(
+                f"BETA.md claims a {token} adapter but importing {module_name} failed: {exc}"
+            )
+
+    if problems:
         return {
-            "name": "beta_roadmap",
+            "name": "beta_roadmap_claims",
             "status": "error",
-            "message": "BETA.md is missing roadmap items: " + ", ".join(missing),
-            "action": "Update BETA.md so beta work tracks product-grade memory behavior and release criteria.",
+            "message": "BETA.md claims do not match the code: " + "; ".join(problems),
+            "action": "Reconcile BETA.md with the CLI: rename the claim or restore the command, workload, or adapter it names.",
         }
     return {
-        "name": "beta_roadmap",
+        "name": "beta_roadmap_claims",
         "status": "ok",
-        "message": "BETA.md tracks beta goals, remaining product work, gates, and release criteria",
+        "message": (
+            "BETA.md claims resolve against the code: "
+            f"{len(BETA_BENCHMARK_LANES)} benchmark lanes dispatchable, "
+            "every cited zaxy command resolves to a canonical (non-deprecated) form, "
+            "and the claimed adapters import without their frameworks installed"
+        ),
     }
 
 

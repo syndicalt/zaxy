@@ -9190,6 +9190,27 @@ def test_top_level_help_renders_visible_panels_in_order() -> None:
     assert CliRunner().invoke(app, ["capture-soak", "--help"]).exit_code == 0
 
 
+def test_benchmark_rejects_a_workload_outside_the_registered_allow_list() -> None:
+    """`zaxy benchmark` refuses any --workload not in BENCHMARK_WORKLOADS, before doing work."""
+    from zaxy.cli.benchmarks import BENCHMARK_WORKLOADS
+
+    result = CliRunner().invoke(app, ["benchmark", "--workload", "temporal-lane"])
+
+    assert result.exit_code != 0
+    assert "temporal-recall" in result.output
+    assert "temporal-lane" not in BENCHMARK_WORKLOADS
+
+
+def test_benchmark_workload_help_lists_every_registered_workload() -> None:
+    """The --workload help text is generated from BENCHMARK_WORKLOADS, so it cannot drift."""
+    from zaxy.cli.benchmarks import BENCHMARK_WORKLOADS
+
+    output = CliRunner().invoke(app, ["benchmark", "--help"]).output
+
+    for workload in BENCHMARK_WORKLOADS:
+        assert workload in output
+
+
 def test_flat_families_are_grouped_with_deprecated_aliases() -> None:
     """Phase 2: flat command families live under groups; old flat names stay as
     hidden, deprecated aliases that still run."""
