@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from zaxy.event import Event
 from zaxy.extract.core import (
     ExtractedEdge,
@@ -500,3 +502,18 @@ def _extract_code_coverage_indexed(event: Event) -> ExtractionResult:
         edges=[edge],
         source_event_seq=event.seq,
     )
+
+
+# The code-intelligence vertical as a named, public surface. The functions above
+# stay registered in-tree by their @register decorators; this map is the shared
+# core that lets the reference plugin (examples/plugins/zaxy_codeintel_plugin)
+# install the exact same extractors through the external PluginAPI, so the
+# plugin API is exercised against a real vertical without forking the logic.
+CODE_INTELLIGENCE_EXTRACTORS: dict[str, Callable[[Event], ExtractionResult]] = {
+    "code.file.indexed": _extract_code_file_indexed,
+    "code.symbol.indexed": _extract_code_symbol_indexed,
+    "code.import.indexed": _extract_code_import_indexed,
+    "code.dependency.indexed": _extract_code_dependency_indexed,
+    "code.call.indexed": _extract_code_call_indexed,
+    "code.coverage.indexed": _extract_code_coverage_indexed,
+}

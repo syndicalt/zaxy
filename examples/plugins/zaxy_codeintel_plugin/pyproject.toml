@@ -1,0 +1,25 @@
+[project]
+name = "zaxy-codeintel-plugin"
+version = "0.1.0"
+description = "Reference external plugin for Zaxy: the six-language code-intelligence vertical"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "Zaxy Contributors" }
+]
+# Shares the host's extractor implementations rather than vendoring them, so the
+# in-tree and plugin paths can never drift. See the module docstring.
+dependencies = [
+    "zaxy-memory>=3.2.0",
+]
+
+[project.entry-points."zaxy.plugins"]
+codeintel = "zaxy_codeintel_plugin:PLUGIN"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["zaxy_codeintel_plugin"]
