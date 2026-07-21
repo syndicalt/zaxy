@@ -17,6 +17,25 @@ from zaxy.cli.runtime import (
     app,
 )
 
+# Single source of truth for ``zaxy benchmark --workload`` values: it renders the
+# option help, rejects unknown values before any workload is built, and is what
+# the beta-readiness roadmap gate resolves BETA.md's ``--workload`` claims
+# against. Renaming a lane here without renaming it in BETA.md turns that gate
+# red, which is the point — the names in the docs and the names the CLI accepts
+# are one fact, not two.
+BENCHMARK_WORKLOADS: tuple[str, ...] = (
+    "fixture",
+    "statistical",
+    "frozen",
+    "suite",
+    "consolidation",
+    "context-collapse",
+    "graph-traversal",
+    "source-recall",
+    "temporal-recall",
+    "longmemeval",
+)
+
 
 def _parse_benchmark_baselines(value: str, *, allow_centroid: bool) -> tuple[str, ...]:
     """Parse the benchmark baseline selection string."""
@@ -290,10 +309,7 @@ def benchmark(
     ),
     workload: str = typer.Option(
         "fixture",
-        help=(
-            "Workload: fixture, statistical, frozen, suite, consolidation, "
-            "context-collapse, graph-traversal, source-recall, temporal-recall, or longmemeval"
-        ),
+        help="Workload: " + ", ".join(BENCHMARK_WORKLOADS),
     ),
     dataset: Path | None = typer.Option(  # noqa: B008
         None,
@@ -361,6 +377,12 @@ def benchmark(
 ) -> None:
     """Run live retrieval benchmarks against baseline memories and Zaxy."""
     import asyncio
+
+    if workload not in BENCHMARK_WORKLOADS:
+        raise typer.BadParameter(
+            f"workload must be one of: {', '.join(BENCHMARK_WORKLOADS)}",
+            param_hint="--workload",
+        )
 
     benchmark_module = _benchmark_module("benchmark")
     live_benchmark_module = _benchmark_module("live_benchmark")
@@ -517,11 +539,12 @@ def benchmark(
                     questions=questions,
                 )
             else:
+                # Unreachable while every name in BENCHMARK_WORKLOADS has a
+                # branch above; it fires if a name is added to the tuple without
+                # a builder, which is a coding error rather than user input.
                 raise typer.BadParameter(
-                    "workload must be 'fixture', 'statistical', 'frozen', "
-                    "'suite', 'consolidation', 'context-collapse', "
-                    "'graph-traversal', 'source-recall', 'temporal-recall', "
-                    "or 'longmemeval'"
+                    f"workload {workload!r} is registered but has no builder; "
+                    "add a branch for it in zaxy.cli.benchmarks.benchmark"
                 )
             corpus = corpus_from_event_log(eventlog)
             selected_baselines = _parse_benchmark_baselines(

@@ -13,8 +13,12 @@ Zaxy's beta goal is to prove the product thesis: **Git for LLM memory**. A sessi
 - Clean-repo onboarding is gated by `scripts/beta-uat.sh`.
 - `zaxy doctor --beta-readiness` verifies 15 release/beta gates (not the 7 once
   listed here) — run `zaxy doctor --beta-readiness --json` for the current set.
-  Caveat: its `_check_beta_roadmap` check is a keyword grep against *this file*,
-  so it is self-satisfying and proves nothing about the code.
+  Its `beta_roadmap_claims` check resolves *this file's* claims against the code:
+  every `--workload` lane named below must be in the benchmark CLI's registered
+  allow-list, every backticked `zaxy ...` command must resolve in the live Typer
+  tree as a canonical (non-deprecated) form, and every adapter claimed below must
+  import with no framework installed. It was previously a keyword grep against
+  this file, which was self-satisfying and proved nothing about the code.
 - Deterministic Codex capture is the default local path. Packet capture remains optional diagnostics, not the default memory path.
 - Memory Bootstrap and Memory Checkout are the model-facing contracts for discovering capabilities and retrieving cited current context.
 
