@@ -2675,8 +2675,12 @@ async def _socket_mcp_transport(
     writer: asyncio.StreamWriter,
 ) -> AsyncIterator[tuple[Any, Any]]:
     """Adapt a Unix socket line stream to MCP's in-memory transport."""
-    read_stream_writer, read_stream = anyio.create_memory_object_stream(0)
-    write_stream, write_stream_reader = anyio.create_memory_object_stream(0)
+    # anyio >= 4.2 types create_memory_object_stream as a generic class, so the
+    # item type has to be supplied explicitly or mypy --strict cannot infer it.
+    # The read side carries decode failures alongside messages because MCP's
+    # session loop reports malformed frames rather than tearing down the stream.
+    read_stream_writer, read_stream = anyio.create_memory_object_stream[SessionMessage | Exception](0)
+    write_stream, write_stream_reader = anyio.create_memory_object_stream[SessionMessage](0)
 
     async def socket_reader() -> None:
         try:
