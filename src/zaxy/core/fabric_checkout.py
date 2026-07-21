@@ -46,6 +46,7 @@ from zaxy.core.checkout_build import (
 )
 from zaxy.core.models import ContextAssembly, MemoryCheckout
 from zaxy.editable import MEMORY_ROLLBACK_EVENT_TYPE
+from zaxy.learned_context import learned_context_path, load_learned_context
 from zaxy.long_horizon import build_long_horizon_plan
 from zaxy.purpose import PurposeProfile, purpose_profile, purpose_retrieval_policy
 from zaxy.recall import build_recall_candidate_set
@@ -75,6 +76,7 @@ class CheckoutHost(Protocol):
     # Runtime attributes (read; ``_connected`` is also written on degrade).
     session_manager: Any
     settings: Any
+    eventloom_path: Any
     context_assembly_policy: Any
     retrieval_profile: Any
     refs: Any
@@ -458,6 +460,15 @@ class CheckoutOps:
         long_horizon_contexts: list[Context] = []
         long_horizon_summary: dict[str, Any] | None = None
         if long_horizon_engaged:
+            # I2: the learned-context artifact is a second remote-tier source.
+            # Loading fails closed — a stale, unvouched, or unreadable artifact
+            # yields no projection and a visible diagnostic, never partial trust.
+            learned_context = None
+            if getattr(self._host.settings, "learned_context_enabled", False):
+                learned_context = load_learned_context(
+                    learned_context_path(self._host.eventloom_path, sid),
+                    session_events,
+                )
             plan = build_long_horizon_plan(
                 session_events,
                 session_id=sid,
@@ -466,6 +477,8 @@ class CheckoutOps:
                     max_recent_events or 0,
                 ),
                 budget=prompt_limit,
+                learned_context=learned_context,
+                query=query,
             )
             long_horizon_summary = plan.to_diagnostics()
             long_horizon_contexts = plan.consolidated_contexts

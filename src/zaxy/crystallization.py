@@ -42,8 +42,15 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from zaxy.compaction import audit_event_log, build_compaction_projection
+from zaxy.compaction import CompactionProjection, audit_event_log, build_compaction_projection
 from zaxy.consolidation import build_consolidation_review_event
+from zaxy.learned_context import (
+    LEARNED_CONTEXT_EVENT_TYPE,
+    build_projection_built_payload,
+    covered_head,
+    learned_context_path,
+    write_learned_context,
+)
 from zaxy.metacognition import (
     build_reverify_request_event,
     summarize_metacognition_events,
@@ -181,8 +188,11 @@ async def run_crystallization_pass(
        emit a cited re-verification request. Deduped on the deterministic
        reverify id so re-runs add nothing.
     5. **Compaction** (opt-in) — audit the log and, only if the audit is
-       ``safe``, build the *additive* compaction projection and record a summary
-       (report-only; no projection file is written).
+       ``safe``, build the *additive* compaction projection and record a summary.
+       When ``learned_context_enabled`` is set the projection is additionally
+       persisted as an I2 learned-context artifact and a non-authoritative
+       ``crystallization.projection.built`` event records the build; with the
+       setting off (the default) nothing is written and the stage is report-only.
     6. **Salience diagnostic** — a read-only top-salient listing; no
        reinforcement is emitted here.
 
@@ -305,7 +315,19 @@ async def run_crystallization_pass(
     compaction_summary: dict[str, Any] | None = None
     if compaction:
         try:
-            compaction_summary = _run_compaction_diagnostic(eventlog)
+            compaction_summary, projection = _run_compaction_diagnostic(eventlog)
+            # I2: persisting is gated separately from building. With the gate off
+            # the pass behaves exactly as it did pre-I2 (build, report counts,
+            # write nothing), so the feature is inert by default on this path too.
+            if projection is not None and getattr(
+                fabric.settings, "learned_context_enabled", False
+            ):
+                compaction_summary = {
+                    **compaction_summary,
+                    "learned_context": await _persist_learned_context(
+                        fabric, eventlog, projection, session_id=sid, actor=actor
+                    ),
+                }
         except Exception as exc:
             _record_stage_error(stage_errors, STAGE_COMPACTION, exc)
 
@@ -510,8 +532,15 @@ def _register_spec(
     return False
 
 
-def _run_compaction_diagnostic(eventlog: Any) -> dict[str, Any]:
-    """Audit the log and, only if safe, build the additive compaction projection."""
+def _run_compaction_diagnostic(
+    eventlog: Any,
+) -> tuple[dict[str, Any], CompactionProjection | None]:
+    """Audit the log and, only if safe, build the additive compaction projection.
+
+    Returns the summary alongside the projection itself so the caller can persist
+    it as an I2 learned-context artifact; before I2 the projection was built and
+    discarded here.
+    """
     audit = audit_event_log(eventlog)
     if not audit.safe:
         return {
@@ -520,7 +549,7 @@ def _run_compaction_diagnostic(eventlog: Any) -> dict[str, Any]:
             "identity_recall": audit.identity_recall,
             "citation_coverage": audit.citation_coverage,
             "unsafe_reasons": list(audit.unsafe_reasons),
-        }
+        }, None
     projection = build_compaction_projection(eventlog)
     return {
         "safe": True,
@@ -530,6 +559,58 @@ def _run_compaction_diagnostic(eventlog: Any) -> dict[str, Any]:
         "projection_id": projection.projection_id,
         "identity_recall": audit.identity_recall,
         "citation_coverage": audit.citation_coverage,
+    }, projection
+
+
+async def _persist_learned_context(
+    fabric: MemoryFabric,
+    eventlog: Any,
+    projection: CompactionProjection,
+    *,
+    session_id: str,
+    actor: str,
+) -> dict[str, Any]:
+    """Persist the projection as an I2 artifact and record the build in the log.
+
+    The artifact is written *before* the event is appended. That ordering is the
+    safe one: a crash between the two leaves a file no event vouches for, and an
+    unvouched file is defined as untrusted and ignored on load. The reverse order
+    would leave an event pointing at a file that does not exist, which is merely
+    a wasted lookup — but writing first also means the covered head is the log tip
+    as it stood when the projection was built, not after this event advanced it.
+    """
+    events = eventlog.read_all()
+    head = covered_head(events)
+    if head is None:
+        return {"persisted": False, "reason": "empty_log"}
+    covered_seq, covered_hash = head
+    path = learned_context_path(fabric.eventloom_path, session_id)
+    write_learned_context(
+        projection,
+        path,
+        session_id=session_id,
+        covered_seq=covered_seq,
+        covered_hash=covered_hash,
+    )
+    payload = build_projection_built_payload(
+        projection,
+        session_id=session_id,
+        covered_seq=covered_seq,
+        covered_hash=covered_hash,
+        artifact_path=str(path),
+    )
+    await fabric.append(
+        LEARNED_CONTEXT_EVENT_TYPE,
+        actor,
+        payload=payload,
+        session_id=session_id,
+    )
+    return {
+        "persisted": True,
+        "artifact_path": str(path),
+        "covered_seq": covered_seq,
+        "covered_hash": covered_hash,
+        "record_count": payload["record_count"],
     }
 
 
