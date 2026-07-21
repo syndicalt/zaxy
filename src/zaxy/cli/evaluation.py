@@ -691,7 +691,11 @@ def coordinate_report(
 ) -> None:
     """Report a worker-local finding."""
     from zaxy.coordination import CoordinationManager
-    from zaxy.coordination_git import build_test_result_evidence, capture_git_metadata
+    from zaxy.coordination_git import (
+        GitCaptureError,
+        build_test_result_evidence,
+        capture_git_metadata,
+    )
 
     evidence_items = [_coordinate_evidence_item(item) for item in evidence or []]
     test_results = []
@@ -705,7 +709,10 @@ def coordinate_report(
         )
     git_target = git_metadata or (git_workspace if capture_git else None)
     if git_target is not None:
-        evidence_items.append(capture_git_metadata(git_target, test_results=test_results))
+        try:
+            evidence_items.append(capture_git_metadata(git_target, test_results=test_results))
+        except GitCaptureError as exc:
+            raise typer.BadParameter(str(exc)) from exc
     evidence_items.extend(test_results)
     result = CoordinationManager(eventloom_path=eventloom_path).report_finding(
         mission,

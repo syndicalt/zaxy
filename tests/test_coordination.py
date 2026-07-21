@@ -10,7 +10,14 @@ from pathlib import Path
 import pytest
 
 from zaxy.coordination import ConflictState, CoordinationManager, LocalSemanticConflictDetector
-from zaxy.coordination_git import build_test_result_evidence, capture_git_metadata
+from zaxy.coordination_git import (
+    DIFF_TRUNCATION_MARKER,
+    GIT_COMMAND_TIMEOUT_SECONDS,
+    MAX_DIFF_SUMMARY_BYTES,
+    GitCaptureError,
+    build_test_result_evidence,
+    capture_git_metadata,
+)
 from zaxy.salience import EventRef, SalienceLedger
 
 _EXAMPLE_PATH = Path(__file__).resolve().parents[1] / "examples" / "coordinate_three_worker_project.py"
@@ -430,7 +437,8 @@ def test_capture_git_metadata_reports_branch_worktree_changed_files_and_diff(tmp
 def test_capture_git_metadata_uses_read_only_git_invocations(monkeypatch, tmp_path: Path) -> None:
     calls: list[tuple[list[str], dict[str, str]]] = []
 
-    def fake_run(cmd, *, cwd, check, capture_output, text, env):  # type: ignore[no-untyped-def]
+    def fake_run(cmd, *, cwd, check, capture_output, text, env, timeout):  # type: ignore[no-untyped-def]
+        assert timeout == GIT_COMMAND_TIMEOUT_SECONDS
         calls.append((list(cmd), dict(env)))
         args = tuple(cmd[2:])
         stdout = {
@@ -453,6 +461,105 @@ def test_capture_git_metadata_uses_read_only_git_invocations(monkeypatch, tmp_pa
     assert calls
     assert all(call[0][0:2] == ["git", "--no-optional-locks"] for call in calls)
     assert all(call[1]["GIT_OPTIONAL_LOCKS"] == "0" for call in calls)
+
+
+def test_capture_git_metadata_raises_typed_error_outside_a_git_repository(tmp_path: Path) -> None:
+    """A non-git workspace should raise GitCaptureError, not a raw CalledProcessError."""
+    workspace = tmp_path / "plain"
+    workspace.mkdir()
+
+    with pytest.raises(GitCaptureError) as excinfo:
+        capture_git_metadata(workspace)
+
+    assert not isinstance(excinfo.value, subprocess.CalledProcessError)
+    assert "rev-parse" in str(excinfo.value)
+
+
+def test_capture_git_metadata_raises_typed_error_when_git_is_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A missing git binary should surface as GitCaptureError, not FileNotFoundError."""
+
+    def fake_run(*args: object, **kwargs: object) -> object:
+        raise FileNotFoundError(2, "No such file or directory", "git")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(GitCaptureError, match="git executable not found"):
+        capture_git_metadata(tmp_path)
+
+
+def test_capture_git_metadata_raises_typed_error_for_a_missing_workspace(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A missing workspace is reported as such rather than blamed on a missing git."""
+
+    def fake_run(*args: object, **kwargs: object) -> object:
+        raise FileNotFoundError(2, "No such file or directory", "git")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(GitCaptureError, match="does not exist"):
+        capture_git_metadata(tmp_path / "absent")
+
+
+def test_capture_git_metadata_raises_typed_error_when_git_times_out(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A hung git is bounded by a timeout and reported as GitCaptureError."""
+
+    def fake_run(cmd: object, **kwargs: object) -> object:
+        raise subprocess.TimeoutExpired(cmd, GIT_COMMAND_TIMEOUT_SECONDS)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(GitCaptureError, match="timed out"):
+        capture_git_metadata(tmp_path)
+
+
+def test_capture_git_metadata_marks_a_truncated_diff_summary(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An oversized diff summary is marked truncated and stays within the byte ceiling."""
+    oversized = "d" * (MAX_DIFF_SUMMARY_BYTES * 2)
+
+    def fake_run(cmd: list[str], **kwargs: object) -> object:
+        args = tuple(cmd[2:])
+        stdout = {
+            ("rev-parse", "--show-toplevel"): str(tmp_path),
+            ("rev-parse", "--abbrev-ref", "HEAD"): "main",
+            ("rev-parse", "HEAD"): "a" * 40,
+            ("status", "--porcelain=v1", "-z", "--untracked-files=all"): "",
+            ("diff", "--stat", "--summary"): oversized,
+            ("worktree", "list", "--porcelain"): "",
+        }[args]
+        return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    metadata = capture_git_metadata(tmp_path)
+
+    assert metadata["diff_summary_truncated"] is True
+    assert metadata["diff_summary"].endswith(DIFF_TRUNCATION_MARKER)
+    assert len(metadata["diff_summary"].encode("utf-8")) <= MAX_DIFF_SUMMARY_BYTES
+
+
+def test_capture_git_metadata_leaves_a_complete_diff_summary_unmarked(tmp_path: Path) -> None:
+    """A diff summary under the ceiling is reported as complete and carries no marker."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init")
+    _git(repo, "config", "user.email", "test@example.test")
+    _git(repo, "config", "user.name", "Zaxy Test")
+    (repo / "auth.py").write_text("TOKEN_TTL = 10\n", encoding="utf-8")
+    _git(repo, "add", "auth.py")
+    _git(repo, "commit", "-m", "initial")
+    (repo / "auth.py").write_text("TOKEN_TTL = 20\n", encoding="utf-8")
+
+    metadata = capture_git_metadata(repo)
+
+    assert metadata["diff_summary_truncated"] is False
+    assert DIFF_TRUNCATION_MARKER not in metadata["diff_summary"]
 
 
 def test_coordination_ledger_counts_test_result_evidence(tmp_path: Path) -> None:

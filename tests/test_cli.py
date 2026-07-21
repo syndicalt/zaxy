@@ -1390,6 +1390,39 @@ def test_coordinate_report_cli_rejects_malformed_test_result_json(tmp_path: Path
     assert CoordinationManager(eventloom_path=eventloom).brief("auth-main").pending_findings == []
 
 
+def test_coordinate_report_cli_rejects_a_non_git_workspace(tmp_path: Path) -> None:
+    """Git capture failures surface as a usage error, mirroring the test-result path."""
+    runner = CliRunner()
+    eventloom = tmp_path / ".eventloom"
+    workspace = tmp_path / "plain"
+    workspace.mkdir()
+    runner.invoke(app, ["coordinate", "start", "Ship auth refactor", "--mission", "auth-main", "--eventloom-path", str(eventloom)])
+    runner.invoke(app, ["coordinate", "worker", "create", "--mission", "auth-main", "--worker", "auth-api", "--eventloom-path", str(eventloom)])
+
+    result = runner.invoke(
+        app,
+        [
+            "coordinate",
+            "report",
+            "--mission",
+            "auth-main",
+            "--worker",
+            "auth-api",
+            "--summary",
+            "Finding from a workspace that is not a repository.",
+            "--git-metadata",
+            str(workspace),
+            "--eventloom-path",
+            str(eventloom),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "CalledProcessError" not in result.output
+    assert "rev-parse" in result.output
+    assert CoordinationManager(eventloom_path=eventloom).brief("auth-main").pending_findings == []
+
+
 def test_coordinate_cli_checkout_returns_accepted_state_with_optional_diagnostics(tmp_path: Path) -> None:
     """coordinate checkout should keep worker scratch state out of default prompt context."""
     runner = CliRunner()
