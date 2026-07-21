@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shlex
 import subprocess
 import sys
@@ -21,6 +22,19 @@ from zaxy.cli import runtime as cli_runtime
 from zaxy.coordination import CoordinationManager
 from zaxy.event import EventLog
 from zaxy.release import package_version
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _cli_error_text(output: str) -> str:
+    """Flatten a Rich error panel to plain, single-spaced text for substring assertions.
+
+    Rich enables colour when it detects CI, so the message carries ANSI style
+    codes that land *inside* the phrase being matched, and it wraps the text
+    inside a bordered panel. Strip the escapes and the border, then collapse
+    whitespace, so an assertion tests the message rather than the terminal.
+    """
+    return " ".join(_ANSI_RE.sub("", output).replace("\u2502", " ").split())
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -9901,7 +9915,7 @@ def test_coordinate_promote_cli_refuses_an_unreviewed_finding(tmp_path: Path) ->
 
     assert result.exit_code != 0
     # Rich wraps the error inside a bordered panel, so compare on collapsed whitespace.
-    assert "no prior accepted review" in " ".join(result.output.replace("│", " ").split())
+    assert "no prior accepted review" in _cli_error_text(result.output)
 
 
 def test_coordinate_promote_cli_force_flag_overrides_the_gate(tmp_path: Path) -> None:
@@ -9951,4 +9965,4 @@ def test_coordinate_apply_approval_cli_refuses_an_ungated_promotion(tmp_path: Pa
     )
 
     assert result.exit_code != 0
-    assert "no evidence citations" in " ".join(result.output.replace("│", " ").split())
+    assert "no evidence citations" in _cli_error_text(result.output)
