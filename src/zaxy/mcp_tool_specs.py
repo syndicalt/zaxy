@@ -86,6 +86,21 @@ TOOLS = [
                     "oneOf": [{"type": "string"}, {"type": "object"}],
                     "description": "Purpose profile name or object used to condition checkout guidance.",
                 },
+                "fleet_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Fleet IDs whose promoted, non-authoritative memory should be "
+                        "considered; each lane is gated on agent_id enrollment and trust."
+                    ),
+                },
+                "agent_id": {
+                    "type": "string",
+                    "description": (
+                        "Fleet agent identity used to gate the fleet lane; a non-enrolled "
+                        "agent receives no fleet memory."
+                    ),
+                },
             },
             "additionalProperties": False,
         },
