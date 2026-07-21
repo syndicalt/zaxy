@@ -206,8 +206,12 @@ trust it over current code or `docs/benchmarks.md`.
   `uv venv .venv && VIRTUAL_ENV=.venv uv pip install -e ".[dev,embedded,export]"
   -c constraints/ci.txt`. The `-c` matches CI's pinned resolution.
 - `secrets/` is gitignored, file-based creds; never commit, never echo contents.
-- Zaxy's own memory hooks run in this repo (`.claude/settings.local.json`): session
-  `zaxy-default`, with Stop-hook transcript capture. Breaking `Settings()` breaks them.
+- Zaxy's own memory hooks are *intended* to run in this repo
+  (`.claude/settings.local.json`): session `zaxy-default`, with Stop-hook
+  transcript capture. Breaking `Settings()` breaks them. **Verify before relying
+  on it** — as of 2026-07-21 that file does not exist in this checkout, so no
+  hooks are registered and `zaxy capture soak` reports 0 of 4 lanes active
+  (`reports/capture-soak/2026-07-21/`). Run `zaxy install` to register them.
 - Cloudflare access (`cf` CLI OAuth) is DNS+Workers-scoped only; zaxy.io redirects
   (docs., www.) are a Worker named `docs-redirect` — load-bearing, don't delete.
 - GitHub Pages deploys from master; `web/public/CNAME` = `zaxy.io`.
