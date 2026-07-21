@@ -884,32 +884,27 @@ class TestDeferredSurfacedReinforcement:
 
         assert deferred == inline
 
-    async def test_unflushed_reinforcement_is_invisible_to_the_next_checkout(
+    async def test_next_checkout_settles_pending_reinforcement_deterministically(
         self, tmp_path: Path
     ) -> None:
-        """Salience lags by at most one flush window; the next packet ranks without it."""
+        """A checkout settles queued reinforcements before reading, so repeats are identical."""
         fabric = _wired_fabric(tmp_path)
         await _seed_decision(fabric)
 
         first = await fabric.checkout_memory(
             "salience ledger decision", session_id="agent-1", limit=3
         )
-        unflushed = await fabric.checkout_memory(
+        # The first packet enqueued its surfaced reinforcement; the second settles
+        # it before assembling, so salience is deterministically present rather
+        # than depending on whether the background drain happened to win.
+        second = await fabric.checkout_memory(
             "salience ledger decision", session_id="agent-1", limit=3
         )
-        # Nothing has landed yet, so the second packet sees the same (empty)
-        # salience state the first one did.
+
         assert "salience" not in first.diagnostics
-        assert "salience" not in unflushed.diagnostics
-
-        await fabric.flush_pending_reinforcements()
-        after_flush = await fabric.checkout_memory(
-            "salience ledger decision", session_id="agent-1", limit=3
-        )
-
-        assert "salience" in after_flush.diagnostics
-        # Ranking is unaffected either way — salience is a soft signal.
-        assert after_flush.current_facts == first.current_facts
+        assert "salience" in second.diagnostics
+        # Ranking is unaffected either way -- salience is a soft signal.
+        assert second.current_facts == first.current_facts
 
     async def test_close_flushes_pending_reinforcement(self, tmp_path: Path) -> None:
         """A prompt close must land queued writes, not drop them."""

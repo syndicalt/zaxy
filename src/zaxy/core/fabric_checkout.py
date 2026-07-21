@@ -129,6 +129,8 @@ class CheckoutHost(Protocol):
         long_horizon: bool | None = ...,
     ) -> ContextAssembly: ...
 
+    async def flush_pending_reinforcements(self) -> None: ...
+
     def _fleet_lane_contexts(
         self, fleet_ids: list[str] | None, *, agent_id: str
     ) -> list[Context]: ...
@@ -365,6 +367,15 @@ class CheckoutOps:
         the session exceeds ``long_horizon_recent_window``, older history is
         surfaced as cited, non-authoritative consolidation candidates.
         """
+        # Settle deferred reinforcements before reading. Without this the
+        # assembly races the background drain: whether the previous turn's
+        # reinforcement has landed decides this turn's salience, so two
+        # identical checkouts can return different prompts. Prompt caching
+        # depends on byte-identical repeats, so racy staleness is worse than
+        # either consistently-stale or consistently-fresh. In the common case
+        # the drain already emptied the queue during the inter-turn gap and this
+        # is a no-op, which is what preserves the deferral's latency win.
+        await self._host.flush_pending_reinforcements()
         sid = validate_session_id(session_id)
         prompt_limit = validate_limit(limit)
         base_candidate_limit = prompt_limit if recall_limit is None else validate_limit(max(prompt_limit, recall_limit))
