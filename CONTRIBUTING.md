@@ -27,9 +27,31 @@ provenance, bypass tests, or depend on local-only benchmark artifacts are not.
 ## Local Setup
 
 ```bash
-python -m pip install -e ".[dev]"
+python -m pip install -e ".[dev]" -c constraints/ci.txt
 zaxy status
 ```
+
+`constraints/ci.txt` pins the exact dependency set CI resolves, so a local
+failure reproduces on CI and vice versa. Installing without `-c` still works and
+is sometimes what you want (checking a newer library), but then your environment
+is not the one the gates run in.
+
+The constraints affect CI and dev environments only — they are not part of the
+published wheel's metadata, so `zaxy-memory` stays flexible for users.
+
+### Refreshing the pins
+
+Dependency updates are deliberate, not incidental:
+
+```bash
+uv pip compile --extra dev --python-version 3.11 \
+  --output-file constraints/ci.txt pyproject.toml
+```
+
+Do that in its own PR, and fix whatever the new versions surface in that same
+PR. The scheduled `dependency-drift` workflow resolves unpinned on purpose, so
+upstream breakage shows up there on a schedule rather than on an unrelated PR —
+which is exactly how the mypy gate broke on master in July 2026.
 
 Use Docker services only for explicit integration work or backend comparisons.
 Unit tests should mock Neo4j, Pathlight, hosted model providers, and filesystem
