@@ -51,6 +51,8 @@ from zaxy.embedded_graph_internals import (
     _bm25_score_from_precomputed,
     _causal_edge_metadata_from_row,
     _dense_vector_results,
+    _edge_provenance_from_row,
+    _EdgeProvenance,
     _embedding_vector,
     _embedding_version,
     _entity_properties_json,
@@ -749,26 +751,33 @@ class EmbeddedGraphStore:
 
         frontier = set(start_keys)
         path_relations_by_key: dict[str, list[str]] = {start_key: [] for start_key in start_keys}
+        path_provenance_by_key: dict[str, list[_EdgeProvenance]] = {
+            start_key: [] for start_key in start_keys
+        }
         seen_sources = set(start_keys)
         found: dict[str, GraphEntity] = {}
         for _ in range(safe_depth):
             next_frontier: set[str] = set()
             for source_key in frontier:
                 source_path_relations = path_relations_by_key.get(source_key, [])
-                for target_key, target_entity, relation in index.adjacency.get(source_key, []):
+                source_path_provenance = path_provenance_by_key.get(source_key, [])
+                for target_key, target_entity, relation, provenance in index.adjacency.get(source_key, []):
                     if relation_type is not None and relation != relation_type:
                         continue
                     if target_key in start_keys:
                         continue
                     target_path_relations = [*source_path_relations, relation]
+                    target_path_provenance = [*source_path_provenance, provenance]
                     if target_key not in found:
                         found[target_key] = _entity_with_path_metadata(
                             target_entity,
                             relation_types=target_path_relations,
+                            provenance=target_path_provenance,
                         )
                     if target_key not in seen_sources:
                         seen_sources.add(target_key)
                         path_relations_by_key[target_key] = target_path_relations
+                        path_provenance_by_key[target_key] = target_path_provenance
                         next_frontier.add(target_key)
             frontier = next_frontier
             if not frontier:
@@ -941,7 +950,13 @@ class EmbeddedGraphStore:
                        target.properties_json,
                        target.session_id,
                        target.source_event_seq,
-                       target.source_event_hash
+                       target.source_event_hash,
+                       r.inferred,
+                       r.confidence,
+                       r.inference_method,
+                       r.source_event_seq,
+                       r.source_event_hash,
+                       r.evidence_json
                 """,
                 {"session_id": session_id},
             ).get_all()
@@ -978,11 +993,17 @@ class EmbeddedGraphStore:
                        target.properties_json,
                        target.session_id,
                        target.source_event_seq,
-                       target.source_event_hash
+                       target.source_event_hash,
+                       r.inferred,
+                       r.confidence,
+                       r.inference_method,
+                       r.source_event_seq,
+                       r.source_event_hash,
+                       r.evidence_json
                 """,
                 {"session_id": session_id, "temporal_point": temporal_point},
             ).get_all()
-        adjacency: dict[str, list[tuple[str, GraphEntity, str]]] = {}
+        adjacency: dict[str, list[tuple[str, GraphEntity, str, _EdgeProvenance]]] = {}
         keys_by_name: dict[str, set[str]] = {}
         entities_by_key: dict[str, GraphEntity] = {}
         for row in rows:
@@ -997,10 +1018,22 @@ class EmbeddedGraphStore:
                 entities_by_key[source_key] = source_entity
             target_entity = entities_by_key.get(target_key)
             if target_entity is None:
-                target_entity = _row_to_entity(list(row[12:]))
+                target_entity = _row_to_entity(list(row[12:21]))
                 entities_by_key[target_key] = target_entity
-            adjacency.setdefault(source_key, []).append((target_key, target_entity, relation))
-            adjacency.setdefault(target_key, []).append((source_key, source_entity, relation))
+            provenance = _edge_provenance_from_row(
+                inferred=row[21],
+                confidence=row[22],
+                inference_method=row[23],
+                source_event_seq=row[24],
+                source_event_hash=row[25],
+                evidence_json=row[26],
+            )
+            adjacency.setdefault(source_key, []).append(
+                (target_key, target_entity, relation, provenance)
+            )
+            adjacency.setdefault(target_key, []).append(
+                (source_key, source_entity, relation, provenance)
+            )
         return _TraversalIndex(adjacency=adjacency, keys_by_name=keys_by_name)
 
     async def has_traversal_edges(self, session_id: str = "default") -> bool:
