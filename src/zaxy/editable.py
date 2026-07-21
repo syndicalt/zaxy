@@ -37,10 +37,23 @@ MEMORY_CORRECTED_EVENT_TYPE = "memory.corrected"
 #: Event type for the explicit reversal of a prior evolution.
 MEMORY_ROLLBACK_EVENT_TYPE = "memory.rolled_back"
 
-#: The evolution events a rollback may reverse. Consolidation-acceptance
-#: rollback is the keystone (reverts the candidate to its prior review status);
-#: the preventive-rule, gate, correction, and fleet-review events are additive
-#: lifecycle markers a reversal can likewise neutralize on replay.
+#: The evolution events a rollback may reverse.
+#:
+#: Reversal is only as real as the replay that honours it, and today that
+#: differs per type:
+#:
+#: - ``consolidation.candidate.reviewed`` -- fully reversed; ``_reverts_descriptor``
+#:   restores the candidate's prior review status.
+#: - ``memory.rule.generated`` / ``memory.rule.proposed`` -- reversed at checkout
+#:   assembly: a rolled-back rule is excluded from every retrieval lane, the same
+#:   exclusion applied to a gate-withheld rule.
+#: - ``evolution.gate.evaluated``, ``fleet.promotion.reviewed``,
+#:   ``MEMORY_CORRECTED_EVENT_TYPE`` -- **audit markers only**. A rollback is
+#:   accepted and recorded, but nothing downstream reverses it yet. Verified for
+#:   corrections: after rolling one back, the corrected content still reaches the
+#:   prompt. Kept accepted rather than rejected so existing callers and the fleet
+#:   path keep working; making these effective is open work, and until then the
+#:   success response must not be read as "the change is undone".
 ROLLBACKABLE_EVENT_TYPES: frozenset[str] = frozenset(
     {
         "consolidation.candidate.reviewed",
