@@ -147,6 +147,21 @@ class Settings(BaseSettings):
             "comma-separated list (e.g. 'pkg_a:PLUGIN,pkg_b:PLUGIN')."
         ),
     )
+    plugins_out_of_process: Annotated[list[str], NoDecode] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("plugins_out_of_process", "ZAXY_PLUGINS_OUT_OF_PROCESS"),
+        description=(
+            "External Zaxy plugin import specs as 'module:attr' strings run in an "
+            "isolated subprocess instead of in-process. The host never imports these "
+            "modules, so a crashing or hanging plugin degrades instead of killing Zaxy."
+        ),
+    )
+    plugin_timeout_seconds: float = Field(
+        default=10.0,
+        gt=0.0,
+        validation_alias=AliasChoices("plugin_timeout_seconds", "ZAXY_PLUGIN_TIMEOUT_SECONDS"),
+        description="Per-request deadline for an out-of-process plugin worker, in seconds.",
+    )
 
     # ------------------------------------------------------------------
     # Memory evolution governance (Zaxy 3 / I4)
@@ -717,7 +732,7 @@ class Settings(BaseSettings):
             raise ValueError(f"{file_env} could not be read: {file_path}") from exc
         object.__setattr__(self, field_name, value)
 
-    @field_validator("plugins", mode="before")
+    @field_validator("plugins", "plugins_out_of_process", mode="before")
     @classmethod
     def _parse_plugins(cls, value: object) -> list[str]:
         """Accept a comma-separated string (env) or a list of import specs."""

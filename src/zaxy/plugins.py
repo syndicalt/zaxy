@@ -15,13 +15,23 @@ sources:
 
 Each plugin exposes ``name``/``version`` attributes and a ``register(api)``
 method that receives a :class:`PluginAPI`. Loading is **isolated** per plugin:
-a failure to import or register one plugin is logged and recorded, never raised,
-so a broken third-party plugin can never crash Zaxy. Loading is **idempotent**:
-the same plugin name is registered at most once per process.
+a failure to import or register one plugin is logged and recorded, never raised.
+That covers *exceptions* — it does not cover a segfault or an infinite loop in an
+in-process plugin (see below). Loading is **idempotent**: the same plugin name is
+registered at most once per process.
 
-This loads external *installed packages* in-process, the standard Python plugin
-pattern. True out-of-process / subprocess isolation is a documented future
-extension; see ``docs/plugins.md``.
+Both sources above load external *installed packages* in-process — the standard
+Python plugin pattern, and still the default. A plugin loaded this way runs with
+the host's full privileges, and a hard crash (segfault) or an infinite loop in it
+takes Zaxy down with it, because it *is* Zaxy's process.
+
+For plugins that need to be survivable rather than merely convenient,
+:attr:`~zaxy.config.Settings.plugins_out_of_process` (env
+``ZAXY_PLUGINS_OUT_OF_PROCESS``) runs the plugin in a subprocess instead; see
+:mod:`zaxy.plugin_subprocess`. That path gives **fault isolation and liveness**
+— a crashing or hanging plugin degrades to empty extractions and a recorded
+degraded operation — but it is explicitly **not a security sandbox**: the child
+runs as the same user with the same access as the host. See ``docs/plugins.md``.
 """
 
 from __future__ import annotations
@@ -260,9 +270,25 @@ def _load_spec(spec: PluginSpec, api: PluginAPI) -> PluginLoadResult:
 def load_plugins(settings: Settings) -> PluginLoadReport:
     """Discover and load all configured plugins, isolating per-plugin failures.
 
-    Idempotent: plugins whose ``name`` was already registered this process are
-    reported as ``loaded`` without re-running ``register()``.
+    Loads the in-process plugins first (entry points + ``settings.plugins``),
+    then any ``settings.plugins_out_of_process`` entries as supervised
+    subprocesses. Idempotent: plugins whose ``name`` was already registered this
+    process are reported as ``loaded`` without re-running ``register()``.
     """
     api = PluginAPI()
     results = [_load_spec(spec, api) for spec in discover_plugin_specs(settings)]
+    results.extend(_load_out_of_process(settings, api))
     return PluginLoadReport(results=tuple(results))
+
+
+def _load_out_of_process(settings: Settings, api: PluginAPI) -> list[PluginLoadResult]:
+    """Load subprocess-isolated plugins, never raising into the caller."""
+    if not getattr(settings, "plugins_out_of_process", None):
+        return []
+    try:
+        from zaxy.plugin_subprocess import load_out_of_process_plugins
+
+        return load_out_of_process_plugins(settings, api)
+    except Exception as exc:  # pragma: no cover - defensive; loader is itself isolated
+        logger.warning("Out-of-process plugin loading unavailable: %s", exc)
+        return []

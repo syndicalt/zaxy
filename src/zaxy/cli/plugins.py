@@ -1,8 +1,11 @@
 """CLI surface for inspecting external Zaxy plugins.
 
-``zaxy plugin list`` discovers plugins (installed ``zaxy.plugins`` entry points
-plus ``ZAXY_PLUGINS`` config specs), loads them with the same isolated, idempotent
-path the fabric uses, and reports each plugin's name/version/source/status/error.
+``zaxy plugin list`` discovers plugins (installed ``zaxy.plugins`` entry points,
+``ZAXY_PLUGINS`` config specs, and ``ZAXY_PLUGINS_OUT_OF_PROCESS`` subprocess
+plugins), loads them with the same isolated, idempotent path the fabric uses, and
+reports each plugin's name/version/source/status/error. Out-of-process plugins
+report ``source="subprocess"``; one that fails to start is listed as ``failed``
+with its error rather than being omitted.
 """
 
 from __future__ import annotations
