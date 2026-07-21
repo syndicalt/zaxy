@@ -1916,6 +1916,27 @@ def dashboard(
     """Start the local runtime dashboard."""
     from zaxy.dashboard import DashboardConfig, resolve_dashboard_scope, run_dashboard
 
+    # Fail closed, matching the SSE guard in `serve`. The dashboard has no
+    # authentication of any kind: with review enabled its routes append to
+    # Eventloom, so a non-loopback bind publishes an unauthenticated write
+    # surface to the network. The same-origin check in dashboard.py is a
+    # browser-only control and does not constrain a non-browser client.
+    if not _host_is_loopback(host):
+        if enable_coordinate_review:
+            raise typer.BadParameter(
+                f"refusing to bind the dashboard to non-loopback host {host!r} with "
+                "--enable-coordinate-review: the review and promotion routes write to "
+                "Eventloom and the dashboard has no authentication. Bind to 127.0.0.1 / "
+                "localhost, or drop --enable-coordinate-review to serve read-only.",
+                param_hint="--host",
+            )
+        typer.echo(
+            f"Warning: binding the dashboard to non-loopback host {host!r} exposes this "
+            "workspace's memory contents, unauthenticated, to anyone who can reach this "
+            "port.",
+            err=True,
+        )
+
     settings = _status_settings(workspace or Path("."))
     scope = resolve_dashboard_scope(
         DashboardConfig(
@@ -1954,8 +1975,8 @@ def _host_is_loopback(host: str) -> bool:
 
     ``localhost`` and any loopback IP literal (``127.0.0.0/8``, ``::1``) are
     loopback. A non-literal hostname could resolve to any interface, so it is
-    treated as non-loopback: the SSE guard fails closed rather than assuming an
-    unresolved name is safe.
+    treated as non-loopback: the SSE and dashboard guards fail closed rather
+    than assuming an unresolved name is safe.
     """
     normalized = host.strip().lower()
     if normalized == "localhost":
