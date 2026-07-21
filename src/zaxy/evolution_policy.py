@@ -7,15 +7,18 @@ auto-applied evolutions) the rollback window. Every gate decision is recorded as
 a non-authoritative, replayable Eventloom event (``evolution.gate.evaluated``),
 so the decision itself is auditable and reversible by replay.
 
-Zaxy 3 defaults to ``propose_only`` — the most conservative tier: evolutions are
-surfaced as candidates and never auto-promote without explicit review. This
-preserves Zaxy's load-bearing invariant (nothing auto-promotes to authority) and
-is the differentiator versus autonomous self-editing memory systems. See
-``ZAXY-3.md`` (initiative I4).
+Zaxy 3 defaults to ``auto_with_rollback``: an evolution whose confidence reaches
+its op's threshold auto-applies but stays reversible for the rollback window,
+and anything below threshold is held for review. The stricter tiers
+(``propose_only``, ``require_review``) are available globally or per-op for
+deployments wanting tighter guardrails. Either way Zaxy's load-bearing invariant
+holds — nothing auto-promotes to *authority*; gate decisions are themselves
+non-authoritative, replayable events. See ``ZAXY-3.md`` (initiative I4).
 """
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -119,11 +122,11 @@ def resolve_evolution_policy(settings: Any) -> MemoryEvolutionPolicy:
 
     Reads ``evolution_autonomy_default`` (default ``auto_with_rollback`` — auto-apply
     above threshold, reversible within the rollback window), ``evolution_rollback_window_seconds``,
-    and the optional per-op ``evolution_op_autonomy`` override string defensively
-    (missing attributes fall back to the defaults), so a minimal or mocked settings
-    object still yields a valid policy. The stricter tiers (``propose_only``,
-    ``require_review``) are available per-op or globally for deployments that want
-    tighter guardrails.
+    ``evolution_confidence_threshold``, and the optional per-op ``evolution_op_autonomy``
+    / ``evolution_op_thresholds`` override strings defensively (missing attributes fall
+    back to the defaults), so a minimal or mocked settings object still yields a valid
+    policy. The stricter tiers (``propose_only``, ``require_review``) are available per-op
+    or globally for deployments that want tighter guardrails.
     """
     default_tier = getattr(settings, "evolution_autonomy_default", None) or DEFAULT_AUTONOMY_TIER
     rollback = getattr(settings, "evolution_rollback_window_seconds", None)
@@ -132,10 +135,19 @@ def resolve_evolution_policy(settings: Any) -> MemoryEvolutionPolicy:
         if isinstance(rollback, int) and not isinstance(rollback, bool)
         else DEFAULT_ROLLBACK_WINDOW_SECONDS
     )
+    threshold = getattr(settings, "evolution_confidence_threshold", None)
+    default_threshold = (
+        float(threshold)
+        if isinstance(threshold, int | float) and not isinstance(threshold, bool)
+        else DEFAULT_CONFIDENCE_THRESHOLD
+    )
     op_tiers = parse_op_autonomy(getattr(settings, "evolution_op_autonomy", None))
+    op_thresholds = parse_op_thresholds(getattr(settings, "evolution_op_thresholds", None))
     return MemoryEvolutionPolicy(
         default_tier=str(default_tier),
         op_tiers=op_tiers,
+        op_thresholds=op_thresholds,
+        default_threshold=default_threshold,
         rollback_window_seconds=rollback_seconds,
     )
 
@@ -164,6 +176,42 @@ def parse_op_autonomy(spec: object) -> dict[str, str]:
         _validate_op(op)
         _validate_tier(tier, field_name=f"evolution_op_autonomy[{op}]")
         overrides[op] = tier
+    return overrides
+
+
+def parse_op_thresholds(spec: object) -> dict[str, float]:
+    """Parse a per-op confidence-threshold override string into a validated map.
+
+    Format: ``"op=0.9,op=0.7"`` (e.g. ``"forget=0.95,update=0.6"``). Empty/None
+    yields an empty map. Raises ``ValueError`` on an unknown op, an unparseable or
+    out-of-range threshold, or a malformed entry, so misconfiguration fails fast at
+    policy resolution rather than silently pinning an op to the default.
+    """
+    if spec is None:
+        return {}
+    if not isinstance(spec, str):
+        raise ValueError("evolution_op_thresholds must be a string")
+    overrides: dict[str, float] = {}
+    for raw_entry in spec.split(","):
+        entry = raw_entry.strip()
+        if not entry:
+            continue
+        if "=" not in entry:
+            raise ValueError(f"evolution_op_thresholds entry must be 'op=threshold': {entry!r}")
+        op, _, raw_threshold = entry.partition("=")
+        op = op.strip()
+        raw_threshold = raw_threshold.strip()
+        _validate_op(op)
+        try:
+            threshold = float(raw_threshold)
+        except ValueError:
+            raise ValueError(
+                f"evolution_op_thresholds[{op}] must be a number: {raw_threshold!r}"
+            ) from None
+        if not math.isfinite(threshold):
+            raise ValueError(f"evolution_op_thresholds[{op}] must be a finite number")
+        _validate_threshold(threshold, field_name=f"evolution_op_thresholds[{op}]")
+        overrides[op] = threshold
     return overrides
 
 

@@ -44,9 +44,11 @@ from typing import Any, NamedTuple, TypeGuard
 
 REINFORCEMENT_EVENT_TYPE = "memory.reinforcement"
 
-#: The single tuning table for reinforcement strength, ordered weak-to-strong
-#: signal (surfacing alone is weaker reinforcement than confirmed use;
-#: invalidation attenuates). Tuned by the forgetting lane, not by assertion.
+#: The single default tuning table for reinforcement strength, ordered
+#: weak-to-strong signal (surfacing alone is weaker reinforcement than confirmed
+#: use; invalidation attenuates). Per-deployment overrides go through the
+#: ``salience_reinforcement_multipliers`` setting; see
+#: :func:`parse_reinforcement_multipliers`.
 SALIENCE_REINFORCEMENT_MULTIPLIERS: Mapping[str, float] = MappingProxyType(
     {
         "surfaced": 1.05,
@@ -58,9 +60,8 @@ SALIENCE_REINFORCEMENT_MULTIPLIERS: Mapping[str, float] = MappingProxyType(
 
 REINFORCEMENT_KINDS: frozenset[str] = frozenset(SALIENCE_REINFORCEMENT_MULTIPLIERS)
 
-#: Recency decay half-life. A module constant (overridable per
-#: :class:`SalienceLedger`) rather than a ``Settings`` field in this
-#: increment; promotion to configuration happens with the forgetting lane.
+#: Default recency decay half-life, overridable per :class:`SalienceLedger` and
+#: per deployment via the ``salience_half_life_days`` setting.
 SALIENCE_HALF_LIFE_DAYS = 30.0
 
 #: Implicit salience of a memory that has never been reinforced.
@@ -68,9 +69,22 @@ SALIENCE_BASE = 1.0
 
 #: Clamp floor: attenuated memories never reach zero, so they stay rankable
 #: by explicit query and every attenuation remains reversible by replay.
+#:
+#: Deliberately a constant, not a setting. Together with :data:`SALIENCE_MAX` it
+#: defines the *domain* of a salience score rather than a tuning preference, and
+#: :data:`MAX_REINFORCEMENT_WEIGHT` derives from the ceiling to bound the
+#: per-event ``weight`` override — so the ceiling decides whether an appended
+#: event is *valid* (``_validate_weight``) and whether an already-sealed event
+#: still *parses* on replay (``_parse_multiplier``). Making it per-deployment
+#: would mean the same immutable log replays to different state — or silently
+#: drops events — depending on config, breaking the module's load-bearing
+#: guarantee that replay is a pure function of the log. Tunables that move score
+#: *values* (half-life, multipliers) are safe; bounds that move event *validity*
+#: are not.
 SALIENCE_MIN = 0.01
 
 #: Clamp ceiling: bounds multiplicative runaway from repeated reinforcement.
+#: Constant for the reason documented on :data:`SALIENCE_MIN`.
 SALIENCE_MAX = 10.0
 
 #: Upper bound for an explicit per-event ``weight`` override.
@@ -294,7 +308,12 @@ def build_invalidated_reinforcement_event(
     )
 
 
-def prediction_error_weight(kind: str, prediction_error: float) -> float:
+def prediction_error_weight(
+    kind: str,
+    prediction_error: float,
+    *,
+    multipliers: Mapping[str, float] | None = None,
+) -> float:
     """Scale a reinforcement multiplier by prediction error (surprise).
 
     Surprise-weighted reinforcement (a Rescorla-Wagner intuition): an outcome
@@ -318,15 +337,61 @@ def prediction_error_weight(kind: str, prediction_error: float) -> float:
         kind: A reinforcement kind in
             :data:`SALIENCE_REINFORCEMENT_MULTIPLIERS`.
         prediction_error: Surprise in ``[0.0, 1.0]`` (finite, non-bool).
+        multipliers: Optional per-deployment multiplier table replacing the
+            built-in one, so surprise scaling stays continuous with whatever
+            table the ledger folds with.
 
     Returns:
         The surprise-scaled multiplier, ready to pass as ``weight``.
     """
     kind = _validate_kind(kind)
     pe = _validate_prediction_error(prediction_error)
-    base = SALIENCE_REINFORCEMENT_MULTIPLIERS[kind]
+    table = SALIENCE_REINFORCEMENT_MULTIPLIERS if multipliers is None else multipliers
+    base = table.get(kind, SALIENCE_REINFORCEMENT_MULTIPLIERS[kind])
     weight = base + (base - 1.0) * (2.0 * pe - 1.0)
     return min(max(weight, MIN_REINFORCEMENT_WEIGHT), MAX_REINFORCEMENT_WEIGHT)
+
+
+def parse_reinforcement_multipliers(spec: object) -> dict[str, float]:
+    """Parse a per-kind multiplier override string into a full validated table.
+
+    Format: ``"kind=1.5,kind=0.2"`` (e.g. ``"surfaced=1.02,invalidated=0.1"``).
+    Overrides are layered over :data:`SALIENCE_REINFORCEMENT_MULTIPLIERS`, so the
+    result always covers every reinforcement kind and ``None``/empty yields the
+    defaults unchanged. Raises ``ValueError`` on an unknown kind, an unparseable or
+    out-of-range multiplier, or a malformed entry, so misconfiguration fails fast
+    rather than silently scoring memories with a half-applied table.
+    """
+    table = dict(SALIENCE_REINFORCEMENT_MULTIPLIERS)
+    if spec is None:
+        return table
+    if not isinstance(spec, str):
+        raise ValueError("salience_reinforcement_multipliers must be a string")
+    for raw_entry in spec.split(","):
+        entry = raw_entry.strip()
+        if not entry:
+            continue
+        if "=" not in entry:
+            raise ValueError(
+                f"salience_reinforcement_multipliers entry must be 'kind=multiplier': {entry!r}"
+            )
+        kind, _, raw_multiplier = entry.partition("=")
+        kind = _validate_kind(kind.strip())
+        raw_multiplier = raw_multiplier.strip()
+        try:
+            multiplier = float(raw_multiplier)
+        except ValueError:
+            raise ValueError(
+                f"salience_reinforcement_multipliers[{kind}] must be a number: "
+                f"{raw_multiplier!r}"
+            ) from None
+        if not math.isfinite(multiplier) or not 0.0 < multiplier <= MAX_REINFORCEMENT_WEIGHT:
+            raise ValueError(
+                f"salience_reinforcement_multipliers[{kind}] must be a finite number "
+                f"greater than 0.0 and at most {MAX_REINFORCEMENT_WEIGHT}"
+            )
+        table[kind] = multiplier
+    return table
 
 
 def event_ref_index(events: Iterable[object]) -> dict[int, tuple[str, str]]:
@@ -430,8 +495,13 @@ class SalienceLedger:
     produce identical state maps.
     """
 
-    def __init__(self, *, half_life_days: float = SALIENCE_HALF_LIFE_DAYS) -> None:
-        """Create a ledger with the given recency-decay half-life in days."""
+    def __init__(
+        self,
+        *,
+        half_life_days: float = SALIENCE_HALF_LIFE_DAYS,
+        multipliers: Mapping[str, float] | None = None,
+    ) -> None:
+        """Create a ledger with the given half-life and reinforcement multipliers."""
         if (
             isinstance(half_life_days, bool)
             or not isinstance(half_life_days, int | float)
@@ -440,6 +510,9 @@ class SalienceLedger:
         ):
             raise ValueError("half_life_days must be a finite number greater than 0")
         self._half_life_seconds = float(half_life_days) * _SECONDS_PER_DAY
+        self._multipliers: Mapping[str, float] = (
+            SALIENCE_REINFORCEMENT_MULTIPLIERS if multipliers is None else dict(multipliers)
+        )
 
     def replay(
         self,
@@ -497,7 +570,7 @@ class SalienceLedger:
         now: datetime,
     ) -> None:
         """Apply one event to a mutable state map shared by replay and apply."""
-        reinforcement = _parse_reinforcement(event)
+        reinforcement = _parse_reinforcement(event, multipliers=self._multipliers)
         if reinforcement is None:
             return
         for target in reinforcement.targets:
@@ -548,7 +621,11 @@ def _validate_now(now: datetime) -> None:
         raise ValueError("now must be a timezone-aware datetime")
 
 
-def _parse_reinforcement(event: object) -> _Reinforcement | None:
+def _parse_reinforcement(
+    event: object,
+    *,
+    multipliers: Mapping[str, float] = SALIENCE_REINFORCEMENT_MULTIPLIERS,
+) -> _Reinforcement | None:
     """Parse one replayed event, returning None for anything non-applicable.
 
     Replay and incremental apply must skip identically — a malformed
@@ -571,7 +648,7 @@ def _parse_reinforcement(event: object) -> _Reinforcement | None:
     targets = _parse_targets(payload.get("targets"))
     if targets is None:
         return None
-    multiplier = _parse_multiplier(payload.get("weight"), kind=kind)
+    multiplier = _parse_multiplier(payload.get("weight"), kind=kind, multipliers=multipliers)
     if multiplier is None:
         return None
     return _Reinforcement(kind=kind, targets=targets, multiplier=multiplier, at=at)
@@ -624,9 +701,14 @@ def _parse_targets(value: object) -> tuple[EventRef, ...] | None:
     return tuple(refs)
 
 
-def _parse_multiplier(weight: object, *, kind: str) -> float | None:
+def _parse_multiplier(
+    weight: object,
+    *,
+    kind: str,
+    multipliers: Mapping[str, float] = SALIENCE_REINFORCEMENT_MULTIPLIERS,
+) -> float | None:
     if weight is None:
-        return SALIENCE_REINFORCEMENT_MULTIPLIERS[kind]
+        return multipliers.get(kind, SALIENCE_REINFORCEMENT_MULTIPLIERS[kind])
     if (
         isinstance(weight, bool)
         or not isinstance(weight, int | float)

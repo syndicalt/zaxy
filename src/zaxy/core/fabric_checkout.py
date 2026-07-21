@@ -80,6 +80,7 @@ class CheckoutHost(Protocol):
     refs: Any
     _salience_floor: Any
     _salience_half_life_days: Any
+    _salience_multipliers: Any
     _connected: bool
 
     async def connect(self) -> None: ...
@@ -581,6 +582,7 @@ class CheckoutOps:
             cues=cues,
             salience_floor=self._host._salience_floor,
             salience_half_life_days=self._host._salience_half_life_days,
+            salience_multipliers=self._host._salience_multipliers,
         )
         if record_reinforcement:
             self._record_surfaced_reinforcement(

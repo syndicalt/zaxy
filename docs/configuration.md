@@ -168,7 +168,16 @@ context slots are reserved for those cited source chunks.
 many assembled context slots are reserved for that packet-derived memory.
 
 Cognitive memory settings include `SALIENCE_HALF_LIFE_DAYS`, `SALIENCE_FLOOR`,
-and `ENCODING_GATE_ENABLED`. `SALIENCE_HALF_LIFE_DAYS` (default `30.0`, must
+`SALIENCE_REINFORCEMENT_MULTIPLIERS`, and `ENCODING_GATE_ENABLED`.
+`SALIENCE_REINFORCEMENT_MULTIPLIERS` takes a `kind=multiplier,kind=multiplier`
+string (e.g. `surfaced=1.02,invalidated=0.1`) layered over the built-in table
+(`surfaced=1.05`, `confirmed=1.5`, `promoted=2.0`, `invalidated=0.2`); unnamed
+kinds keep their defaults and an unknown kind or a multiplier outside
+`(0.0, 10.0]` is rejected at startup. The clamp bounds themselves
+(`SALIENCE_MIN`/`SALIENCE_MAX`) are deliberately *not* configurable: the ceiling
+also bounds the per-event `weight` override, so making it per-deployment would
+let the same immutable log replay to different state depending on config.
+`SALIENCE_HALF_LIFE_DAYS` (default `30.0`, must
 be greater than zero) is the exponential recency-decay half-life used by the
 salience reinforcement ledger. `SALIENCE_FLOOR` (default `0.15`) only takes
 effect under the `RETRIEVAL_PROFILE=cognitive` profile (the default since
@@ -185,6 +194,26 @@ emit a weak reinforcement toward the duplicated memory, and the tags are
 purely observational — re-projecting with the gate off yields identical
 ranking state. See [retrieval.md](retrieval.md) for the `cognitive`
 retrieval profile.
+
+Governed memory-evolution settings control the autonomy gate every
+consolidate/update/forget/rule-generate/promote routes through.
+`EVOLUTION_AUTONOMY_DEFAULT` (default `auto_with_rollback`) selects the tier;
+`EVOLUTION_ROLLBACK_WINDOW_SECONDS` (default `86400`) is the reversal window for
+auto-applied evolutions. `EVOLUTION_CONFIDENCE_THRESHOLD` (default `0.85`) is the
+confidence at or above which an op may auto-apply under `auto_with_rollback`, and
+`EVOLUTION_OP_THRESHOLDS` overrides it per op as `op=0.9,op=0.7` (e.g.
+`forget=0.95`) — the threshold twin of `EVOLUTION_OP_AUTONOMY`'s `op=tier` form.
+Unknown ops and thresholds outside `[0.0, 1.0]` are rejected at startup rather
+than silently defaulting. Inspect the resolved policy with
+`zaxy memory evolution-policy --json`.
+
+`OUTCOME_RULE_CONFIDENCE_FAILURE` (default `0.9`) and
+`OUTCOME_RULE_CONFIDENCE_PARTIAL` (default `0.7`) set the confidence the outcome
+learning loop assigns to a preventive rule by the outcome that produced it. Read
+them together with `EVOLUTION_CONFIDENCE_THRESHOLD`: at the defaults, failure
+rules auto-apply (`0.9 >= 0.85`) and partial rules are held for review
+(`0.7 < 0.85`), and moving either side changes which learned rules may
+auto-apply.
 
 Supported secret-file variants are `NEO4J_PASSWORD_FILE`,
 `MCP_ADMIN_TOKEN_FILE`, `MCP_REMOTE_AUTH_TOKEN_FILE`,
