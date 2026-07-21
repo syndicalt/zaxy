@@ -191,6 +191,11 @@ where `edit_memory`/`rollback_memory`/`verified_forget` all call
   plugin, so the API has never been proven against a real vertical.
 - I8b cross-agent transfer is a `within_mission_proxy`; the benchmark imports
   nothing from `zaxy.fleet` and was never updated after I7 shipped.
+  **RESOLVED** (`bench/fleet-wide-cross-agent-transfer`): FleetBench `fleet-v2`
+  drives a real `FleetManager`, propagates through the I4 gate, and scores
+  enrolled agents' real `checkout_memory` with a never-enrolled negative
+  control. Run: `reports/benchmarks/fleet-transfer-v1/`. The same change retired
+  the empty-finding filler that made the scaling workload near-degenerate.
 - Crystallization has no stage-level error handling — a failing stage aborts
   before the summary event, leaving an unattended cron run with no audit record.
 - Benchmark workload fingerprints are computed but **not pinned**; no drift guard.

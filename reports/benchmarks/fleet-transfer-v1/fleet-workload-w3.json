@@ -1,0 +1,128 @@
+{
+  "cases": [
+    {
+      "case_id": "fleet-scaling-case-1",
+      "gold": {
+        "expected_accepted_claims": {
+          "auth.failure.cause": "expired-jwks-cache"
+        },
+        "expected_conflict_pairs": [
+          [
+            "finding-api-jwks",
+            "finding-ui-refresh"
+          ]
+        ],
+        "expected_duplicate_groups": {
+          "auth.failure.cause=expired-jwks-cache": [
+            "finding-api-jwks",
+            "finding-docs-jwks"
+          ]
+        },
+        "expected_missing_evidence": [
+          "finding-no-evidence"
+        ],
+        "expected_stale_findings": [
+          "finding-api-stale-flag"
+        ],
+        "final_questions": [
+          {
+            "expected_terms": [
+              "expired-jwks-cache"
+            ],
+            "forbidden_terms": [
+              "missing-browser-refresh",
+              "flag-missing"
+            ],
+            "query": "What is the accepted cause of auth failures?"
+          }
+        ]
+      },
+      "mission_id": "fleet-scaling-case-1",
+      "objective": "Resolve conflicting findings across a scaling worker fleet.",
+      "workers": [
+        {
+          "assignment": "Trace API auth failures",
+          "findings": [
+            {
+              "claim_key": "auth.failure.cause",
+              "claim_value": "expired-jwks-cache",
+              "confidence": 0.95,
+              "evidence": [
+                {
+                  "kind": "command",
+                  "reference": "pytest tests/test_auth.py -q"
+                }
+              ],
+              "finding_id": "finding-api-jwks",
+              "summary": "JWKS cache expiry is the accepted auth failure cause."
+            },
+            {
+              "claim_key": "auth.failure.cause",
+              "claim_value": "flag-missing",
+              "confidence": 0.31,
+              "evidence": [
+                {
+                  "kind": "transcript",
+                  "reference": "eventloom://old/events/3#abc",
+                  "stale": true,
+                  "superseded_by": "decision:jwks-cache"
+                }
+              ],
+              "finding_id": "finding-api-stale-flag",
+              "summary": "Stale flag-missing theory from old branch."
+            }
+          ],
+          "worker_id": "worker-api"
+        },
+        {
+          "assignment": "Check browser refresh flow",
+          "findings": [
+            {
+              "claim_key": "auth.failure.cause",
+              "claim_value": "missing-browser-refresh",
+              "confidence": 0.64,
+              "evidence": [
+                {
+                  "kind": "file",
+                  "reference": "src/ui/session.ts:42"
+                }
+              ],
+              "finding_id": "finding-ui-refresh",
+              "summary": "Browser refresh is the auth failure cause."
+            }
+          ],
+          "worker_id": "worker-ui"
+        },
+        {
+          "assignment": "Verify docs and historical notes",
+          "findings": [
+            {
+              "claim_key": "auth.failure.cause",
+              "claim_value": "expired-jwks-cache",
+              "confidence": 0.88,
+              "evidence": [
+                {
+                  "kind": "document",
+                  "reference": "docs/auth.md:12"
+                }
+              ],
+              "finding_id": "finding-docs-jwks",
+              "summary": "Docs independently confirm expired JWKS cache."
+            },
+            {
+              "claim_key": "auth.failure.secondary",
+              "claim_value": "oauth-scope-drift",
+              "confidence": 0.2,
+              "evidence": [],
+              "finding_id": "finding-no-evidence",
+              "summary": "Unbacked claim that OAuth scope drift caused failures."
+            }
+          ],
+          "worker_id": "worker-docs"
+        }
+      ]
+    }
+  ],
+  "fingerprint": "29511bcef086de1bb44a77eb56593538a076d49a8f4720c508f5b566670a7356",
+  "version": "fleet-v2"
+}

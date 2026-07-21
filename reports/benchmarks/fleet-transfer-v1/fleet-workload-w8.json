@@ -1,0 +1,404 @@
+{
+  "cases": [
+    {
+      "case_id": "fleet-scaling-case-1",
+      "gold": {
+        "expected_accepted_claims": {
+          "auth.failure.cause": "expired-jwks-cache",
+          "sub0.failure.cause": "sub0-token-replay",
+          "sub1.failure.cause": "sub1-token-replay",
+          "sub2.failure.cause": "sub2-token-replay",
+          "sub3.failure.cause": "sub3-token-replay",
+          "sub4.failure.cause": "sub4-token-replay"
+        },
+        "expected_conflict_pairs": [
+          [
+            "finding-api-jwks",
+            "finding-ui-refresh"
+          ],
+          [
+            "finding-sub0-primary",
+            "finding-sub0-contra"
+          ],
+          [
+            "finding-sub1-primary",
+            "finding-sub1-contra"
+          ],
+          [
+            "finding-sub2-primary",
+            "finding-sub2-contra"
+          ],
+          [
+            "finding-sub3-primary",
+            "finding-sub3-contra"
+          ],
+          [
+            "finding-sub4-primary",
+            "finding-sub4-contra"
+          ]
+        ],
+        "expected_duplicate_groups": {
+          "auth.failure.cause=expired-jwks-cache": [
+            "finding-api-jwks",
+            "finding-docs-jwks"
+          ],
+          "sub0.failure.cause=sub0-token-replay": [
+            "finding-sub0-primary",
+            "finding-sub1-corroborates-sub0"
+          ],
+          "sub1.failure.cause=sub1-token-replay": [
+            "finding-sub1-primary",
+            "finding-sub2-corroborates-sub1"
+          ],
+          "sub2.failure.cause=sub2-token-replay": [
+            "finding-sub2-primary",
+            "finding-sub3-corroborates-sub2"
+          ],
+          "sub3.failure.cause=sub3-token-replay": [
+            "finding-sub3-primary",
+            "finding-sub4-corroborates-sub3"
+          ]
+        },
+        "expected_missing_evidence": [
+          "finding-no-evidence",
+          "finding-sub1-unbacked",
+          "finding-sub3-unbacked"
+        ],
+        "expected_stale_findings": [
+          "finding-api-stale-flag"
+        ],
+        "final_questions": [
+          {
+            "expected_terms": [
+              "expired-jwks-cache"
+            ],
+            "forbidden_terms": [
+              "missing-browser-refresh",
+              "flag-missing",
+              "sub0-clock-skew",
+              "sub1-clock-skew",
+              "sub2-clock-skew",
+              "sub3-clock-skew",
+              "sub4-clock-skew"
+            ],
+            "query": "What is the accepted cause of auth failures?"
+          }
+        ]
+      },
+      "mission_id": "fleet-scaling-case-1",
+      "objective": "Resolve conflicting findings across a scaling worker fleet.",
+      "workers": [
+        {
+          "assignment": "Trace API auth failures",
+          "findings": [
+            {
+              "claim_key": "auth.failure.cause",
+              "claim_value": "expired-jwks-cache",
+              "confidence": 0.95,
+              "evidence": [
+                {
+                  "kind": "command",
+                  "reference": "pytest tests/test_auth.py -q"
+                }
+              ],
+              "finding_id": "finding-api-jwks",
+              "summary": "JWKS cache expiry is the accepted auth failure cause."
+            },
+            {
+              "claim_key": "auth.failure.cause",
+              "claim_value": "flag-missing",
+              "confidence": 0.31,
+              "evidence": [
+                {
+                  "kind": "transcript",
+                  "reference": "eventloom://old/events/3#abc",
+                  "stale": true,
+                  "superseded_by": "decision:jwks-cache"
+                }
+              ],
+              "finding_id": "finding-api-stale-flag",
+              "summary": "Stale flag-missing theory from old branch."
+            }
+          ],
+          "worker_id": "worker-api"
+        },
+        {
+          "assignment": "Check browser refresh flow",
+          "findings": [
+            {
+              "claim_key": "auth.failure.cause",
+              "claim_value": "missing-browser-refresh",
+              "confidence": 0.64,
+              "evidence": [
+                {
+                  "kind": "file",
+                  "reference": "src/ui/session.ts:42"
+                }
+              ],
+              "finding_id": "finding-ui-refresh",
+              "summary": "Browser refresh is the auth failure cause."
+            }
+          ],
+          "worker_id": "worker-ui"
+        },
+        {
+          "assignment": "Verify docs and historical notes",
+          "findings": [
+            {
+              "claim_key": "auth.failure.cause",
+              "claim_value": "expired-jwks-cache",
+              "confidence": 0.88,
+              "evidence": [
+                {
+                  "kind": "document",
+                  "reference": "docs/auth.md:12"
+                }
+              ],
+              "finding_id": "finding-docs-jwks",
+              "summary": "Docs independently confirm expired JWKS cache."
+            },
+            {
+              "claim_key": "auth.failure.secondary",
+              "claim_value": "oauth-scope-drift",
+              "confidence": 0.2,
+              "evidence": [],
+              "finding_id": "finding-no-evidence",
+              "summary": "Unbacked claim that OAuth scope drift caused failures."
+            }
+          ],
+          "worker_id": "worker-docs"
+        },
+        {
+          "assignment": "Investigate the sub0 subsystem",
+          "findings": [
+            {
+              "claim_key": "sub0.failure.cause",
+              "claim_value": "sub0-token-replay",
+              "confidence": 0.91,
+              "evidence": [
+                {
+                  "kind": "command",
+                  "reference": "ci://runs/sub0/verify"
+                }
+              ],
+              "finding_id": "finding-sub0-primary",
+              "summary": "Current CI evidence points at sub0-token-replay in the sub0 path."
+            },
+            {
+              "claim_key": "sub0.failure.cause",
+              "claim_value": "sub0-clock-skew",
+              "confidence": 0.54,
+              "evidence": [
+                {
+                  "kind": "file",
+                  "reference": "src/sub0/clock.py:18"
+                }
+              ],
+              "finding_id": "finding-sub0-contra",
+              "summary": "Earlier legacy theory blamed sub0-clock-skew in sub0."
+            }
+          ],
+          "worker_id": "worker-sub0"
+        },
+        {
+          "assignment": "Investigate the sub1 subsystem",
+          "findings": [
+            {
+              "claim_key": "sub1.failure.cause",
+              "claim_value": "sub1-token-replay",
+              "confidence": 0.91,
+              "evidence": [
+                {
+                  "kind": "command",
+                  "reference": "ci://runs/sub1/verify"
+                }
+              ],
+              "finding_id": "finding-sub1-primary",
+              "summary": "Current CI evidence points at sub1-token-replay in the sub1 path."
+            },
+            {
+              "claim_key": "sub1.failure.cause",
+              "claim_value": "sub1-clock-skew",
+              "confidence": 0.54,
+              "evidence": [
+                {
+                  "kind": "file",
+                  "reference": "src/sub1/clock.py:18"
+                }
+              ],
+              "finding_id": "finding-sub1-contra",
+              "summary": "Earlier legacy theory blamed sub1-clock-skew in sub1."
+            },
+            {
+              "claim_key": "sub0.failure.cause",
+              "claim_value": "sub0-token-replay",
+              "confidence": 0.86,
+              "evidence": [
+                {
+                  "kind": "document",
+                  "reference": "docs/sub0.md:7"
+                }
+              ],
+              "finding_id": "finding-sub1-corroborates-sub0",
+              "summary": "Independent doc review confirms sub0-token-replay."
+            },
+            {
+              "claim_key": "sub1.failure.secondary",
+              "claim_value": "sub1-scope-drift",
+              "confidence": 0.19,
+              "evidence": [],
+              "finding_id": "finding-sub1-unbacked",
+              "summary": "Unbacked claim that scope drift degrades sub1."
+            }
+          ],
+          "worker_id": "worker-sub1"
+        },
+        {
+          "assignment": "Investigate the sub2 subsystem",
+          "findings": [
+            {
+              "claim_key": "sub2.failure.cause",
+              "claim_value": "sub2-token-replay",
+              "confidence": 0.91,
+              "evidence": [
+                {
+                  "kind": "command",
+                  "reference": "ci://runs/sub2/verify"
+                }
+              ],
+              "finding_id": "finding-sub2-primary",
+              "summary": "Current CI evidence points at sub2-token-replay in the sub2 path."
+            },
+            {
+              "claim_key": "sub2.failure.cause",
+              "claim_value": "sub2-clock-skew",
+              "confidence": 0.54,
+              "evidence": [
+                {
+                  "kind": "file",
+                  "reference": "src/sub2/clock.py:18"
+                }
+              ],
+              "finding_id": "finding-sub2-contra",
+              "summary": "Earlier legacy theory blamed sub2-clock-skew in sub2."
+            },
+            {
+              "claim_key": "sub1.failure.cause",
+              "claim_value": "sub1-token-replay",
+              "confidence": 0.86,
+              "evidence": [
+                {
+                  "kind": "document",
+                  "reference": "docs/sub1.md:7"
+                }
+              ],
+              "finding_id": "finding-sub2-corroborates-sub1",
+              "summary": "Independent doc review confirms sub1-token-replay."
+            }
+          ],
+          "worker_id": "worker-sub2"
+        },
+        {
+          "assignment": "Investigate the sub3 subsystem",
+          "findings": [
+            {
+              "claim_key": "sub3.failure.cause",
+              "claim_value": "sub3-token-replay",
+              "confidence": 0.91,
+              "evidence": [
+                {
+                  "kind": "command",
+                  "reference": "ci://runs/sub3/verify"
+                }
+              ],
+              "finding_id": "finding-sub3-primary",
+              "summary": "Current CI evidence points at sub3-token-replay in the sub3 path."
+            },
+            {
+              "claim_key": "sub3.failure.cause",
+              "claim_value": "sub3-clock-skew",
+              "confidence": 0.54,
+              "evidence": [
+                {
+                  "kind": "file",
+                  "reference": "src/sub3/clock.py:18"
+                }
+              ],
+              "finding_id": "finding-sub3-contra",
+              "summary": "Earlier legacy theory blamed sub3-clock-skew in sub3."
+            },
+            {
+              "claim_key": "sub2.failure.cause",
+              "claim_value": "sub2-token-replay",
+              "confidence": 0.86,
+              "evidence": [
+                {
+                  "kind": "document",
+                  "reference": "docs/sub2.md:7"
+                }
+              ],
+              "finding_id": "finding-sub3-corroborates-sub2",
+              "summary": "Independent doc review confirms sub2-token-replay."
+            },
+            {
+              "claim_key": "sub3.failure.secondary",
+              "claim_value": "sub3-scope-drift",
+              "confidence": 0.19,
+              "evidence": [],
+              "finding_id": "finding-sub3-unbacked",
+              "summary": "Unbacked claim that scope drift degrades sub3."
+            }
+          ],
+          "worker_id": "worker-sub3"
+        },
+        {
+          "assignment": "Investigate the sub4 subsystem",
+          "findings": [
+            {
+              "claim_key": "sub4.failure.cause",
+              "claim_value": "sub4-token-replay",
+              "confidence": 0.91,
+              "evidence": [
+                {
+                  "kind": "command",
+                  "reference": "ci://runs/sub4/verify"
+                }
+              ],
+              "finding_id": "finding-sub4-primary",
+              "summary": "Current CI evidence points at sub4-token-replay in the sub4 path."
+            },
+            {
+              "claim_key": "sub4.failure.cause",
+              "claim_value": "sub4-clock-skew",
+              "confidence": 0.54,
+              "evidence": [
+                {
+                  "kind": "file",
+                  "reference": "src/sub4/clock.py:18"
+                }
+              ],
+              "finding_id": "finding-sub4-contra",
+              "summary": "Earlier legacy theory blamed sub4-clock-skew in sub4."
+            },
+            {
+              "claim_key": "sub3.failure.cause",
+              "claim_value": "sub3-token-replay",
+              "confidence": 0.86,
+              "evidence": [
+                {
+                  "kind": "document",
+                  "reference": "docs/sub3.md:7"
+                }
+              ],
+              "finding_id": "finding-sub4-corroborates-sub3",
+              "summary": "Independent doc review confirms sub3-token-replay."
+            }
+          ],
+          "worker_id": "worker-sub4"
+        }
+      ]
+    }
+  ],
+  "fingerprint": "5cab54077545b24cdac7ba8dcc229f7a2fb561570a02b0be77941bb36c2e7c3e",
+  "version": "fleet-v2"
+}

@@ -225,38 +225,54 @@ because each step is just one more sealed, cited event.
 Two committed artifacts back the claims. Both carry their caveats inline; neither
 is overstated.
 
-### FleetBench scaffold (governance, token efficiency, transfer proxy)
+### FleetBench (governance, token efficiency, real fleet-wide transfer)
 
-Source: `reports/experimental/fleet-benchmark-scaffold/report.md`
-(and `report.json`), version `fleet-v1`, fingerprint
-`d4619d57…536cfa30` (scored fields only; latency excluded). Measured over real
-CoordinationBench runs at three scale points.
+Source: `reports/benchmarks/fleet-transfer-v1/` (`report.md`, `report.json`,
+`manifest.json`), version `fleet-v2`, result fingerprint `868b0b96…7a079d9d`
+(scored fields only; latency excluded). Measured over real CoordinationBench
+missions and real `FleetManager` propagation at three scale points.
 
-| worker_count | coordination_quality | governance_correctness | cross_agent_transfer (proxy) | token_efficiency | latency_ms |
+| worker_count | coordination_quality | governance_correctness | cross_agent_transfer | control | token_efficiency |
 |---|---|---|---|---|---|
-| 3 | 0.907407 | 1.0 | 1.0 | 0.535 | 19.967 |
-| 5 | 0.907407 | 1.0 | 1.0 | 0.586667 | 9.146 |
-| 8 | 0.907407 | 1.0 | 1.0 | 0.645714 | 10.32 |
-| **mean** | 0.907407 | 1.0 | 1.0 | 0.589127 | 13.144 |
+| 3 | 0.907407 | 1.0 | 1.0 | 1.0 | 0.4825 |
+| 5 | 0.922222 | 1.0 | 1.0 | 1.0 | 0.336504 |
+| 8 | 0.923977 | 1.0 | 1.0 | 1.0 | 0.313291 |
+| **mean** | 0.917869 | 1.0 | 1.0 | 1.0 | 0.377432 |
 
 What this shows, with caveats:
 
-- **`governance_correctness = 1.0` and `coordination_quality ≈ 0.907`** are
-  **REAL, exact-scored, deterministic** aggregates of CoordinationBench signals
-  (accepted parent state, stale-claim rejection, duplicate-consolidation
-  rejection, non-authoritative-leakage prevention, evidence coverage). This is
-  direct evidence for the governance-correctness claim *on the harness*.
-- **`token_efficiency` rises with worker count** (0.535 → 0.587 → 0.646; mean
-  0.589) — the fraction of raw worker-log tokens *not* injected into the governed
-  accepted-state brief (`1 - injected/returned`). It is REAL but computed from
-  `_approx_tokens` estimates (`len // 4`), not tokenizer-exact counts.
-- **`cross_agent_transfer = 1.0` is a SCAFFOLD within-mission PROXY**
-  (`scope = within_mission_proxy`): it scores worker→parent promotion *inside a
-  single mission*, **not** fleet-wide cross-agent transfer. True fleet-wide
-  transfer is realized by I7 and is not yet measured here.
-- **`latency_ms` is REAL wall-clock and environment-dependent**; it is excluded
-  from the fingerprint and from determinism checks. Do not read it as a portable
-  performance claim.
+- **`cross_agent_transfer = 1.0` is now REAL fleet-wide transfer**
+  (`scope = fleet_wide`), replacing the retired `within_mission_proxy`. The
+  origin agent propagates the mission's accepted findings through the real I4
+  gate; every other *enrolled* agent is scored by a real `checkout_memory` call.
+  A never-enrolled stranger is the mandatory negative control and receives
+  nothing (`control = 1.0`). The retired proxy also read 1.0, but the two are
+  **not comparable** — the proxy never exercised enrollment, trust tiers, the
+  gate, or another agent's checkout.
+- **It measures governed *delivery*, not relevance.** The checkout fleet lane
+  returns every active promotion an enrolled agent is entitled to and is **not**
+  filtered by query relevance (verified by issuing an unrelated query and
+  receiving the same promotions). No retrieval-quality claim may cite it.
+- **The transfer number is falsifiable, not decorative.** Un-enrolling the
+  receivers drops it 1.0 → 0.0 while propagation still succeeds; enrolling the
+  stranger drops the control 1.0 → 0.0. Both are asserted in
+  `tests/test_fleet_benchmark.py`.
+- **`governance_correctness = 1.0` and `coordination_quality`** are REAL,
+  exact-scored, deterministic aggregates of CoordinationBench signals. Quality
+  now varies with worker count, but the variation is driven **entirely** by
+  `conflict_precision`; the other eight sub-axes stay saturated at 1.0, and
+  `governance_correctness` does not vary with scale at all. Neither is on its
+  own evidence of scaling behaviour.
+- **`token_efficiency` now *falls* with worker count** (0.483 → 0.313), reversing
+  the retired scaffold's rising curve. That earlier rise was an artifact: the old
+  workload padded worker counts above three with **empty-finding filler**, so raw
+  logs grew on padding while the governed brief stayed fixed at 202 tokens. Real
+  added workers contribute real accepted findings, so the brief genuinely grows.
+- **`latency_ms` is REAL wall-clock and environment-dependent**; excluded from
+  the fingerprint and from determinism checks. Not a portable performance claim.
+- **Not cleared for external publication** (`claim_scope.publishable: false`):
+  one synthetic workload, no baseline or competitor run, and transfer observed
+  only at its 1.0 ceiling.
 
 ### LongMemEval 500 hash report (plumbing and recall parity)
 
