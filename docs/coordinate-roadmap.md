@@ -37,7 +37,7 @@ The first production slice is implemented:
 - Deterministic extractors project the coordination event taxonomy into missions,
   workers, assignments, findings, reviews, promotions, conflicts, decisions, and
   handoffs.
-- `src/zaxy/coordination_benchmark.py` implements the first deterministic
+- `zaxy_benchmarks/coordination_benchmark.py` implements the first deterministic
   CoordinationBench workload, exact scoring, explicit stale-claim detection, a
   flat-eventlog contamination baseline, and JSON/markdown report writing.
 - The local dashboard exposes a read-only Coordinate mission view backed by
@@ -611,7 +611,21 @@ Zaxy Coordinate is ready to headline the product when:
   cited `handoff_event_ref` values.
 - CoordinationBench shows Zaxy Coordinate beating implemented flat transcript,
   markdown, and BM25 baselines on conflict recall, accepted state precision,
-  citation coverage, and token efficiency.
+  and citation coverage.
+  - **Token efficiency is deliberately excluded from this criterion.** The
+    harness's own artifact contradicts it: Zaxy injects substantially more
+    tokens than the flat, markdown, and BM25 baselines, because a cited,
+    governed brief carries provenance those baselines simply omit. That is a
+    real cost of the design, not a defect to hide — the claim is governed,
+    cited accepted state, not fewer tokens than an uncited transcript.
+  - Accepted-state precision/recall became meaningful only once the gold
+    oracle was removed from the Zaxy path (2026-07-21). Before that the
+    harness adjudicated findings from `expected_accepted_claims` and then
+    scored against them, so those two metrics were 1.0 by construction.
+  - `accepted_state_synthesis_quality` and `non_authoritative_leakage` are
+    **still not computed on the Zaxy path** — they fall through to a `1.0`
+    dataclass default, so they cannot go red and must not be cited as
+    evidence until they are measured.
 - Vector, non-coordinate Zaxy, and external competitor comparisons appear only
   when their pinned adapters have run through the same harness; otherwise they
   remain disclosure-only and are not used for public superiority claims.

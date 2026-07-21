@@ -1444,3 +1444,34 @@ def test_coordination_benchmark_report_round_trips_without_non_finite_values(tmp
     decoded = json.loads(encoded)
     assert decoded["metrics"]["brief_latency_ms"] >= 0.0
     assert decoded["metrics"]["promotion_latency_ms"] >= 0.0
+
+
+def test_zaxy_accepted_state_is_independent_of_benchmark_gold(tmp_path: Path) -> None:
+    """Adjudication must not consult the answer key -- corrupting gold cannot change behaviour."""
+    from dataclasses import replace as _replace
+
+    from zaxy_benchmarks.coordination_benchmark import _coordination_case, _run_case
+
+    def accepted_ids(case: object, subdir: str) -> list[str]:
+        result = _run_case(tmp_path / subdir, case)  # type: ignore[arg-type]
+        return sorted(finding.finding_id for finding in result.brief.accepted_findings)
+
+    case = _coordination_case(workers=3)
+    with_real_gold = accepted_ids(case, "real")
+
+    # Point every expected claim at a value that appears nowhere in the workload.
+    # A harness that adjudicates from gold accepts nothing here; a gold-free one
+    # is unaffected, because only the SCORE depends on gold, never the behaviour.
+    corrupted = _replace(
+        case,
+        gold=_replace(
+            case.gold,
+            expected_accepted_claims=dict.fromkeys(
+                case.gold.expected_accepted_claims, "value-that-matches-no-finding"
+            ),
+        ),
+    )
+    with_corrupted_gold = accepted_ids(corrupted, "corrupt")
+
+    assert with_real_gold, "the workload must accept at least one finding for this to be meaningful"
+    assert with_real_gold == with_corrupted_gold
