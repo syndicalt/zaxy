@@ -630,13 +630,14 @@ class WriteEngine:
         """Reverse a prior evolution with a cited, non-authoritative ``memory.rolled_back`` event.
 
         Validates that the target is a sealed, *reversible* evolution event (a
-        consolidation acceptance, a generated/proposed preventive rule, a gate
-        decision, a fleet review, or an earlier correction), routes the reversal
-        through the I4 ``update`` gate, and appends a ``memory.rolled_back`` event
-        citing the target. On replay/projection the cited evolution is undone --
-        e.g. a rolled-back consolidation acceptance reverts the candidate to its
-        prior (pre-acceptance) review status -- additively and reversibly, without
-        ever mutating the sealed event. See ``ZAXY-3.md`` (I5a). Returns the
+        consolidation acceptance, a generated/proposed preventive rule, or an
+        earlier correction -- see :data:`ROLLBACKABLE_EVENT_TYPES`), routes the
+        reversal through the I4 ``update`` gate, and appends a
+        ``memory.rolled_back`` event citing the target. The cited evolution is
+        then undone: a rolled-back consolidation acceptance reverts the candidate
+        to its prior review status, and a rolled-back rule or correction is
+        excluded from checkout assembly. Additive and reversible throughout --
+        the sealed event is never mutated. See ``ZAXY-3.md`` (I5a). Returns the
         rollback event ref, the cited target, the ``reverts`` descriptor, the
         deterministic ``rollback_id``, and the gate decision.
         """

@@ -140,12 +140,28 @@ is reachable only from the Python fabric API. CLAUDE.md names MCP the primary
 interface and `memory_checkout` the front door — so an agent fleet driven over
 MCP cannot consume fleet memory at all.
 
-### 3.6 Silent no-op rollback (MEDIUM)
+### 3.6 Silent no-op rollback (MEDIUM) — RESOLVED
 
-`editable.py:44-53` declares six `ROLLBACKABLE_EVENT_TYPES`, but reversal
-semantics exist for only one (`consolidation.candidate.reviewed`). Rolling back
-the other five appends an accepted, gated event that changes nothing — the
-operator gets a success response for a rollback that did not happen.
+`editable.py:44-53` declared six `ROLLBACKABLE_EVENT_TYPES`, but reversal
+semantics existed for only one (`consolidation.candidate.reviewed`). Rolling back
+the other five appended an accepted, gated event that changed nothing — the
+operator got a success response for a rollback that did not happen.
+
+Closed by making every declared type genuinely reversible and dropping the two
+that cannot be:
+
+- `memory.rule.generated` / `memory.rule.proposed` — reversed by the
+  assembly-time governance exclusion (`_governance_withheld_event_seqs`).
+- `memory.corrected` — reversed by the same exclusion, extended to cover the raw
+  `# Recent Events` timeline, which was a second lane-independent route into the
+  prompt. Rolling back a correction now restores the retained original as the
+  current view.
+- `evolution.gate.evaluated` — **removed from the set.** A gate decision is an
+  audit record; its effect is the event it gated, which is what an operator must
+  roll back instead. There is nothing to restore.
+- `fleet.promotion.reviewed` — **removed from the set.** `FleetManager.rollback_promotion`
+  already reverses promotions and enforces steward-or-original-actor authorization
+  plus the rollback window; the memory path was inert and bypassed both checks.
 
 ### 3.7 Dead config presented as configurable (MEDIUM)
 

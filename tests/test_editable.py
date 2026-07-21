@@ -623,3 +623,126 @@ class TestMcpRouting:
             await server.handle_memory_edit(
                 {"target_seq": 1, "target_hash": _HASH, "reason": "r"}
             )
+
+
+# ---------------------------------------------------------------------------
+# Rollback effectiveness: the declared set must not promise what replay ignores
+# ---------------------------------------------------------------------------
+
+
+class TestRolledBackCorrectionLeavesTheAssembledPrompt:
+    """Rolling back a correction must restore the pre-correction view, not just log it.
+
+    ``auto_with_rollback`` is the default autonomy tier and reversibility is its
+    whole promise. A correction whose rollback reports success while the corrected
+    content keeps reaching the model is worse than no rollback at all, because the
+    operator believes the edit is undone.
+    """
+
+    _OLD = "CANARY-OLD-the-api-timeout-is-30-seconds"
+    _NEW = "CANARY-NEW-the-api-timeout-is-90-seconds"
+    _QUERY = "what is the api timeout?"
+
+    async def _correct(self, fabric: MemoryFabric) -> tuple[int, str]:
+        original = await fabric.append(
+            "note.recorded", actor="u", payload={"text": self._OLD}, session_id="ext"
+        )
+        result = await fabric.edit_memory(
+            target_seq=original.seq,
+            target_hash=original.hash,
+            new_content=self._NEW,
+            reason="the timeout changed",
+            session_id="ext",
+        )
+        correction = result["correction_event"]
+        return int(correction["seq"]), str(correction["hash"])
+
+    async def test_rollback_hides_the_correction_and_restores_the_original(
+        self, tmp_path: Path
+    ) -> None:
+        """After rollback the corrected content is gone and the original is current again."""
+        fabric = _fabric(tmp_path)
+        await fabric.connect()
+        try:
+            seq, event_hash = await self._correct(fabric)
+            before = await fabric.checkout_memory(self._QUERY, session_id="ext", limit=25)
+            assert self._NEW in before.prompt, "the correction must surface first"
+
+            await fabric.rollback_memory(
+                target_seq=seq, target_hash=event_hash, reason="undo the edit", session_id="ext"
+            )
+            after = await fabric.checkout_memory(self._QUERY, session_id="ext", limit=25)
+        finally:
+            await fabric.close()
+        # Both halves: the correction stops being current AND the original resurfaces.
+        assert self._NEW not in after.prompt
+        assert self._OLD in after.prompt
+
+    async def test_rollback_does_not_delete_the_correction_event(self, tmp_path: Path) -> None:
+        """Reversal is an assembly-time exclusion; the log keeps the correction and its rollback."""
+        fabric = _fabric(tmp_path)
+        await fabric.connect()
+        try:
+            seq, event_hash = await self._correct(fabric)
+            await fabric.rollback_memory(
+                target_seq=seq, target_hash=event_hash, reason="undo the edit", session_id="ext"
+            )
+            eventlog = fabric.session_manager.get("ext").eventlog
+            events = eventlog.read_all()
+            assert eventlog.verify().ok is True
+        finally:
+            await fabric.close()
+        corrected = [e for e in events if e.type == MEMORY_CORRECTED_EVENT_TYPE]
+        assert len(corrected) == 1
+        assert corrected[0].seq == seq
+        assert corrected[0].payload["content"] == self._NEW
+        assert any(e.type == MEMORY_ROLLBACK_EVENT_TYPE for e in events)
+
+
+class TestNonReversibleTypesAreNotDeclared:
+    """Types with no reversal must be refused outright, never accepted as a no-op."""
+
+    async def test_rollback_rejects_a_gate_decision(self, tmp_path: Path) -> None:
+        """A gate decision is an audit record with nothing to restore, so rollback refuses it."""
+        fabric = _fabric(tmp_path)
+        await fabric.connect()
+        try:
+            original = await fabric.append(
+                "note.recorded", actor="u", payload={"text": "seed"}, session_id="ext"
+            )
+            await fabric.edit_memory(
+                target_seq=original.seq,
+                target_hash=original.hash,
+                new_content="edited",
+                reason="r",
+                session_id="ext",
+            )
+            eventlog = fabric.session_manager.get("ext").eventlog
+            gate = next(
+                e for e in eventlog.read_all() if e.type == "evolution.gate.evaluated"
+            )
+            with pytest.raises(ValueError, match="not a reversible evolution"):
+                await fabric.rollback_memory(
+                    target_seq=gate.seq,
+                    target_hash=gate.hash,
+                    reason="undo the gate",
+                    session_id="ext",
+                )
+            # The refusal is total: no rollback marker was appended for it.
+            rolled = [
+                e
+                for e in eventlog.read_all()
+                if e.type == MEMORY_ROLLBACK_EVENT_TYPE
+                and e.payload.get("target", {}).get("seq") == gate.seq
+            ]
+        finally:
+            await fabric.close()
+        assert rolled == []
+
+    def test_fleet_promotion_review_is_not_memory_rollbackable(self) -> None:
+        """Fleet owns promotion reversal, so the memory-rollback set must not claim it."""
+        from zaxy.editable import ROLLBACKABLE_EVENT_TYPES
+        from zaxy.fleet import FLEET_PROMOTION_REVIEWED_EVENT_TYPE
+
+        assert FLEET_PROMOTION_REVIEWED_EVENT_TYPE not in ROLLBACKABLE_EVENT_TYPES
+        assert "evolution.gate.evaluated" not in ROLLBACKABLE_EVENT_TYPES
