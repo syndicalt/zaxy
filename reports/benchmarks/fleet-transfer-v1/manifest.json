@@ -1,0 +1,179 @@
+{
+  "anti_reward_hacking": {
+    "checks": [
+      {
+        "intervention": "enrol only the origin agent; propagation is unchanged",
+        "proves": "the metric scores delivery to other agents, not the propagation call itself",
+        "result": "cross_agent_transfer drops 1.0 -> 0.0 while promotion_count stays > 0",
+        "test": "tests/test_fleet_benchmark.py::test_transfer_collapses_when_receivers_are_not_enrolled"
+      },
+      {
+        "intervention": "enrol the stranger that serves as the negative control",
+        "proves": "the negative control discriminates and is not hardcoded",
+        "result": "cross_agent_transfer_control drops 1.0 -> 0.0",
+        "test": "tests/test_fleet_benchmark.py::test_control_fails_when_the_stranger_is_enrolled"
+      },
+      {
+        "intervention": "none; the standard configuration",
+        "proves": "I7 enrollment gating is enforced on the measured path and was not weakened to make the benchmark writable",
+        "result": "enrolled receivers get every active promotion, the stranger gets none",
+        "test": "tests/test_fleet_benchmark.py::test_negative_control_discriminates_enrolled_agent_from_stranger"
+      }
+    ],
+    "note": "The transfer metric was verified to be falsifiable rather than a constant, by breaking the mechanism it claims to measure."
+  },
+  "artifacts": {
+    "fleet-workload-w3.json": "b38222cc71a363b5a0bf029417b8b0bf42bed2d2cecba1881023555cce4f301e",
+    "fleet-workload-w5.json": "59535adabf1081d613797a386568c182971f396ba8e7f4fd0bc7661ab8f2733c",
+    "fleet-workload-w8.json": "d8b97a8fc014c678b1a0abbea0e01d54827734cafbee816170638b3977cd63e2",
+    "report.json": "ab1468bcd26a8ed67d968bac65bc257421c408bc4297cbeb31490df0849c964a",
+    "report.md": "74e4f3929cee323c76275c16db48746a4c1232a638c1c2372da6da437b7d70c6",
+    "scale-w3/eventloom/fleet-scaling-case-1.jsonl": "f946caebfda6e53ad2e51ff071e3b8c324c363ba7b1312066a48eba05ec26e38",
+    "scale-w3/eventloom/worker-api.jsonl": "dd4ea9828d65f49f1dd40ad415e09ecca0cc30048660523d5ee1ba34f5963f14",
+    "scale-w3/eventloom/worker-docs.jsonl": "a997086604a296e932e421a32b6e70421e23928074a607afa9b3e824d92bd635",
+    "scale-w3/eventloom/worker-ui.jsonl": "6d4524856807b2ef5e48df730c4dac8c791d8c74a5a008cc449df5fcb35b094f",
+    "scale-w3/fleet-eventloom/fleet-agent-000.jsonl": "b1364dbe18e6dc20f3ef4f064247924f3f7413fc6041fae51a4d26402424fe33",
+    "scale-w3/fleet-eventloom/fleet.fleetbench.jsonl": "48c2011c05a059f623b71d849d90ea19565dfab38733aa043e216bf279ffa4b9",
+    "scale-w5/eventloom/fleet-scaling-case-1.jsonl": "b77bafee3cf4052889b8043977986524cd94cab53f6786e547b364db22102737",
+    "scale-w5/eventloom/worker-api.jsonl": "4a84a59a810472872e948d8df87d6f7076ff57e7bede0faef2cbee9778b22eed",
+    "scale-w5/eventloom/worker-docs.jsonl": "237be1a82475b40ce99916f5acb52ab11df55ce4a76efc75c9b90962be97dea4",
+    "scale-w5/eventloom/worker-sub0.jsonl": "20899cf395a99397d9dcf82bf13527fb8c28c793c9a612791253fe90e4f98642",
+    "scale-w5/eventloom/worker-sub1.jsonl": "e843e56ee8bd36a8c7db616823e34d7c9ff9e98bd08213c423af06f09141e1a8",
+    "scale-w5/eventloom/worker-ui.jsonl": "573882aa438108054d910a2ed9572a7f9875c9249789e96a20270f5b50e00fab",
+    "scale-w5/fleet-eventloom/fleet-agent-000.jsonl": "f2272ba4dc985a2af056a569a986f2610a858177711423767dea083d14d5d5d2",
+    "scale-w5/fleet-eventloom/fleet.fleetbench.jsonl": "f2a323d1ba9e7d903208b793f73c6ed4572983f43b937e61e884910cf4a70fcf",
+    "scale-w8/eventloom/fleet-scaling-case-1.jsonl": "83e68da578535b19806700c81db1720294eb5256eea64e2affcedcd4c1ec45b4",
+    "scale-w8/eventloom/worker-api.jsonl": "a98df2a5699e49e1ff29ea4f1e9a6f4ed377c07f394aed270c961919314620db",
+    "scale-w8/eventloom/worker-docs.jsonl": "549b92363a3cf09032aacd25decbda4899113975f9566b856310c360f7d51058",
+    "scale-w8/eventloom/worker-sub0.jsonl": "9d3080752dfe41056297872766abf85ad2a68a40b876318c303881abbe395e92",
+    "scale-w8/eventloom/worker-sub1.jsonl": "7f79909a94ccfa5c5f724cb0b749912c874326e6bb9afc295dca690fe41c1ef4",
+    "scale-w8/eventloom/worker-sub2.jsonl": "75dc0c8d4f0cf672d9e0ae745126f61fec77b0e41e6c9f053cbcf78a6a808604",
+    "scale-w8/eventloom/worker-sub3.jsonl": "1ecefc0425ea211979a9364877323a2542c8b27c27e5dcf165777f33601bb0f7",
+    "scale-w8/eventloom/worker-sub4.jsonl": "3cd656bc7794be84e63909d3919dc0bbca1ea5e505ada4368b40ee7dc7930a14",
+    "scale-w8/eventloom/worker-ui.jsonl": "c2d0bbcd1b167d21b8f7edab4b8deae15010c88cef78941a4238006cc8ba5ddd",
+    "scale-w8/fleet-eventloom/fleet-agent-000.jsonl": "d7818410243ea668eda247238fbafebcbaf19df2948006b42195fdb5a3e26d7f",
+    "scale-w8/fleet-eventloom/fleet.fleetbench.jsonl": "911c283597a2d1cd1ac7bd2561ab48f4e12e565729868d2debdcc8889bd754d4"
+  },
+  "benchmark": "FleetBench",
+  "claim_scope": {
+    "note": "Not cleared for external or competitive publication. Three reasons. (1) Single synthetic workload, one mission per scale point, three scale points, no baseline and no competitor was run, so there is nothing to compare against. (2) cross_agent_transfer = 1.0 is a ceiling result on a workload where every propagation clears the gate cleanly; a metric observed only at its maximum has not been shown to have useful dynamic range on real fleets, only that it collapses to 0.0 when propagation is broken. (3) governance_correctness does not vary with scale here, so this run does not on its own support a scaling claim for that axis. Internal evidence that fleet-wide transfer is measured and gated; not a benchmark result to quote.",
+    "publishable": false
+  },
+  "metrics": {
+    "coordination_quality": {
+      "caveat": "Now varies with worker count (it was constant at 0.907407 before), but the variation is driven ENTIRELY by conflict_precision (0.1667 -> 0.3 -> 0.3158). The other eight sub-axes -- accepted_finding_precision/recall, conflict_recall, stale_claim_rejection, duplicate_consolidation, evidence_coverage, parent_checkout_answerability, citation_coverage -- remain saturated at 1.0 at every scale point. Read this as: the adjudicator absorbs the added pressure cleanly on eight axes, and the aggregate is not a broad difficulty signal.",
+      "conflict_precision_note": "Low conflict_precision is a pre-existing property of the gold convention inherited unchanged from CoordinationBench: gold lists one conflict pair per claim key (accepted vs live competitor) while Zaxy emits every pair among findings grouped on that key. The convention was NOT changed for this run; the 3-worker coordination_quality is byte-identical to the retired workload's, which is what makes the scale points comparable.",
+      "status": "REAL",
+      "value_by_worker_count": {
+        "3": 0.907407,
+        "5": 0.922222,
+        "8": 0.923977
+      }
+    },
+    "cross_agent_transfer": {
+      "comparison_to_retired_proxy": "The retired within_mission_proxy also read 1.0, but measured worker->parent promotion inside one mission and imported nothing from zaxy.fleet. The two 1.0 values are not comparable: the proxy never exercised enrollment, trust tiers, the I4 gate, or another agent's checkout. This run is the first time the axis was measured at all.",
+      "definition": "Mean over every enrolled non-origin agent of (active promotions that agent's real checkout_memory returned) / (active promotions the origin agent really created). The origin agent appends real source-memory events and propagates them through the real I4 gate; receivers are scored via real MemoryFabric.checkout_memory calls.",
+      "does_not_measure": "retrieval ranking or query relevance. The checkout fleet lane returns every active promotion an enrolled agent is entitled to and is NOT filtered by query relevance; this was verified directly by issuing an unrelated query and receiving the same promotions. No relevance or retrieval-quality claim may cite this number.",
+      "mean": 1.0,
+      "measures": "governed DELIVERY: does propagated fleet memory reach exactly the agents entitled to it",
+      "scope": "fleet_wide",
+      "status": "REAL",
+      "value_by_worker_count": {
+        "3": 1.0,
+        "5": 1.0,
+        "8": 1.0
+      }
+    },
+    "cross_agent_transfer_control": {
+      "definition": "1.0 only when a never-enrolled stranger agent, issuing the identical checkout, receives NOTHING. 0.0 otherwise.",
+      "discrimination_evidence": "tests/test_fleet_benchmark.py::test_control_fails_when_the_stranger_is_enrolled enrols the stranger and the control drops to 0.0, proving it is not a constant.",
+      "status": "REAL",
+      "value_by_worker_count": {
+        "3": 1.0,
+        "5": 1.0,
+        "8": 1.0
+      },
+      "why_mandatory": "A transfer metric that cannot distinguish an enrolled agent from a stranger measures nothing. A cross_agent_transfer value recorded alongside control < 1.0 is not creditable and must not be published."
+    },
+    "fleet_promotion_gated_count": {
+      "caveat": "No propagation was held for review by the I4 gate in this run, because every accepted mission finding carried confidence above the auto-apply threshold. The exclusion-from-denominator logic it guards is therefore UNEXERCISED here. Its behaviour is covered by unit tests, not by this run.",
+      "status": "REAL but ZERO on this workload",
+      "value_by_worker_count": {
+        "3": 0,
+        "5": 0,
+        "8": 0
+      }
+    },
+    "governance_correctness": {
+      "caveat": "Constant at 1.0 across all scale points. It is a real exact gate (a leaky baseline scores 0.0 -- see test_governance_drops_with_non_authoritative_leak), but on this clean workload it does not vary with scale and is therefore NOT evidence of scaling behaviour.",
+      "status": "REAL",
+      "value_by_worker_count": {
+        "3": 1.0,
+        "5": 1.0,
+        "8": 1.0
+      }
+    },
+    "latency_ms": {
+      "caveat": "Environment-dependent; excluded from result_fingerprint. No performance claim may cite it.",
+      "status": "REAL wall-clock, non-deterministic"
+    },
+    "token_efficiency": {
+      "caveat": "returned_tokens and injected_tokens are _approx_tokens estimates (len//4), not tokenizer-exact. This metric now DECREASES with worker count (0.4825 -> 0.3133), where the retired workload showed it increasing (0.495 -> 0.615). That reversal is a direct consequence of retiring empty-finding filler: under the old workload the governed brief stayed fixed at 202 tokens while raw logs grew on padding alone, which flattered the ratio. Real added workers contribute real accepted findings, so the governed brief genuinely grows (207 -> 1085). The earlier rising curve should be treated as an artifact of the filler, not as a superseded measurement of the same quantity.",
+      "status": "REAL (approximate token counts)",
+      "value_by_worker_count": {
+        "3": 0.4825,
+        "5": 0.336504,
+        "8": 0.313291
+      }
+    }
+  },
+  "provenance": {
+    "branch": "bench/fleet-wide-cross-agent-transfer",
+    "command": "env PYTHONPATH=src EMBEDDING_ENABLED=true EMBEDDING_PROVIDER=hash EMBEDDING_DIMENSION=1536 ZAXY_ENV=test python -c 'from pathlib import Path; from zaxy_benchmarks.fleet_benchmark import run_fleet_benchmark; run_fleet_benchmark(Path(\"reports/benchmarks/fleet-transfer-v1\"), worker_counts=(3,5,8))'",
+    "commit": "f8b300da951671c29951e479ed1ddc052d0bee1e",
+    "commit_date": "2026-07-21T10:06:49-05:00",
+    "note": "Commit is the branch tip the artifacts were produced from. The run writes its own isolated eventloom stores under scale-w*/; it never touches the repository's .eventloom.",
+    "python": "3.13.14",
+    "zaxy_version": "3.2.0"
+  },
+  "result_fingerprint": "868b0b964b8de1319802e3575392098e773b9f7950144d125183627b7a079d9d",
+  "run": "fleet-transfer-v1",
+  "scoring": {
+    "embedding_provider": "hash (deterministic, offline); no embedding model is downloaded or called",
+    "judge_note": "FleetBench has no LLM judge and makes no provider or network calls. Coordination axes are scored by exact (claim_key, claim_value) equality against the workload gold. cross_agent_transfer is not scored against gold at all: it observes whether a real checkout_memory call returned the promotion IDs that a real FleetManager propagation actually created.",
+    "llm_judge": false,
+    "method": "deterministic exact-match rubric plus real runtime observation",
+    "module": "zaxy_benchmarks/fleet_benchmark.py",
+    "non_reproducible_fields": {
+      "fields": [
+        "latency_ms"
+      ],
+      "reason": "Wall-clock from time.perf_counter(); machine-dependent. Excluded from result_fingerprint and from every equality check. All other fields are deterministic and were verified byte-identical across repeated runs."
+    }
+  },
+  "status": "current",
+  "status_reason": "First FleetBench run in which cross_agent_transfer is a real fleet-wide measurement. Supersedes reports/experimental/fleet-benchmark-scaffold (version fleet-v1), whose cross_agent_transfer was a within_mission_proxy and whose scaling workload padded worker counts above three with empty-finding filler.",
+  "workload": {
+    "cases_per_scale_point": 1,
+    "combined_workload_fingerprint": "887f206c12a29b8dd37fbd9b439e07d6b6a2b639915a5762013d2e197104dd66",
+    "files": {
+      "3": "fleet-workload-w3.json",
+      "5": "fleet-workload-w5.json",
+      "8": "fleet-workload-w8.json"
+    },
+    "fingerprint_algorithm": "sha256 over json.dumps({version, cases}, sort_keys=True, separators=(',',':')) per scale point; the combined value hashes the ordered list of those fingerprints",
+    "generator": "zaxy_benchmarks.fleet_benchmark.build_fleet_scaling_workload",
+    "note": "FleetBench no longer reuses the frozen CoordinationBench case. That case pads worker counts above three with empty-finding filler, which is why coordination_quality (0.907407) and injected_tokens were byte-identical at 3 and 5 workers. Each worker beyond the third now carries real adjudication load: a well-sourced current claim, a live competing theory on the same claim key, a cross-worker corroboration of the previous subsystem, and on every other worker an unbacked claim that must be rejected.",
+    "per_worker_count_fingerprints": {
+      "3": "b38222cc71a363b5a0bf029417b8b0bf42bed2d2cecba1881023555cce4f301e",
+      "5": "59535adabf1081d613797a386568c182971f396ba8e7f4fd0bc7661ab8f2733c",
+      "8": "d8b97a8fc014c678b1a0abbea0e01d54827734cafbee816170638b3977cd63e2"
+    },
+    "scale_points": [
+      3,
+      5,
+      8
+    ],
+    "version": "fleet-v2"
+  }
+}

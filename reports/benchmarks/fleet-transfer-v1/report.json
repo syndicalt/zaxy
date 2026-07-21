@@ -1,0 +1,81 @@
+{
+  "cross_agent_transfer_scope": "fleet_wide",
+  "fingerprint": "868b0b964b8de1319802e3575392098e773b9f7950144d125183627b7a079d9d",
+  "mean_metrics": {
+    "coordination_quality": 0.917869,
+    "cross_agent_transfer": 1.0,
+    "cross_agent_transfer_control": 1.0,
+    "cross_agent_transfer_scope": "fleet_wide",
+    "fleet_promotion_count": 3,
+    "fleet_promotion_gated_count": 0,
+    "fleet_receiver_count": 4,
+    "governance_correctness": 1.0,
+    "injected_tokens": 617,
+    "latency_ms": 581.857,
+    "mission_count": 1,
+    "returned_tokens": 940,
+    "token_efficiency": 0.377432,
+    "worker_count": 5
+  },
+  "notes": [
+    "cross_agent_transfer is REAL fleet-wide transfer (scope=fleet_wide): the mission's accepted findings are propagated by the origin agent through the real I4 gate and every OTHER enrolled agent's real checkout_memory is scored on whether it received them.",
+    "cross_agent_transfer_control is the mandatory negative control: a never-enrolled stranger runs the identical checkout. It is 1.0 only when the stranger receives NOTHING. A transfer number with control < 1.0 is not creditable, because a metric that cannot tell an enrolled agent from a stranger measures nothing.",
+    "SCOPE LIMIT: the checkout fleet lane returns every ACTIVE promotion an enrolled agent is entitled to, and is not filtered by query relevance. cross_agent_transfer therefore measures governed DELIVERY (does propagated memory reach the right agents and only them), NOT retrieval ranking or relevance. No relevance claim may cite this number.",
+    "fleet_promotion_gated_count counts propagations the I4 gate held for review; they are excluded from the transfer denominator, because withholding them is the gate working rather than a transfer failure.",
+    "latency_ms is REAL wall-clock and environment-dependent; it is EXCLUDED from the fingerprint and from equality/determinism checks.",
+    "returned_tokens and injected_tokens are _approx_tokens estimates (len//4), not tokenizer-exact counts.",
+    "coordination_quality and governance_correctness are REAL exact-scored, deterministic aggregates of CoordinationBench signals."
+  ],
+  "results": [
+    {
+      "coordination_quality": 0.907407,
+      "cross_agent_transfer": 1.0,
+      "cross_agent_transfer_control": 1.0,
+      "cross_agent_transfer_scope": "fleet_wide",
+      "fleet_promotion_count": 1,
+      "fleet_promotion_gated_count": 0,
+      "fleet_receiver_count": 2,
+      "governance_correctness": 1.0,
+      "injected_tokens": 207,
+      "latency_ms": 389.76,
+      "mission_count": 1,
+      "returned_tokens": 400,
+      "token_efficiency": 0.4825,
+      "worker_count": 3
+    },
+    {
+      "coordination_quality": 0.922222,
+      "cross_agent_transfer": 1.0,
+      "cross_agent_transfer_control": 1.0,
+      "cross_agent_transfer_scope": "fleet_wide",
+      "fleet_promotion_count": 3,
+      "fleet_promotion_gated_count": 0,
+      "fleet_receiver_count": 4,
+      "governance_correctness": 1.0,
+      "injected_tokens": 558,
+      "latency_ms": 572.556,
+      "mission_count": 1,
+      "returned_tokens": 841,
+      "token_efficiency": 0.336504,
+      "worker_count": 5
+    },
+    {
+      "coordination_quality": 0.923977,
+      "cross_agent_transfer": 1.0,
+      "cross_agent_transfer_control": 1.0,
+      "cross_agent_transfer_scope": "fleet_wide",
+      "fleet_promotion_count": 6,
+      "fleet_promotion_gated_count": 0,
+      "fleet_receiver_count": 7,
+      "governance_correctness": 1.0,
+      "injected_tokens": 1085,
+      "latency_ms": 783.255,
+      "mission_count": 1,
+      "returned_tokens": 1580,
+      "token_efficiency": 0.313291,
+      "worker_count": 8
+    }
+  ],
+  "version": "fleet-v2",
+  "workload_fingerprint": "887f206c12a29b8dd37fbd9b439e07d6b6a2b639915a5762013d2e197104dd66"
+}

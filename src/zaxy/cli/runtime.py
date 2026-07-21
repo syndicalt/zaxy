@@ -1075,7 +1075,7 @@ def fleet_benchmark(
     missions: int = typer.Option(1, help="Missions per scale point"),
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
 ) -> None:
-    """Run the FleetBench scaling scaffold (fleet axes over real CoordinationBench runs)."""
+    """Run FleetBench (fleet scaling axes over real CoordinationBench and fleet runs)."""
     try:
         counts = tuple(int(part) for part in worker_counts.split(",") if part.strip())
     except ValueError as exc:
