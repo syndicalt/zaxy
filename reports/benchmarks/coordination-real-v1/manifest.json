@@ -1,0 +1,97 @@
+{
+  "benchmark": "CoordinationBench",
+  "run": "coordination-real-v1",
+  "status": "superseded",
+  "status_reason": "The committed report was produced before two correctness defects in the Zaxy measurement path were identified. Four of its metrics were not honest measurements. See `defects` below. This manifest deliberately does NOT certify these numbers as current.",
+  "workload": {
+    "file": "coordination-workload.json",
+    "version": "coordination-real-v1",
+    "fingerprint": "b63e156150b92c9aa7d8895604741484f85f4c231d4c7d2097a2467fdaf14bd0",
+    "fingerprint_algorithm": "sha256 over json.dumps({version, cases}, sort_keys=True, separators=(',',':')); verified on load by load_coordination_workload",
+    "cases": 1
+  },
+  "provenance": {
+    "commit": "d029559c10bac45b9b8612b3cae9e14af8c22ee8",
+    "commit_date": "2026-06-08T19:20:04-05:00",
+    "zaxy_version": "2.0.0rc1",
+    "note": "Commit that last wrote these artifacts, recovered with `git log -1 -- reports/benchmarks/coordination-real-v1/`.",
+    "command": "zaxy coordinate benchmark --output-dir reports/benchmarks/coordination-real-v1 --workload reports/benchmarks/coordination-real-v1/coordination-workload.json"
+  },
+  "scoring": {
+    "method": "deterministic exact-match rubric",
+    "llm_judge": false,
+    "judge_note": "CoordinationBench has no LLM judge and makes no provider or network calls. Findings are scored by exact (claim_key, claim_value) equality against the workload gold; synthesis and leakage checks are casefolded substring tests over required and forbidden terms. Scores are binary or exact ratios.",
+    "module": "zaxy_benchmarks/coordination_benchmark.py",
+    "non_reproducible_fields": {
+      "fields": [
+        "brief_latency_ms",
+        "promotion_latency_ms"
+      ],
+      "reason": "Wall-clock timings from time.perf_counter(); machine-dependent and expected to vary run to run. All other metrics are deterministic."
+    }
+  },
+  "defects": [
+    {
+      "name": "gold oracle on the Zaxy accepted-state path",
+      "detail": "_accepted_finding_ids() read case.gold.expected_accepted_claims and promoted exactly the gold-matching findings, so accepted-finding precision and recall were 1.0 by construction while baselines received no equivalent answer key.",
+      "affected_metrics": [
+        "accepted_finding_precision",
+        "accepted_finding_recall"
+      ],
+      "reported_values": {
+        "accepted_finding_precision": 1.0,
+        "accepted_finding_recall": 1.0
+      },
+      "fix_commit": "5e1c9c97de464008ebbe47d705572c097de00760",
+      "fix_merged": false
+    },
+    {
+      "name": "unmeasured synthesis metrics",
+      "detail": "accepted_state_synthesis_quality and non_authoritative_leakage were dataclass defaults of 1.0 that no caller on the Zaxy path ever set, so coordinate_purpose_synthesis_gate passed on values nobody computed.",
+      "affected_metrics": [
+        "accepted_state_synthesis_quality",
+        "non_authoritative_leakage",
+        "coordinate_purpose_synthesis_gate"
+      ],
+      "reported_values": {
+        "accepted_state_synthesis_quality": 1.0,
+        "non_authoritative_leakage": 1.0,
+        "coordinate_purpose_synthesis_gate": "passed"
+      },
+      "fix_commit": "543772bfa609e0ebfb0430a52763ddb4ef3eb3a3",
+      "fix_merged": false
+    }
+  ],
+  "regeneration": {
+    "blocked": true,
+    "reason": "Both fix commits are on unmerged branches and are not ancestors of this commit, so the benchmark module here still contains the gold oracle and the constant metrics. Regenerating from this tree would reproduce the same contaminated values under a newer date, which would be worse than leaving them marked superseded.",
+    "unblock_condition": "Once both fix commits land on master, re-run the command in `provenance`, replace the artifacts, and rewrite this manifest with status 'current'."
+  },
+  "claim_scope": {
+    "publishable": false,
+    "note": "No external or competitive claim may cite this run. The report's own competitor_claim_gate is 'blocked': all five competitor adapters are disclosure-only and were never executed."
+  },
+  "artifacts": {
+    "competitor-runner-manifests/activegraph.runner-manifest.template.json": "dc4dea6a41072271a96be576e21aafbf9fd1ca6294cd600abce645934e72e012",
+    "competitor-runner-manifests/agent_memory.runner-manifest.template.json": "f5abe002edb84a4e640d53f16ee9c34c93abbeeb6aa8babb474d47427e613073",
+    "competitor-runner-manifests/hybi.runner-manifest.template.json": "78f0e551d3a364c275b3e4f2de45b292ba96ecac3e243b20ac72644334ef170d",
+    "competitor-runner-manifests/mem0.runner-manifest.template.json": "8f884d4781fb185f1f8baccb7d81a5aae82f00229ef771a7661e6c98e1e84b0f",
+    "competitor-runner-manifests/quarq.runner-manifest.template.json": "07b3a4e7088e391dba7b8251a8742a761aca9989b59f2fdbd4b07934ecf15a8c",
+    "coordination-benchmark.json": "659bf2a3b1fac8bf8d9517ad656eb22e5ed49a6968189f823ff2402f18bec539",
+    "coordination-benchmark.md": "35869dbf0a4441ae26a2328d280b11a4f05d425fe89cb5057bbb70d185996267",
+    "coordination-workload.json": "ea2a5e666f6337e28bbe4ba195c4049956f991d4c3edca976b39485c047ca022",
+    "eventloom/coordinate-0-4-real-1.jsonl": "ae37806c656d507ebb64635a84891eef9bf0dfa0a501af5b63abcdb1476de4ba",
+    "eventloom/worker-adapter-contract.jsonl": "f712c45dac5927bb48e3ee27b80ed2914a13e8f3546b0ce219e4a328356d577d",
+    "eventloom/worker-benchmark-audit.jsonl": "d5855b5d897aa2ab9029e687856800cde9f0a409f9a090b2f93d1c07ede6111a",
+    "eventloom/worker-docs-site.jsonl": "0efd0761f2b946e6f2312154c8fa4d893b07fb29387608e2960de34128d4eb6c",
+    "eventloom/worker-release.jsonl": "474e387c18d86c188883f4551ad2577c81b9097cf3907d06d1589ef43f8490dc",
+    "eventloom/worker-runtime-history.jsonl": "1f30e9e6dcc4d8beff6437139ffb20502290295207843018fea34497ab2db1c4"
+  },
+  "annotations": {
+    "coordination-benchmark.md": {
+      "change": "A SUPERSEDED banner was prepended so the file cannot be read as current.",
+      "content_unchanged": "All metric values and tables are byte-identical to the run output.",
+      "sha256_as_produced": "cbc4cdaebdca4cab3a9cd2136e40220b46906c19b371868af211efbca21a9180"
+    }
+  }
+}

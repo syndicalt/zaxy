@@ -1577,3 +1577,59 @@ def test_baseline_conflict_metrics_follow_the_ratio_convention() -> None:
         metrics = coordination_baseline_metrics(case, name)
         assert metrics.conflict_precision == 1.0
         assert metrics.conflict_recall == 0.0
+COORDINATION_REPORT_DIR = Path("reports/benchmarks/coordination-real-v1")
+
+
+def test_coordination_report_manifest_pins_workload_and_artifacts() -> None:
+    """The committed run's manifest should pin the real workload identity and artifact hashes."""
+    manifest = json.loads((COORDINATION_REPORT_DIR / "manifest.json").read_text(encoding="utf-8"))
+    workload = load_coordination_workload(COORDINATION_REPORT_DIR / "coordination-workload.json")
+
+    assert manifest["workload"]["version"] == workload.version
+    assert manifest["workload"]["fingerprint"] == workload.fingerprint
+    assert manifest["workload"]["cases"] == len(workload.cases)
+    assert manifest["provenance"]["commit"]
+
+    present = {
+        str(path.relative_to(COORDINATION_REPORT_DIR))
+        for path in COORDINATION_REPORT_DIR.rglob("*")
+        if path.is_file() and path.name != "manifest.json"
+    }
+    assert set(manifest["artifacts"]) == present
+    for name, digest in manifest["artifacts"].items():
+        content = (COORDINATION_REPORT_DIR / name).read_bytes()
+        assert hashlib.sha256(content).hexdigest() == digest, f"artifact drifted: {name}"
+
+
+def test_coordination_report_manifest_declares_scoring_without_inventing_a_judge() -> None:
+    """The manifest should state deterministic scoring rather than claim an LLM judge."""
+    manifest = json.loads((COORDINATION_REPORT_DIR / "manifest.json").read_text(encoding="utf-8"))
+
+    assert manifest["scoring"]["llm_judge"] is False
+    assert "judge" not in manifest
+    assert manifest["scoring"]["method"] == "deterministic exact-match rubric"
+    assert set(manifest["scoring"]["non_reproducible_fields"]["fields"]) == {
+        "brief_latency_ms",
+        "promotion_latency_ms",
+    }
+
+
+def test_coordination_report_manifest_does_not_certify_superseded_numbers() -> None:
+    """The manifest must mark the pre-fix run superseded and name every tainted metric."""
+    manifest = json.loads((COORDINATION_REPORT_DIR / "manifest.json").read_text(encoding="utf-8"))
+
+    assert manifest["status"] == "superseded"
+    assert manifest["claim_scope"]["publishable"] is False
+    tainted = {
+        metric for defect in manifest["defects"] for metric in defect["affected_metrics"]
+    }
+    assert tainted >= {
+        "accepted_finding_precision",
+        "accepted_finding_recall",
+        "accepted_state_synthesis_quality",
+        "non_authoritative_leakage",
+    }
+    assert all(defect["fix_commit"] for defect in manifest["defects"])
+
+    banner = (COORDINATION_REPORT_DIR / "coordination-benchmark.md").read_text(encoding="utf-8")
+    assert "SUPERSEDED" in banner
