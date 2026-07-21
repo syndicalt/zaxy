@@ -4496,9 +4496,11 @@ class TestSalienceReinforcementWiring:
         first = await server.handle_memory_checkout(
             {"query": "salience ledger decision", "session_id": "agent-1"}
         )
+        await server._fabric.flush_pending_reinforcements()
         second = await server.handle_memory_checkout(
             {"query": "salience ledger decision", "session_id": "agent-1"}
         )
+        await server._fabric.flush_pending_reinforcements()
 
         events = log.read_all()
         reinforcements = [event for event in events if event.type == "memory.reinforcement"]

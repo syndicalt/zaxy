@@ -1056,7 +1056,7 @@ class TestSalienceReinforcementWiring:
         self,
         fabric: MemoryFabric,
     ) -> None:
-        """Checkout should append one surfaced event through the event-spec path."""
+        """Checkout should append one surfaced event through the event-spec path once flushed."""
         self._checkout_setup(fabric)
 
         with patch.object(fabric, "query_verbatim", return_value=[]):
@@ -1065,6 +1065,7 @@ class TestSalienceReinforcementWiring:
                 session_id="agent-1",
                 limit=3,
             )
+            await fabric.flush_pending_reinforcements()
 
         call = fabric.session_manager.get.return_value.eventlog.append.call_args_list[-1]
         assert call.args == ("memory.reinforcement",)
@@ -1098,6 +1099,7 @@ class TestSalienceReinforcementWiring:
                 session_id="agent-1",
                 limit=3,
             )
+            await fabric.flush_pending_reinforcements()
 
         assert checkout.current_facts
         assert checkout.warnings is not None

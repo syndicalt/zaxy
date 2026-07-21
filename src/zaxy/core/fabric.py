@@ -48,6 +48,7 @@ from zaxy.core.models import (
     MemoryCheckout,
     QueryPage,
 )
+from zaxy.core.reinforcement_queue import DeferredReinforcementQueue
 from zaxy.embedding import build_embedding_provider
 from zaxy.event import (  # noqa: F401 - ReplayResult re-export for existing tests
     EventLog,
@@ -244,6 +245,7 @@ class MemoryFabric:
         self._initialized_workspaces: dict[tuple[str, str], WorkspaceProfile] = {}
         self._initialized_instruction_signatures: dict[tuple[str, str], str] = {}
         self._warmed_projection_sessions: set[str] = set()
+        self._reinforcement_queue = DeferredReinforcementQueue(sink=self)
         # Injected (shared) components are connected/closed by their owner, so an
         # injected fabric starts "connected" and its connect/close are no-ops for
         # those components.
@@ -376,7 +378,12 @@ class MemoryFabric:
         next call to reopen an embedded store the process already holds a lock
         on — the contention this guard exists to prevent. Symmetric with
         :meth:`connect`, which is likewise a no-op once connected.
+
+        Deferred reinforcement is flushed BEFORE that guard: an injected fabric
+        skips connection teardown but must still not drop queued writes, and the
+        MCP server closes an injected fabric after most tool calls.
         """
+        await self.flush_pending_reinforcements()
         if not self._owns_connections:
             return
         await self.graph.close()
@@ -584,6 +591,19 @@ class MemoryFabric:
             goal, phase=phase, session_id=session_id, limit=limit
         )
 
+
+    def _enqueue_reinforcement(self, spec: dict[str, Any], *, session_id: str) -> None:
+        """Queue a reinforcement spec for append after the current read returns."""
+        self._reinforcement_queue.enqueue(spec, session_id=session_id)
+
+    async def flush_pending_reinforcements(self) -> None:
+        """Append every deferred salience reinforcement queued so far.
+
+        Idempotent, and safe to call when nothing is pending. Callers that need
+        the next checkout to rank against this turn's reinforcement must await
+        this first; salience is otherwise at most one flush window stale.
+        """
+        await self._reinforcement_queue.flush()
 
     async def _append_event_spec(self, event: dict[str, Any], *, session_id: str) -> Any:
         return await self.append(

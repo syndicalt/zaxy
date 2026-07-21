@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 import random
 from datetime import UTC, datetime, timedelta
@@ -11,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from zaxy.core import MemoryFabric
+from zaxy.core.reinforcement_queue import _drain_pending_queues_at_exit
 from zaxy.event import Event, EventLog
 from zaxy.extract import extract
 from zaxy.salience import (
@@ -736,6 +738,7 @@ class TestSurfacedWiring:
         checkout = await fabric.checkout_memory(
             "salience ledger decision", session_id="agent-1", limit=3
         )
+        await fabric.flush_pending_reinforcements()
 
         log = fabric.session_manager.get("agent-1").eventlog
         reinforcements = _reinforcement_events(log)
@@ -762,6 +765,7 @@ class TestSurfacedWiring:
 
         await fabric.checkout_memory("salience ledger decision", session_id="agent-1", limit=3)
         await fabric.checkout_memory("salience ledger decision", session_id="agent-1", limit=3)
+        await fabric.flush_pending_reinforcements()
 
         log = fabric.session_manager.get("agent-1").eventlog
         reinforcements = _reinforcement_events(log)
@@ -787,6 +791,7 @@ class TestSurfacedWiring:
         baseline = await fabric.checkout_memory(
             "salience reinforcement", session_id="agent-1", limit=3
         )
+        await fabric.flush_pending_reinforcements()
         assert _reinforcement_events(fabric.session_manager.get("agent-1").eventlog)
         with_salience_events = await fabric.checkout_memory(
             "salience reinforcement", session_id="agent-1", limit=3
@@ -824,6 +829,138 @@ class TestSurfacedWiring:
         assert _reinforcement_events(log) == []
 
 
+class TestDeferredSurfacedReinforcement:
+    """Checkout returns before the reinforcement write, which still lands."""
+
+    async def test_checkout_returns_before_the_reinforcement_reaches_the_log(
+        self, tmp_path: Path
+    ) -> None:
+        """The surfaced write must not be on the checkout response's critical path."""
+        fabric = _wired_fabric(tmp_path)
+        await _seed_decision(fabric)
+        log = fabric.session_manager.get("agent-1").eventlog
+
+        checkout = await fabric.checkout_memory(
+            "salience ledger decision", session_id="agent-1", limit=3
+        )
+
+        assert checkout.current_facts
+        assert _reinforcement_events(log) == []
+        assert fabric._reinforcement_queue.pending_count == 1
+        await fabric.flush_pending_reinforcements()
+        assert len(_reinforcement_events(log)) == 1
+        assert fabric._reinforcement_queue.pending_count == 0
+
+    async def test_deferral_leaves_the_returned_packet_byte_identical(
+        self, tmp_path: Path
+    ) -> None:
+        """Deferring the write must not change one byte of the returned checkout."""
+
+        async def packet(root: Path, *, inline: bool) -> str:
+            fabric = _wired_fabric(root)
+            # Fixed seed timestamp so both stores seal the same hash chain and any
+            # surviving diff is attributable to the deferral, not to wall clock.
+            fabric.session_manager.get("agent-1").eventlog.append(
+                "decision.made",
+                actor="dev",
+                payload={"decision": "Adopt the salience ledger for memory reinforcement."},
+                thread="agent-1",
+                timestamp=datetime(2026, 5, 10, 12, 0, tzinfo=UTC),
+            )
+            if inline:
+                # Restore the pre-deferral contract: append before returning.
+                def append_now(spec: dict[str, Any], *, session_id: str) -> None:
+                    fabric._reinforcement_queue.enqueue(spec, session_id=session_id)
+                    fabric._reinforcement_queue.drain_to_log_sync()
+
+                fabric._enqueue_reinforcement = append_now  # type: ignore[method-assign]
+            checkout = await fabric.checkout_memory(
+                "salience ledger decision", session_id="agent-1", limit=3
+            )
+            return json.dumps(checkout.to_dict(), sort_keys=True)
+
+        deferred = await packet(tmp_path / "deferred", inline=False)
+        inline = await packet(tmp_path / "inline", inline=True)
+
+        assert deferred == inline
+
+    async def test_unflushed_reinforcement_is_invisible_to_the_next_checkout(
+        self, tmp_path: Path
+    ) -> None:
+        """Salience lags by at most one flush window; the next packet ranks without it."""
+        fabric = _wired_fabric(tmp_path)
+        await _seed_decision(fabric)
+
+        first = await fabric.checkout_memory(
+            "salience ledger decision", session_id="agent-1", limit=3
+        )
+        unflushed = await fabric.checkout_memory(
+            "salience ledger decision", session_id="agent-1", limit=3
+        )
+        # Nothing has landed yet, so the second packet sees the same (empty)
+        # salience state the first one did.
+        assert "salience" not in first.diagnostics
+        assert "salience" not in unflushed.diagnostics
+
+        await fabric.flush_pending_reinforcements()
+        after_flush = await fabric.checkout_memory(
+            "salience ledger decision", session_id="agent-1", limit=3
+        )
+
+        assert "salience" in after_flush.diagnostics
+        # Ranking is unaffected either way — salience is a soft signal.
+        assert after_flush.current_facts == first.current_facts
+
+    async def test_close_flushes_pending_reinforcement(self, tmp_path: Path) -> None:
+        """A prompt close must land queued writes, not drop them."""
+        fabric = _wired_fabric(tmp_path)
+        await _seed_decision(fabric)
+        log = fabric.session_manager.get("agent-1").eventlog
+
+        await fabric.checkout_memory("salience ledger decision", session_id="agent-1", limit=3)
+        assert _reinforcement_events(log) == []
+        await fabric.close()
+
+        assert len(_reinforcement_events(log)) == 1
+
+    async def test_close_flushes_even_when_connections_are_injected(
+        self, tmp_path: Path
+    ) -> None:
+        """An injected fabric skips teardown but must still not drop queued writes."""
+        with patch("zaxy.core.fabric.build_projection_store") as mock_store:
+            mock_store.return_value = AsyncMock()
+            fabric = MemoryFabric(
+                eventloom_path=str(tmp_path / ".eventloom"),
+                tracer_disabled=True,
+                owns_connections=False,
+            )
+        fabric.query_router = MagicMock(query=AsyncMock(return_value=[]))
+        fabric._connected = True
+        await _seed_decision(fabric)
+        log = fabric.session_manager.get("agent-1").eventlog
+
+        await fabric.checkout_memory("salience ledger decision", session_id="agent-1", limit=3)
+        await fabric.close()
+
+        assert len(_reinforcement_events(log)) == 1
+
+    async def test_process_exit_hook_lands_pending_reinforcement(
+        self, tmp_path: Path
+    ) -> None:
+        """A process exiting without close must still write queued reinforcement."""
+        fabric = _wired_fabric(tmp_path)
+        await _seed_decision(fabric)
+        log = fabric.session_manager.get("agent-1").eventlog
+
+        await fabric.checkout_memory("salience ledger decision", session_id="agent-1", limit=3)
+        assert _reinforcement_events(log) == []
+
+        # Exactly what atexit runs: no event loop, no graph, JSONL only.
+        _drain_pending_queues_at_exit()
+
+        assert len(_reinforcement_events(log)) == 1
+
+
 class TestDiagnosticsWiring:
     """Salience composition appears in checkout diagnostics only."""
 
@@ -834,6 +971,7 @@ class TestDiagnosticsWiring:
         seeded = await _seed_decision(fabric)
 
         await fabric.checkout_memory("salience ledger decision", session_id="agent-1", limit=3)
+        await fabric.flush_pending_reinforcements()
         checkout = await fabric.checkout_memory(
             "salience ledger decision", session_id="agent-1", limit=3
         )
