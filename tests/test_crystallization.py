@@ -21,6 +21,11 @@ from zaxy.crystallization import (
     CrystallizationReport,
     run_crystallization_pass,
 )
+from zaxy.learned_context import (
+    LEARNED_CONTEXT_DIRNAME,
+    LEARNED_CONTEXT_EVENT_TYPE,
+    load_learned_context,
+)
 from zaxy.lifecycle import (
     build_file_edit_applied_event,
     build_tool_call_completed_event,
@@ -650,3 +655,142 @@ def test_plan_reverify_and_citation_helper_edge_branches() -> None:
     assert _normalize_citations("not-a-list") == []
     assert _normalize_citations([{"seq": 0, "hash": "a" * 64}, {"hash": "a" * 64}, cite]) == [cite]
     assert _merge_citations(None, [cite], [cite]) == [cite]
+
+
+# --------------------------------------------------------------------------
+# I2 learned-context persistence (gated; off by default).
+# --------------------------------------------------------------------------
+
+
+async def _crystallize_with_learned_context(tmp_path: Path, *, enabled: bool) -> tuple[Any, Any]:
+    """Run a compaction-only pass over a log the audit judges SAFE.
+
+    Only the compaction stage runs: the other stages append candidate events,
+    which would grow the log past the point where a single representative still
+    carries every identity, and the audit (rightly) refuses to compact that.
+    """
+    from zaxy.config import Settings
+
+    fabric = await _build_fabric(tmp_path)
+    fabric.settings = Settings(learned_context_enabled=enabled)
+    try:
+        eventlog = fabric.session_manager.get("crystal").eventlog
+        eventlog.append(
+            "document.indexed",
+            actor="indexer",
+            payload={
+                "path": "docs/one.md",
+                "start_line": 1,
+                "end_line": 3,
+                "content": "The single source carries identity-code-0001.",
+            },
+            thread="crystal",
+        )
+        report = await run_crystallization_pass(
+            fabric,
+            session_id="crystal",
+            compaction=True,
+            consolidation=False,
+            procedure_mining=False,
+            metacognition=False,
+        )
+        events = eventlog.read_all()
+    finally:
+        await fabric.close()
+    return report, events
+
+
+@pytest.mark.asyncio
+async def test_crystallization_persists_the_learned_context_artifact_when_enabled(tmp_path: Path) -> None:
+    """With the gate on, the pass writes the artifact and records the build in the log."""
+    report, events = await _crystallize_with_learned_context(tmp_path, enabled=True)
+
+    assert report.compaction is not None
+    assert report.compaction["safe"] is True
+    persisted = report.compaction["learned_context"]
+    assert persisted["persisted"] is True
+
+    artifact = Path(persisted["artifact_path"])
+    assert artifact.exists()
+    assert artifact.parent.name == LEARNED_CONTEXT_DIRNAME
+    envelope = json.loads(artifact.read_text(encoding="utf-8"))
+    assert envelope["covered_seq"] == persisted["covered_seq"]
+
+    built = _events_of_type_in(events, LEARNED_CONTEXT_EVENT_TYPE)
+    assert len(built) == 1
+    payload = built[0].payload
+    assert payload["authority_status"] == "non_authoritative"
+    assert payload["projection_id"] == envelope["projection"]["projection_id"]
+    assert payload["covered_head"] == {
+        "seq": persisted["covered_seq"],
+        "hash": persisted["covered_hash"],
+    }
+    assert payload["record_count"] == persisted["record_count"]
+
+    # The covered head is the log tip as it stood BEFORE the build event was
+    # appended, so the build event never invalidates its own projection.
+    assert payload["covered_head"]["seq"] < built[0].seq
+
+    # The artifact is a cache the log vouches for: it loads clean against this log.
+    load = load_learned_context(artifact, events)
+    assert load.projection is not None
+    assert load.stale is False
+
+
+@pytest.mark.asyncio
+async def test_crystallization_writes_nothing_when_learned_context_is_disabled(tmp_path: Path) -> None:
+    """With the gate off (the default), the compaction stage stays report-only."""
+    report, events = await _crystallize_with_learned_context(tmp_path, enabled=False)
+
+    assert report.compaction is not None
+    assert report.compaction["safe"] is True
+    assert "learned_context" not in report.compaction
+    assert _events_of_type_in(events, LEARNED_CONTEXT_EVENT_TYPE) == []
+    assert not (tmp_path / ".eventloom" / "projections" / LEARNED_CONTEXT_DIRNAME).exists()
+
+
+@pytest.mark.asyncio
+async def test_crystallization_deleting_the_artifact_loses_nothing(tmp_path: Path) -> None:
+    """The artifact is a cache: deleting it degrades to "missing" and loses no evidence.
+
+    Everything the artifact held is still derivable — the build event in the log
+    records what was built, and the source events it compacted are untouched.
+    """
+    report, events = await _crystallize_with_learned_context(tmp_path, enabled=True)
+    artifact = Path(report.compaction["learned_context"]["artifact_path"])
+    assert load_learned_context(artifact, events).projection is not None
+
+    artifact.unlink()
+
+    load = load_learned_context(artifact, events)
+    assert load.projection is None
+    assert load.stale is False
+    assert load.reason == "missing"
+    # The evidence survived the cache: the build event still describes the projection.
+    built = _events_of_type_in(events, LEARNED_CONTEXT_EVENT_TYPE)[0]
+    assert built.payload["projection_id"]
+    assert built.payload["record_count"] >= 1
+    assert built.payload["covered_head"]["seq"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_crystallization_projection_build_is_deterministic(tmp_path: Path) -> None:
+    """Rebuilding over the same source events reproduces the same projection identity."""
+    from zaxy.compaction import build_compaction_projection
+    from zaxy.event import EventLog
+
+    log = EventLog(tmp_path / "src.jsonl")
+    log.append(
+        "document.indexed",
+        actor="indexer",
+        payload={"path": "docs/one.md", "start_line": 1, "end_line": 3, "content": "identity-code-0001 here."},
+    )
+    first = build_compaction_projection(log)
+    second = build_compaction_projection(log)
+
+    assert first.projection_id == second.projection_id
+    assert first.records == second.records
+
+
+def _events_of_type_in(events: list[Any], event_type: str) -> list[Any]:
+    return [event for event in events if event.type == event_type]

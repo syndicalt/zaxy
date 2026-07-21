@@ -240,6 +240,18 @@ class Settings(BaseSettings):
             "member, trusted, or steward (validated against TRUST_TIERS at use site)"
         ),
     )
+    learned_context_enabled: bool = Field(
+        default=False,
+        description=(
+            "Enable the amortized learned-context precompute (I2): crystallization "
+            "persists its compaction projection under "
+            "'<eventloom_dir>/projections/learned-context/' and records the build in "
+            "the log, and long-horizon checkout consumes it as a second consolidated "
+            "source. Opt-in, off by default; when off nothing is written and checkout "
+            "is byte-identical. The artifact is a rebuildable cache — deleting it "
+            "loses nothing, and a stale or unvouched artifact is ignored outright."
+        ),
+    )
     long_horizon_enabled: bool = Field(
         default=False,
         description=(

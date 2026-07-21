@@ -350,6 +350,11 @@ def load_compaction_projection(path: str | Path) -> CompactionProjection:
     return _projection_from_payload(payload)
 
 
+def projection_from_payload(payload: dict[str, Any]) -> CompactionProjection:
+    """Rehydrate a compaction projection from its serialized mapping."""
+    return _projection_from_payload(payload)
+
+
 def search_compaction_projections(
     projections: list[CompactionProjection] | tuple[CompactionProjection, ...],
     query: str,
@@ -785,6 +790,11 @@ def _projection_from_payload(payload: dict[str, Any]) -> CompactionProjection:
         purpose=dict(payload.get("purpose") or {}),
         consolidation_policy=dict(payload.get("consolidation_policy") or {}),
     )
+
+
+def text_tokens(value: str) -> set[str]:
+    """Return the routing tokens for ``value`` (shared with long-horizon scoring)."""
+    return _tokens(value)
 
 
 def _tokens(value: str) -> set[str]:

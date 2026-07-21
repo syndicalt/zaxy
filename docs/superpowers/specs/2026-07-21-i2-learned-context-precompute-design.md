@@ -1,6 +1,7 @@
 # I2 — Amortized learned-context precompute
 
-- **Status:** design — **agree before code**
+- **Status:** implemented on `feat/i2-learned-context-precompute` (see §10 for
+  the open-question resolutions and the deviations from this design)
 - **Date:** 2026-07-21
 - **Owner:** Claude Opus 4.8, with the 2026-07-21 roadmap gap audit as input
 - **Roadmap refs:** `ZAXY-3.md` §7 I2 (net-new item c), §7 I3 ("lean on I2's
@@ -212,3 +213,68 @@ score is still an authoring confidence with a hardcoded 0.5 fallback,
 `long_horizon.py:170-175`). This work makes the remote tier non-empty; it does not
 make it well-ranked. Worth sequencing that immediately after, because a denser
 tier with a weak score function may read as a regression.
+
+## 10. Implementation record (2026-07-21)
+
+Implemented on `feat/i2-learned-context-precompute`, together with the I3
+long-span relevance scoring §9 flagged as the necessary sequel.
+
+### 10.1 Open questions — resolved
+
+1. **Per-session or per-workspace?** **Per-session**, matching the
+   session-sharded log. The artifact is rewritten *in place* rather than
+   accumulated, so a fleet of short sessions costs one bounded file each rather
+   than one file per pass.
+2. **I4-gated?** **No gate**, as this document leaned. Nothing is promoted,
+   every surfaced record cites, and consumption is already behind
+   `learned_context_enabled`. Gating the build would have made a cache
+   review-load; gating consumption would have duplicated the flag.
+3. **Benchmark numbers?** **None move.** The feature is off by default and no
+   published number was produced with it on, so `docs/benchmarks.md` is
+   untouched.
+4. **Retention.** One artifact per session, replaced atomically. Bounded by
+   construction at **< ~1 MiB per session**: at most 64 records x (4 KiB text +
+   2 x 16 x 256 B identity/citation strings), plus a capped audit block. Total
+   on-disk cost is O(sessions), not O(passes) — the 397 MB failure mode is
+   structurally unavailable.
+
+### 10.2 Deviations from §3 / §5
+
+- **New module rather than a loader seam inside `compaction.py`.** §5 step 2
+  said "`compaction.py`, new loader seam". The artifact envelope, the covered-head
+  verification, the trust check, and the atomic write are a different concern
+  from audit/build/search, and `compaction.py` was already 795 lines. They live in
+  `src/zaxy/learned_context.py`; `compaction.py` gained only two public seams
+  (`projection_from_payload`, `text_tokens`) so the new module need not reach
+  into its privates.
+- **No new path setting.** §5 step 3 said "setting + path setting". The path is
+  *derived* from `eventloom_dir`, matching how the log itself is located. A
+  standalone default path string would not follow a test or deployment that
+  moves `eventloom_path`, which is exactly how these artifacts get orphaned.
+- **Diagnostics live on the long-horizon plan, not `checkout_build.py`.** §5 step
+  5 pointed at `core/checkout_build.py`. The stanza is emitted by
+  `LongHorizonPlan.to_diagnostics()` and threaded through the existing
+  `long_horizon` section, so the key is absent entirely when the feature is off —
+  which is what makes the default-off output byte-identical.
+- **`missing` is not `stale`.** §3.3 grouped a missing artifact with mismatched
+  and unreadable ones. A never-built artifact is *absence*, not a stale claim, so
+  it reports `reason: "missing"` with `stale: false`. Every case that involves a
+  file actually claiming to be current still fails closed with `stale: true`.
+
+### 10.3 I3 long-span relevance scoring
+
+The remote-tier score is no longer the authoring `confidence` with a hardcoded
+0.5 fallback. `long_horizon.span_relevance` returns a weighted sum in [0, 1] of
+four terms, each a deterministic function of data already on the record:
+
+| Term | Weight | Why it is there |
+|---|---|---|
+| `query_overlap` | 0.40 | The only term that responds to what was asked; a long-span tier that ignores the query is a chronological dump. Uses the same tokenizer as projection search, so both sources are comparable. |
+| `span_coverage` | 0.25 | The tier's job is compression: an item standing in for more scrolled-out history buys more context per token. Saturates at 8 source events so one large candidate cannot dominate on size. |
+| `horizon_proximity` | 0.20 | `max_source_seq / split_seq`. Everything here is already behind the split; among those, history nearer the split is nearer to current work and less likely superseded. This is the term that makes the score span-aware. |
+| `authoring_prior` | 0.15 | Kept but demoted. An accepted candidate's confidence survived human review, so it earns a minority vote — it just no longer *is* the score. Records without one get a neutral 0.5, not a zero. |
+
+Every term, its weight, and the split geometry are echoed into
+`metadata["relevance_terms"]`, so the ranking is reconstructible from the packet
+alone. Ranking is applied **before** the budget, so the budget keeps the most
+relevant remote history rather than the first-replayed.
