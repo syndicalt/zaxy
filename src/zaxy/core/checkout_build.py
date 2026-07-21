@@ -939,6 +939,68 @@ def _checkout_salience_diagnostics(
     }
 
 
+#: Rule-lifecycle review statuses meaning the I4 evolution gate withheld the rule
+#: from application. Mirrors the skill-lane filter in :func:`_is_active_skill_item`.
+_WITHHELD_REVIEW_STATUSES = frozenset({"pending", "rejected", "deferred"})
+
+#: Event types carrying a gated rule-generation decision. ``memory.rule.generated``
+#: is included deliberately: the type alone does not prove the gate auto-applied it,
+#: so the authoritative signal is always the payload's ``review_status``.
+_GOVERNED_RULE_EVENT_TYPES = frozenset({"memory.rule.proposed", "memory.rule.generated"})
+
+
+def _governance_withheld_event_seqs(replay_events: list[Any]) -> frozenset[int]:
+    """Return replay seqs for rule events the evolution gate withheld from application."""
+    withheld: set[int] = set()
+    for event in replay_events:
+        if getattr(event, "type", None) not in _GOVERNED_RULE_EVENT_TYPES:
+            continue
+        payload = getattr(event, "payload", None)
+        if not isinstance(payload, dict):
+            continue
+        status = str(payload.get("review_status") or "").casefold().strip()
+        if status not in _WITHHELD_REVIEW_STATUSES:
+            continue
+        seq = getattr(event, "seq", None)
+        if isinstance(seq, int):
+            withheld.add(seq)
+    return frozenset(withheld)
+
+
+def _context_source_seq(context: Context) -> int | None:
+    """Resolve the replay seq a context was projected from, if it carries one."""
+    metadata = context.metadata or {}
+    for key in ("source_event_seq", "event_seq"):
+        raw = metadata.get(key)
+        if isinstance(raw, int):
+            return raw
+        if isinstance(raw, str) and raw.isdigit():
+            return int(raw)
+    event_seq, _ = _citation_event_identity(_context_citation(context))
+    return event_seq
+
+
+def _drop_governance_withheld_contexts(
+    contexts: list[Context], withheld_seqs: frozenset[int]
+) -> list[Context]:
+    """Drop contexts projected from gate-withheld events, on every lane.
+
+    A rule the gate held for review must not reach the model as though it had
+    been applied. Generic projection lanes (verbatim, graph, projection) surface
+    any event by content match and have no notion of the gate, so the exclusion
+    is enforced here — the single point every lane funnels through — rather than
+    per-lane. Filtering before synthesis also prevents a withheld rule being
+    laundered into an aggregated bundle that carries no per-source review status.
+    """
+    if not withheld_seqs:
+        return contexts
+    return [
+        context
+        for context in contexts
+        if _context_source_seq(context) not in withheld_seqs
+    ]
+
+
 def _checkout_contexts_with_synthesis(query: str, assembly: ContextAssembly) -> list[Context]:
     """Return recall contexts plus a compact checkout-only synthesis proof when available."""
     checkout_contexts = list(assembly.recall.contexts() or assembly.contexts)
@@ -960,6 +1022,11 @@ def _checkout_contexts_with_synthesis(query: str, assembly: ContextAssembly) -> 
             *checkout_contexts,
             *(context for context in assembly.long_horizon_contexts if id(context) not in present),
         ]
+    # Governance exclusion runs after every lane has been merged and before
+    # synthesis, so no lane and no derived bundle can carry a withheld rule.
+    checkout_contexts = _drop_governance_withheld_contexts(
+        checkout_contexts, _governance_withheld_event_seqs(assembly.replay_events)
+    )
     if any(
         (context.metadata or {}).get("source_kind") == "source_synthesis"
         or "zaxy_synthesis_bundle=true" in context.content

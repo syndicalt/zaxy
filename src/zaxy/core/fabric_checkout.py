@@ -34,10 +34,12 @@ from zaxy.core.checkout_build import (
     _context_identity,
     _context_warnings,
     _contexts_as_of_seq,
+    _drop_governance_withheld_contexts,
     _event_citation,
     _event_content,
     _feedback_outcome,
     _feedback_purpose_payload,
+    _governance_withheld_event_seqs,
     _increment_count,
     _normalize_context_feedback,
     _purpose_outcome_aggregates,
@@ -404,6 +406,18 @@ class CheckoutOps:
         verbatim_contexts = _apply_purpose_outcome_learning(verbatim_contexts, purpose_outcomes)
         packet_memory_contexts = self._host._recent_packet_memory_contexts(replay_events)
         packet_memory_contexts = _apply_purpose_outcome_learning(packet_memory_contexts, purpose_outcomes)
+        # A rule the evolution gate held for review must not be assembled into the
+        # prompt on any lane. Applied here, at the point every lane is materialised,
+        # so the exclusion covers the retrieved-context prompt, the working set, and
+        # the recall candidate set together rather than only the checkout payload.
+        # The withheld events themselves stay in the replay/audit trail.
+        withheld_seqs = _governance_withheld_event_seqs(session_events)
+        if withheld_seqs:
+            graph_contexts = _drop_governance_withheld_contexts(graph_contexts, withheld_seqs)
+            verbatim_contexts = _drop_governance_withheld_contexts(verbatim_contexts, withheld_seqs)
+            packet_memory_contexts = _drop_governance_withheld_contexts(
+                packet_memory_contexts, withheld_seqs
+            )
         recall_contexts = [*graph_contexts, *verbatim_contexts, *packet_memory_contexts]
         recall = build_recall_candidate_set(recall_contexts, budget=candidate_limit)
         contexts = self._host.context_assembly_policy.assemble(

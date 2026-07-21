@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 from pathlib import Path
 
@@ -328,3 +329,85 @@ class TestRecordOutcomeSurprise:
         outcome = self._outcome(fabric)
         assert "prior" not in outcome
         assert "prediction_error" not in outcome
+
+
+class TestWithheldRuleIsNotAssembled:
+    """The I4 gate's decision must hold all the way through checkout assembly.
+
+    A rule the gate declined to auto-apply is a proposal awaiting review. If it
+    still reaches the assembled prompt, the model conditions on it exactly as if
+    it had been approved and the gate is decorative. These cases differ only in
+    the outcome that drives the gate decision -- same lesson text, same query --
+    so a pass isolates the gate as the cause.
+    """
+
+    _LESSON = "CANARY-prefer-the-batch-path-when-batching"
+    _QUERY = "what should I know about batching?"
+
+    async def _record_and_checkout(
+        self, tmp_path: Path, outcome: str
+    ) -> tuple[dict[str, object], str]:
+        fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
+        await fabric.connect()
+        try:
+            result = await fabric.record_outcome(
+                outcome=outcome,
+                summary="the batch path only half worked",
+                lesson=self._LESSON,
+                trigger="when batching over 50 items",
+                session_id="ext",
+            )
+            checkout = await fabric.checkout_memory(self._QUERY, session_id="ext", limit=25)
+        finally:
+            await fabric.close()
+        return result["rule"], checkout.prompt
+
+    async def test_withheld_rule_never_reaches_the_prompt(self, tmp_path: Path) -> None:
+        """A gate-withheld (pending) rule is excluded from the assembled prompt."""
+        rule, prompt = await self._record_and_checkout(tmp_path, "partial")
+        assert rule["review_status"] == "pending"
+        assert rule["auto_applied"] is False
+        assert self._LESSON not in prompt
+
+    async def test_auto_applied_rule_still_reaches_the_prompt(self, tmp_path: Path) -> None:
+        """An auto-applied (active) rule still surfaces -- the filter is not a blanket drop."""
+        rule, prompt = await self._record_and_checkout(tmp_path, "failure")
+        assert rule["review_status"] == "active"
+        assert rule["auto_applied"] is True
+        assert self._LESSON in prompt
+
+    async def test_withheld_rule_is_absent_from_current_facts(self, tmp_path: Path) -> None:
+        """The withheld rule is excluded from current_facts, not merely deprioritised."""
+        fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
+        await fabric.connect()
+        try:
+            await fabric.record_outcome(
+                outcome="partial",
+                summary="the batch path only half worked",
+                lesson=self._LESSON,
+                trigger="when batching over 50 items",
+                session_id="ext",
+            )
+            checkout = await fabric.checkout_memory(self._QUERY, session_id="ext", limit=25)
+        finally:
+            await fabric.close()
+        assert not any(self._LESSON in json.dumps(fact, default=str) for fact in checkout.current_facts)
+
+    async def test_withheld_rule_remains_in_the_replayable_log(self, tmp_path: Path) -> None:
+        """Exclusion is an assembly-time filter, never a deletion from the event log."""
+        fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
+        await fabric.connect()
+        try:
+            await fabric.record_outcome(
+                outcome="partial",
+                summary="the batch path only half worked",
+                lesson=self._LESSON,
+                trigger="when batching over 50 items",
+                session_id="ext",
+            )
+        finally:
+            await fabric.close()
+        events = fabric.session_manager.get("ext").eventlog.read_all()
+        proposed = [e for e in events if e.type == RULE_PROPOSED_EVENT_TYPE]
+        assert len(proposed) == 1
+        assert proposed[0].payload["rule"] == self._LESSON
