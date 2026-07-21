@@ -7,6 +7,7 @@ import builtins
 import importlib.util
 import tempfile
 from collections import Counter
+from collections.abc import Sequence
 from functools import lru_cache
 from pathlib import Path
 from unittest.mock import patch
@@ -28,6 +29,14 @@ from zaxy.embedded_graph_store import (
 from zaxy.extract import ExtractedEdge, ExtractedEntity, ExtractionResult
 from zaxy.graph import GraphEntity
 from zaxy.graph_walk import AdjacencySnapshot
+
+_NO_PROVENANCE = embedded_graph_store._EdgeProvenance(
+    inferred=False,
+    confidence=None,
+    method=None,
+    has_source_event_ref=False,
+    evidence_key_count=0,
+)
 
 pytestmark = pytest.mark.skipif(importlib.util.find_spec("ladybug") is None, reason="ladybug is not installed")
 
@@ -382,8 +391,8 @@ async def test_embedded_store_traversal_skips_duplicate_path_metadata(
     )
     index = embedded_graph_store._TraversalIndex(
         adjacency={
-            "root-a": [("target", target, "relates_to")],
-            "root-b": [("target", target, "relates_to")],
+            "root-a": [("target", target, "relates_to", _NO_PROVENANCE)],
+            "root-b": [("target", target, "relates_to", _NO_PROVENANCE)],
         },
         keys_by_name={"Root": {"root-a", "root-b"}},
     )
@@ -394,7 +403,12 @@ async def test_embedded_store_traversal_skips_duplicate_path_metadata(
         assert temporal_point is None
         return index
 
-    def entity_with_path_metadata(entity: GraphEntity, *, relation_types: list[str]) -> GraphEntity:
+    def entity_with_path_metadata(
+        entity: GraphEntity,
+        *,
+        relation_types: list[str],
+        provenance: Sequence[embedded_graph_store._EdgeProvenance] = (),
+    ) -> GraphEntity:
         nonlocal metadata_calls
         metadata_calls += 1
         return GraphEntity(
@@ -441,6 +455,12 @@ def test_embedded_store_traversal_index_reuses_entities_by_node_key(monkeypatch:
             "agent-1",
             1,
             "hash-1",
+            False,
+            None,
+            None,
+            None,
+            None,
+            None,
         ],
         [
             "source-key",
@@ -464,6 +484,12 @@ def test_embedded_store_traversal_index_reuses_entities_by_node_key(monkeypatch:
             "agent-1",
             1,
             "hash-1",
+            False,
+            None,
+            None,
+            None,
+            None,
+            None,
         ],
     ]
 
@@ -3875,7 +3901,7 @@ async def test_fetch_adjacency_reverse_edges_match_traversal_index_semantics(
     traversal_pairs = sorted(
         (source_key, target_key)
         for source_key, neighbors in traversal.adjacency.items()
-        for target_key, _entity, _relation in neighbors
+        for target_key, _entity, _relation, _provenance in neighbors
     )
     assert _snapshot_edge_pairs(snapshot) == traversal_pairs
     await store.close()

@@ -178,8 +178,35 @@ class _VectorIndex:
 
 
 @dataclass(frozen=True)
+class _EdgeProvenance:
+    """Inferred-edge provenance carried on one traversal adjacency entry.
+
+    Mirrors the per-relationship facts the Neo4j traversal projects into
+    ``_path_inferred_*`` (see ``zaxy.graph._traversal_inferred_metadata``) so
+    the query-side trust scorer behaves identically on both backends. Only
+    provenance genuinely stored on the edge is represented here — a
+    non-inferred edge carries ``inferred=False`` and nothing else.
+    """
+
+    inferred: bool
+    confidence: float | None
+    method: str | None
+    has_source_event_ref: bool
+    evidence_key_count: int
+
+
+_NO_EDGE_PROVENANCE = _EdgeProvenance(
+    inferred=False,
+    confidence=None,
+    method=None,
+    has_source_event_ref=False,
+    evidence_key_count=0,
+)
+
+
+@dataclass(frozen=True)
 class _TraversalIndex:
-    adjacency: dict[str, list[tuple[str, GraphEntity, str]]]
+    adjacency: dict[str, list[tuple[str, GraphEntity, str, _EdgeProvenance]]]
     keys_by_name: dict[str, set[str]]
 
 
@@ -518,7 +545,86 @@ def _row_to_entity(row: list[Any]) -> GraphEntity:
     )
 
 
-def _entity_with_path_metadata(entity: GraphEntity, *, relation_types: list[str]) -> GraphEntity:
+_EVIDENCE_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
+
+
+def _evidence_key_count(evidence_json: Any) -> int:
+    """Count the evidence keys an edge would project as namespaced properties.
+
+    Neo4j stores each evidence entry as its own ``evidence_<key>`` relationship
+    property and counts those keys; embedded packs the same mapping into one
+    opaque ``evidence_json`` blob. Applying the identical key/value filters to
+    the parsed blob keeps the two backends' evidence coverage comparable.
+    Malformed or non-object JSON yields zero rather than raising.
+    """
+    evidence = _json_dict(evidence_json)
+    count = 0
+    for key, value in evidence.items():
+        if not isinstance(key, str) or not _EVIDENCE_KEY_RE.fullmatch(key):
+            continue
+        if value is None:
+            continue
+        if isinstance(value, str | int | float | bool) or (
+            isinstance(value, list)
+            and all(isinstance(item, str | int | float | bool) for item in value)
+        ):
+            count += 1
+    return count
+
+
+def _edge_provenance_from_row(
+    *,
+    inferred: Any,
+    confidence: Any,
+    inference_method: Any,
+    source_event_seq: Any,
+    source_event_hash: Any,
+    evidence_json: Any,
+) -> _EdgeProvenance:
+    """Build one edge's inferred provenance from its stored RELATES columns."""
+    if inferred is not True:
+        return _NO_EDGE_PROVENANCE
+    method = str(inference_method).strip() if inference_method else ""
+    hash_text = str(source_event_hash).strip() if source_event_hash else ""
+    return _EdgeProvenance(
+        inferred=True,
+        confidence=_optional_float(confidence),
+        method=method or None,
+        has_source_event_ref=_optional_int(source_event_seq) is not None and bool(hash_text),
+        evidence_key_count=_evidence_key_count(evidence_json),
+    )
+
+
+def _path_inferred_metadata(provenance: Sequence[_EdgeProvenance]) -> dict[str, Any]:
+    """Return ``_path_inferred_*`` traversal metadata for one path's edges.
+
+    Shape-compatible with the Neo4j projection so ``zaxy.query`` scores paths
+    identically on both backends; an all-cited path returns ``{}`` and is left
+    at the neutral multiplier.
+    """
+    inferred = [edge for edge in provenance if edge.inferred]
+    if not inferred:
+        return {}
+    evidence_counts = [edge.evidence_key_count for edge in inferred if edge.evidence_key_count > 0]
+    return {
+        "_path_inferred_flags": [edge.inferred for edge in provenance],
+        "_path_inferred_edge_count": len(inferred),
+        "_path_inferred_confidences": [
+            edge.confidence for edge in inferred if edge.confidence is not None
+        ],
+        "_path_inference_methods": [edge.method for edge in inferred if edge.method],
+        "_path_inferred_source_event_count": sum(1 for edge in inferred if edge.has_source_event_ref),
+        "_path_inferred_evidence_count": sum(evidence_counts),
+        "_path_inferred_evidenced_edge_count": len(evidence_counts),
+    }
+
+
+def _entity_with_path_metadata(
+    entity: GraphEntity,
+    *,
+    relation_types: list[str],
+    provenance: Sequence[_EdgeProvenance] = (),
+) -> GraphEntity:
     from zaxy.graph import GraphEntity
 
     return GraphEntity(
@@ -530,6 +636,7 @@ def _entity_with_path_metadata(entity: GraphEntity, *, relation_types: list[str]
             **entity.properties,
             "_path_relation_types": relation_types,
             "_path_length": len(relation_types),
+            **_path_inferred_metadata(provenance),
         },
         session_id=entity.session_id,
     )
