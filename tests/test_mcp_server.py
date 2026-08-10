@@ -860,8 +860,8 @@ class TestUmbrellaTools:
         consolidation = next(t for t in TOOLS if t.name == "memory_consolidation")
         confidence = next(t for t in TOOLS if t.name == "memory_confidence")
 
-        assert consolidation.inputSchema["required"] == ["operation"]
-        assert consolidation.inputSchema["properties"]["operation"]["enum"] == [
+        assert consolidation.input_schema["required"] == ["operation"]
+        assert consolidation.input_schema["properties"]["operation"]["enum"] == [
             "candidate",
             "propose_from_log",
             "status",
@@ -869,15 +869,15 @@ class TestUmbrellaTools:
         ]
         consolidation_clauses = {
             clause["if"]["properties"]["operation"]["const"]: clause["then"]["required"]
-            for clause in consolidation.inputSchema["allOf"]
+            for clause in consolidation.input_schema["allOf"]
         }
         assert consolidation_clauses == {
             "candidate": ["candidate_type", "title", "summary", "source_events", "confidence", "method"],
             "review": ["candidate_id", "status", "rationale"],
         }
 
-        assert confidence.inputSchema["required"] == ["operation"]
-        assert confidence.inputSchema["properties"]["operation"]["enum"] == [
+        assert confidence.input_schema["required"] == ["operation"]
+        assert confidence.input_schema["properties"]["operation"]["enum"] == [
             "claim",
             "trajectory",
             "reverification",
@@ -886,7 +886,7 @@ class TestUmbrellaTools:
         ]
         confidence_clauses = {
             clause["if"]["properties"]["operation"]["const"]: clause["then"]["required"]
-            for clause in confidence.inputSchema["allOf"]
+            for clause in confidence.input_schema["allOf"]
         }
         assert confidence_clauses == {
             "claim": ["claim"],

@@ -162,7 +162,7 @@ def _tool_schema_text(tool: Tool) -> str:
         {
             "name": tool.name,
             "description": tool.description or "",
-            "inputSchema": tool.inputSchema,
+            "inputSchema": tool.input_schema,
         },
         sort_keys=True,
         separators=(",", ":"),

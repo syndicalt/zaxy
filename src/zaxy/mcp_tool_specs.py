@@ -64,7 +64,7 @@ TOOLS = [
             "every other memory tool is plumbing or power use, discoverable through "
             "memory_capabilities."
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["query"],
             "properties": {
@@ -112,7 +112,7 @@ TOOLS = [
             "becomes retrievable through memory_checkout, the front door for reading "
             "memory back."
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["event_type", "actor", "payload"],
             "properties": {
@@ -132,7 +132,7 @@ TOOLS = [
             "the memory_checkout front door: reach for it when you need targeted hits, "
             "temporal filters, or pagination rather than a prompt-ready packet."
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["query"],
             "properties": {
@@ -158,7 +158,7 @@ TOOLS = [
             "memory_checkout, the front door, wraps this assembly with current facts, "
             "citations, and a trust contract."
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["query"],
             "properties": {
@@ -186,7 +186,7 @@ TOOLS = [
             "corrected, or reinforced. This closes the loop on context surfaced by "
             "memory_checkout, the front door."
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["entity_name", "entity_type", "feedback"],
             "properties": {
@@ -227,7 +227,7 @@ TOOLS = [
             "preserved; the correction surfaces in later memory_checkout (front door) "
             "results."
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["entity_name", "entity_type", "invalid_at"],
             "properties": {
@@ -247,7 +247,7 @@ TOOLS = [
             "memory_checkout is the front door; call this at session start or whenever tool "
             "awareness is unclear."
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": [],
             "properties": {
@@ -268,7 +268,7 @@ TOOLS = [
             "its calibration against real checkout outcomes is still being measured — when in "
             "doubt, call memory_checkout."
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["query"],
             "properties": {
@@ -300,7 +300,7 @@ TOOLS = [
             "through memory_checkout. Use this instead of many memory_append calls when a "
             "tool or bridge replays its own event stream into Zaxy."
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["events"],
             "properties": {
@@ -345,7 +345,7 @@ TOOLS = [
             "is auto_with_rollback (auto-apply above threshold, reversible within the rollback "
             "window); stricter tiers (propose_only, require_review) are available."
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["op", "confidence"],
             "properties": {
@@ -377,7 +377,7 @@ TOOLS = [
             "evolution gate (cited, reversible, audited). Pass `prior` (the agent's prior "
             "confidence the memory would help, 0.0-1.0) to scale reinforcement by prediction error (surprise)."
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["outcome", "summary"],
             "properties": {
@@ -410,7 +410,7 @@ TOOLS = [
             "update evolution gate (auditable). Retrieval surfaces the correction alongside the "
             "retained original; the hash-chain stays intact."
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["target_seq", "target_hash", "new_content", "reason"],
             "properties": {
@@ -446,7 +446,7 @@ TOOLS = [
             "Additive and reversible; nothing is mutated or deleted. Fleet promotions are reversed "
             "with the fleet's own authorized rollback, not this tool."
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["target_seq", "target_hash", "reason"],
             "properties": {
@@ -480,7 +480,7 @@ TOOLS = [
             "its hash are never touched -- the hash chain stays verifiable -- while the plaintext "
             "becomes permanently unrecoverable and readers see [FORGOTTEN]."
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["target_seq", "target_hash", "reason"],
             "properties": {
@@ -506,7 +506,7 @@ TOOLS = [
     Tool(
         name="memory_causal_successors",
         description="Read directed causal effects of an entity from graph-backed memory.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["entity_name"],
             "properties": {
@@ -521,7 +521,7 @@ TOOLS = [
     Tool(
         name="memory_causal_predecessors",
         description="Read directed causal causes of an entity from graph-backed memory.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["entity_name"],
             "properties": {
@@ -536,7 +536,7 @@ TOOLS = [
     Tool(
         name="memory_consolidation_candidate",
         description="Append a cited, review-pending consolidation candidate event.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": [
                 "candidate_type",
@@ -589,7 +589,7 @@ TOOLS = [
     Tool(
         name="memory_consolidation_propose_from_log",
         description="Create non-authoritative consolidation candidates from Eventloom log segments.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["session_id"],
             "properties": {
@@ -614,7 +614,7 @@ TOOLS = [
     Tool(
         name="memory_consolidation_status",
         description="Read review-gated consolidation candidate status.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["session_id"],
             "properties": {
@@ -626,7 +626,7 @@ TOOLS = [
     Tool(
         name="memory_consolidation_review",
         description="Append a consolidation candidate review event without promoting authority.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["candidate_id", "status", "rationale"],
             "properties": {
@@ -654,7 +654,7 @@ TOOLS = [
     Tool(
         name="memory_explain_outcome",
         description="Explain an outcome from cited causal and checkout memory context.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["outcome"],
             "properties": {
@@ -674,7 +674,7 @@ TOOLS = [
     Tool(
         name="memory_propose_belief_update",
         description="Append a cited, review-pending belief update proposal without promoting authority.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["claim", "rationale", "confidence", "source_events"],
             "properties": {
@@ -719,7 +719,7 @@ TOOLS = [
     Tool(
         name="memory_claim_confidence",
         description="Score claim confidence from cited support and conflict evidence.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["claim"],
             "properties": {
@@ -739,7 +739,7 @@ TOOLS = [
     Tool(
         name="memory_similar_procedures",
         description="Retrieve similar procedure candidates from Skill Memory and consolidation memory.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["query"],
             "properties": {
@@ -764,7 +764,7 @@ TOOLS = [
     Tool(
         name="memory_record_known_unknown",
         description="Record a cited, open, non-authoritative known unknown.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["question", "reason", "source_events", "claim_key"],
             "properties": {
@@ -806,7 +806,7 @@ TOOLS = [
     Tool(
         name="memory_known_unknowns",
         description="List replay-derived known unknowns for a session.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": [],
             "properties": {
@@ -820,7 +820,7 @@ TOOLS = [
     Tool(
         name="memory_confidence_trajectory",
         description="List append-only confidence assessments for a claim.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["claim"],
             "properties": {
@@ -834,7 +834,7 @@ TOOLS = [
     Tool(
         name="memory_reverification_needs",
         description="List open unknowns, unresolved conflicts, and low-confidence claims needing re-verification.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": [],
             "properties": {
@@ -855,7 +855,7 @@ TOOLS = [
     Tool(
         name="memory_plan_from_procedures",
         description="Build a non-authoritative planning packet from applicable procedures.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["goal"],
             "properties": {
@@ -875,7 +875,7 @@ TOOLS = [
     Tool(
         name="memory_verbatim",
         description="Retrieve exact Eventloom source chunks with citations.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["query"],
             "properties": {
@@ -894,7 +894,7 @@ TOOLS = [
             "sealed Eventloom citations. Returns a signed bundle when the server has an export "
             "signing key configured and sign=true, otherwise an unsigned canonical bundle."
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {
                 "session_id": {"type": "string", "description": "Session to export"},
@@ -950,7 +950,7 @@ TOOLS = [
     Tool(
         name="memory_synthesis_artifact",
         description="Persist Memory Checkout answer candidates as synthesis artifacts and optional outcome feedback.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["checkout"],
             "properties": {
@@ -976,7 +976,7 @@ TOOLS = [
     Tool(
         name="memory_synthesis_evidence",
         description="Record feedback for one Memory Checkout synthesis ledger row.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["checkout", "row", "outcome"],
             "properties": {
@@ -1006,7 +1006,7 @@ TOOLS = [
     Tool(
         name="memory_skill",
         description="Append a typed skill lifecycle event and project it into Skill Memory.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["action", "skill_id"],
             "properties": {
@@ -1068,7 +1068,7 @@ TOOLS = [
     Tool(
         name="memory_replay",
         description="Replay events from a session starting at a sequence number.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["session_id"],
             "properties": {
@@ -1082,7 +1082,7 @@ TOOLS = [
     Tool(
         name="memory_bootstrap",
         description="At session start, return compact Zaxy memory guidance and the recommended first checkout call.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": [],
             "properties": {
@@ -1095,7 +1095,7 @@ TOOLS = [
     Tool(
         name="context_after_turn",
         description="Persist a completed turn and return compact context for the next turn.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["role", "content"],
             "properties": {
@@ -1113,7 +1113,7 @@ TOOLS = [
     Tool(
         name="subagent_cleanup",
         description="Finalize a subagent session and return its handoff bundle.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["parent_session_id", "subagent_session_id", "summary"],
             "properties": {
@@ -1129,7 +1129,7 @@ TOOLS = [
     Tool(
         name="coordination_start",
         description="Start a parent coordination mission session.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["mission_id", "objective"],
             "properties": {
@@ -1143,7 +1143,7 @@ TOOLS = [
     Tool(
         name="coordination_worker_create",
         description="Register a worker session under a parent mission.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["mission_id", "worker_id"],
             "properties": {
@@ -1157,7 +1157,7 @@ TOOLS = [
     Tool(
         name="coordination_assign",
         description="Assign scoped work to a coordination worker.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["mission_id", "worker_id", "assignment"],
             "properties": {
@@ -1172,7 +1172,7 @@ TOOLS = [
     Tool(
         name="coordination_report_finding",
         description="Record a worker-local coordination finding with evidence; it is not trusted parent state until reviewed and promoted.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["mission_id", "worker_id", "summary"],
             "properties": {
@@ -1191,7 +1191,7 @@ TOOLS = [
     Tool(
         name="coordination_merge_brief",
         description="Return a replay-backed coordination brief for a mission.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["mission_id"],
             "properties": {"mission_id": {"type": "string"}},
@@ -1201,7 +1201,7 @@ TOOLS = [
     Tool(
         name="coordination_checkout",
         description="Return accepted coordination state for prompt injection, with optional diagnostics for pending or conflicted findings.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["mission_id"],
             "properties": {
@@ -1214,7 +1214,7 @@ TOOLS = [
     Tool(
         name="coordination_performance_ledger",
         description="Return worker-level coordination outcome metrics for a mission.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["mission_id"],
             "properties": {"mission_id": {"type": "string"}},
@@ -1224,7 +1224,7 @@ TOOLS = [
     Tool(
         name="coordination_approval_packet",
         description="Return a portable pending/conflicted finding packet for a remote reviewer.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["mission_id"],
             "properties": {"mission_id": {"type": "string"}},
@@ -1237,7 +1237,7 @@ TOOLS = [
             "Apply remote approval decisions to a coordination mission atomically: "
             "all decisions are validated before any event is appended."
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["mission_id", "decisions"],
             "properties": {
@@ -1251,7 +1251,7 @@ TOOLS = [
     Tool(
         name="coordination_review_finding",
         description="Review a worker finding as accepted, rejected, deferred, or conflicted.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["mission_id", "finding_id", "status"],
             "properties": {
@@ -1270,7 +1270,7 @@ TOOLS = [
             "Promote an accepted, evidence-cited finding into the parent mission history. "
             "Refuses findings without a prior accepted review or without evidence unless force is set."
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["mission_id", "finding_id"],
             "properties": {
@@ -1285,7 +1285,7 @@ TOOLS = [
     Tool(
         name="coordination_handoff",
         description="Create a final coordination handoff event for a mission.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["mission_id", "summary"],
             "properties": {
@@ -1304,7 +1304,7 @@ TOOLS = [
             "Persist a Coordinate synthesis proof packet for a mission-scoped Memory Checkout. "
             "Handoff-scoped packets require handoff_id and return handoff_event_ref with the cited handoff seq/hash."
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["mission_id", "checkout"],
             "properties": {
@@ -1335,7 +1335,7 @@ TOOLS = [
     Tool(
         name="coordination_proof_trace",
         description="Replay a Coordinate proof packet chain by artifact_id, handoff_id, or proof_seq.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["mission_id"],
             "properties": {
@@ -1356,7 +1356,7 @@ TOOLS = [
             "memory_consolidation_* tools; remaining arguments pass through unchanged. "
             "memory_checkout stays the front door for reading memory state."
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["operation"],
             "properties": {
@@ -1435,7 +1435,7 @@ TOOLS = [
             "single-purpose confidence tools; remaining arguments pass through unchanged. "
             "memory_checkout stays the front door for reading memory state."
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["operation"],
             "properties": {
@@ -1509,7 +1509,7 @@ TOOLS = [
             "through the I4 gate and never grants authority (promotions stay non_authoritative). "
             "Admin-gated when an admin token is configured."
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["fleet_id", "summary"],
             "properties": {
@@ -1528,7 +1528,7 @@ TOOLS = [
             "steward authority required once the fleet has members). Admin-gated when an "
             "admin token is configured."
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["fleet_id", "agent_id"],
             "properties": {
@@ -1551,7 +1551,7 @@ TOOLS = [
             "Assign a trust tier to an enrolled agent (steward authority required). "
             "Admin-gated when an admin token is configured."
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["fleet_id", "agent_id", "trust_tier", "actor"],
             "properties": {
@@ -1577,7 +1577,7 @@ TOOLS = [
             "require_review crossings are held pending steward review. Returns the gated result "
             "including review_status and promotion_id. No path makes anything authoritative."
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["fleet_id", "kind", "origin_session", "source_events", "confidence", "actor"],
             "properties": {
@@ -1620,7 +1620,7 @@ TOOLS = [
     Tool(
         name="fleet_review",
         description="Steward review of a held fleet promotion (accepted activates a pending memory).",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["fleet_id", "promotion_id", "decision", "actor"],
             "properties": {
@@ -1636,7 +1636,7 @@ TOOLS = [
     Tool(
         name="fleet_status",
         description="Return a replay-backed fleet brief: active and pending promotions, enrolled agents, and trust tiers.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["fleet_id"],
             "properties": {"fleet_id": {"type": "string"}},
@@ -1646,7 +1646,7 @@ TOOLS = [
     Tool(
         name="fleet_audit",
         description="Return full replay-only provenance for every fleet memory: origin actor/session, source + gate citations.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "required": ["fleet_id"],
             "properties": {"fleet_id": {"type": "string"}},

@@ -9,6 +9,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from mcp.types import CallToolRequestParams, TextContent, Tool
 
 import zaxy.mcp_server
 from zaxy.causal import CausalQueryResult
@@ -276,10 +277,10 @@ class TestToolSchema:
         """memory_checkout and context_assemble should accept an optional token budget."""
         for name in ("memory_checkout", "context_assemble"):
             tool = next(t for t in TOOLS if t.name == name)
-            max_tokens = tool.inputSchema["properties"]["max_tokens"]
+            max_tokens = tool.input_schema["properties"]["max_tokens"]
             assert max_tokens["type"] == "integer"
             assert max_tokens["minimum"] == 0
-            assert "max_tokens" not in tool.inputSchema["required"]
+            assert "max_tokens" not in tool.input_schema["required"]
 
     def test_v06_mcp_tool_contract_matches_snapshot(self) -> None:
         """The public MCP tool surface should stay protected by a canonical snapshot."""
@@ -291,7 +292,7 @@ class TestToolSchema:
                 {
                     "name": tool.name,
                     "description": tool.description,
-                    "input_schema": tool.inputSchema,
+                    "input_schema": tool.input_schema,
                 }
                 for tool in TOOLS
             ],
@@ -303,40 +304,40 @@ class TestToolSchema:
         """memory_verbatim should expose source-recall retrieval."""
         tool = next(t for t in TOOLS if t.name == "memory_verbatim")
 
-        assert tool.inputSchema["required"] == ["query"]
-        assert "limit" in tool.inputSchema["properties"]
-        assert "session_id" in tool.inputSchema["properties"]
+        assert tool.input_schema["required"] == ["query"]
+        assert "limit" in tool.input_schema["properties"]
+        assert "session_id" in tool.input_schema["properties"]
 
     def test_memory_append_has_required_fields(self) -> None:
         """memory_append schema should require event_type, actor, payload."""
         tool = next(t for t in TOOLS if t.name == "memory_append")
-        assert tool.inputSchema["required"] == ["event_type", "actor", "payload"]
+        assert tool.input_schema["required"] == ["event_type", "actor", "payload"]
 
     def test_memory_query_has_optional_temporal(self) -> None:
         """memory_query temporal_filter should be optional."""
         tool = next(t for t in TOOLS if t.name == "memory_query")
-        assert "temporal_filter" in tool.inputSchema["properties"]
-        assert "cursor" in tool.inputSchema["properties"]
-        assert "paged" in tool.inputSchema["properties"]
-        assert "session_ids" in tool.inputSchema["properties"]
-        assert "temporal_filter" not in (tool.inputSchema.get("required") or [])
+        assert "temporal_filter" in tool.input_schema["properties"]
+        assert "cursor" in tool.input_schema["properties"]
+        assert "paged" in tool.input_schema["properties"]
+        assert "session_ids" in tool.input_schema["properties"]
+        assert "temporal_filter" not in (tool.input_schema.get("required") or [])
 
     def test_memory_feedback_has_required_identity_and_feedback(self) -> None:
         """memory_feedback should require a target entity and feedback value."""
         tool = next(t for t in TOOLS if t.name == "memory_feedback")
-        assert tool.inputSchema["required"] == ["entity_name", "entity_type", "feedback"]
-        assert "importance" in tool.inputSchema["properties"]
-        assert "purpose" in tool.inputSchema["properties"]
-        assert "outcome" in tool.inputSchema["properties"]
+        assert tool.input_schema["required"] == ["entity_name", "entity_type", "feedback"]
+        assert "importance" in tool.input_schema["properties"]
+        assert "purpose" in tool.input_schema["properties"]
+        assert "outcome" in tool.input_schema["properties"]
 
     def test_memory_synthesis_artifact_has_checkout_schema(self) -> None:
         """memory_synthesis_artifact should persist checkout answer candidates."""
         tool = next(t for t in TOOLS if t.name == "memory_synthesis_artifact")
-        assert tool.inputSchema["required"] == ["checkout"]
-        assert "candidate" in tool.inputSchema["properties"]
-        assert "outcome" in tool.inputSchema["properties"]
-        assert "session_id" not in tool.inputSchema["properties"]
-        assert tool.inputSchema["properties"]["outcome"]["enum"] == [
+        assert tool.input_schema["required"] == ["checkout"]
+        assert "candidate" in tool.input_schema["properties"]
+        assert "outcome" in tool.input_schema["properties"]
+        assert "session_id" not in tool.input_schema["properties"]
+        assert tool.input_schema["properties"]["outcome"]["enum"] == [
             "used",
             "helpful",
             "rejected",
@@ -347,15 +348,15 @@ class TestToolSchema:
     def test_memory_synthesis_evidence_has_row_feedback_schema(self) -> None:
         """memory_synthesis_evidence should record one synthesis ledger-row outcome."""
         tool = next(t for t in TOOLS if t.name == "memory_synthesis_evidence")
-        assert tool.inputSchema["required"] == ["checkout", "row", "outcome"]
-        assert "candidate" in tool.inputSchema["properties"]
-        assert tool.inputSchema["properties"]["outcome"]["enum"] == ["used", "helpful", "excluded"]
+        assert tool.input_schema["required"] == ["checkout", "row", "outcome"]
+        assert "candidate" in tool.input_schema["properties"]
+        assert tool.input_schema["properties"]["outcome"]["enum"] == ["used", "helpful", "excluded"]
 
     def test_memory_skill_has_lifecycle_action_schema(self) -> None:
         """memory_skill should expose validated skill lifecycle capture."""
         tool = next(t for t in TOOLS if t.name == "memory_skill")
-        assert tool.inputSchema["required"] == ["action", "skill_id"]
-        assert tool.inputSchema["properties"]["action"]["enum"] == [
+        assert tool.input_schema["required"] == ["action", "skill_id"]
+        assert tool.input_schema["properties"]["action"]["enum"] == [
             "proposed",
             "validated",
             "revised",
@@ -364,40 +365,40 @@ class TestToolSchema:
             "applied",
             "outcome_recorded",
         ]
-        assert "procedure" in tool.inputSchema["properties"]
-        assert "failure_modes" in tool.inputSchema["properties"]
-        assert "rollback" in tool.inputSchema["properties"]
-        assert "contradiction_reason" in tool.inputSchema["properties"]
+        assert "procedure" in tool.input_schema["properties"]
+        assert "failure_modes" in tool.input_schema["properties"]
+        assert "rollback" in tool.input_schema["properties"]
+        assert "contradiction_reason" in tool.input_schema["properties"]
 
     def test_context_after_turn_has_required_fields(self) -> None:
         """context_after_turn should require role and content."""
         tool = next(t for t in TOOLS if t.name == "context_after_turn")
-        assert tool.inputSchema["required"] == ["role", "content"]
+        assert tool.input_schema["required"] == ["role", "content"]
 
     def test_memory_checkout_has_query_schema(self) -> None:
         """memory_checkout should expose the prompt-ready memory checkout contract."""
         tool = next(t for t in TOOLS if t.name == "memory_checkout")
-        assert tool.inputSchema["required"] == ["query"]
-        assert "session_id" in tool.inputSchema["properties"]
-        assert "ref" in tool.inputSchema["properties"]
-        assert "max_recent_events" in tool.inputSchema["properties"]
-        assert "purpose" in tool.inputSchema["properties"]
+        assert tool.input_schema["required"] == ["query"]
+        assert "session_id" in tool.input_schema["properties"]
+        assert "ref" in tool.input_schema["properties"]
+        assert "max_recent_events" in tool.input_schema["properties"]
+        assert "purpose" in tool.input_schema["properties"]
 
     def test_memory_capabilities_has_optional_query_schema(self) -> None:
         """memory_capabilities should expose model-facing Zaxy usage guidance."""
         tool = next(t for t in TOOLS if t.name == "memory_capabilities")
-        assert tool.inputSchema["required"] == []
-        assert "session_id" in tool.inputSchema["properties"]
-        assert "current_task" in tool.inputSchema["properties"]
+        assert tool.input_schema["required"] == []
+        assert "session_id" in tool.input_schema["properties"]
+        assert "current_task" in tool.input_schema["properties"]
 
     def test_memory_feeling_of_knowing_has_strict_experimental_schema(self) -> None:
         """memory_feeling_of_knowing should be a strict, honestly labeled pre-check."""
         tool = next(t for t in TOOLS if t.name == "memory_feeling_of_knowing")
 
-        assert tool.inputSchema["required"] == ["query"]
-        assert tool.inputSchema["additionalProperties"] is False
-        assert "session_id" in tool.inputSchema["properties"]
-        cues = tool.inputSchema["properties"]["cues"]
+        assert tool.input_schema["required"] == ["query"]
+        assert tool.input_schema["additionalProperties"] is False
+        assert "session_id" in tool.input_schema["properties"]
+        cues = tool.input_schema["properties"]["cues"]
         assert cues["type"] == "object"
         assert cues["additionalProperties"] == {"type": "string"}
         assert tool.description is not None
@@ -420,9 +421,9 @@ class TestToolSchema:
     def test_memory_bootstrap_has_optional_query_schema(self) -> None:
         """memory_bootstrap should expose the session-start model handoff contract."""
         tool = next(t for t in TOOLS if t.name == "memory_bootstrap")
-        assert tool.inputSchema["required"] == []
-        assert "session_id" in tool.inputSchema["properties"]
-        assert "current_task" in tool.inputSchema["properties"]
+        assert tool.input_schema["required"] == []
+        assert "session_id" in tool.input_schema["properties"]
+        assert "current_task" in tool.input_schema["properties"]
 
     def test_v05_tool_descriptions_are_model_actionable(self) -> None:
         """Core MCP tools should describe when a model should call them."""
@@ -438,15 +439,15 @@ class TestToolSchema:
     def test_coordination_report_finding_schema_requires_mission_worker_and_summary(self) -> None:
         """coordination_report_finding should expose structured worker-local finding capture."""
         tool = next(t for t in TOOLS if t.name == "coordination_report_finding")
-        assert tool.inputSchema["required"] == ["mission_id", "worker_id", "summary"]
-        assert "evidence" in tool.inputSchema["properties"]
-        assert "claim_key" in tool.inputSchema["properties"]
+        assert tool.input_schema["required"] == ["mission_id", "worker_id", "summary"]
+        assert "evidence" in tool.input_schema["properties"]
+        assert "claim_key" in tool.input_schema["properties"]
 
     def test_coordination_review_finding_schema_has_status_enum(self) -> None:
         """coordination_review_finding should restrict review states."""
         tool = next(t for t in TOOLS if t.name == "coordination_review_finding")
-        assert tool.inputSchema["required"] == ["mission_id", "finding_id", "status"]
-        assert tool.inputSchema["properties"]["status"]["enum"] == [
+        assert tool.input_schema["required"] == ["mission_id", "finding_id", "status"]
+        assert tool.input_schema["properties"]["status"]["enum"] == [
             "accepted",
             "rejected",
             "deferred",
@@ -457,39 +458,39 @@ class TestToolSchema:
         """coordination_checkout should default to accepted state with opt-in diagnostics."""
         tool = next(t for t in TOOLS if t.name == "coordination_checkout")
 
-        assert tool.inputSchema["required"] == ["mission_id"]
-        assert tool.inputSchema["properties"]["include_diagnostics"]["type"] == "boolean"
+        assert tool.input_schema["required"] == ["mission_id"]
+        assert tool.input_schema["properties"]["include_diagnostics"]["type"] == "boolean"
 
     def test_coordination_performance_ledger_schema_requires_mission_id(self) -> None:
         """coordination_performance_ledger should expose worker-level outcome metrics."""
         tool = next(t for t in TOOLS if t.name == "coordination_performance_ledger")
 
-        assert tool.inputSchema["required"] == ["mission_id"]
+        assert tool.input_schema["required"] == ["mission_id"]
 
     def test_coordination_approval_tool_schemas(self) -> None:
         """Approval tools should expose packet export and decision application."""
         packet = next(t for t in TOOLS if t.name == "coordination_approval_packet")
         apply = next(t for t in TOOLS if t.name == "coordination_apply_approval")
 
-        assert packet.inputSchema["required"] == ["mission_id"]
-        assert apply.inputSchema["required"] == ["mission_id", "decisions"]
-        assert apply.inputSchema["properties"]["decisions"]["type"] == "array"
+        assert packet.input_schema["required"] == ["mission_id"]
+        assert apply.input_schema["required"] == ["mission_id", "decisions"]
+        assert apply.input_schema["properties"]["decisions"]["type"] == "array"
 
     def test_coordination_record_synthesis_artifact_schema(self) -> None:
         """Coordinate proof packet tool should require mission scope and checkout."""
         tool = next(t for t in TOOLS if t.name == "coordination_record_synthesis_artifact")
-        assert tool.inputSchema["required"] == ["mission_id", "checkout"]
-        assert "decision_scope" in tool.inputSchema["properties"]
-        assert "candidate" in tool.inputSchema["properties"]
-        assert "outcome" in tool.inputSchema["properties"]
+        assert tool.input_schema["required"] == ["mission_id", "checkout"]
+        assert "decision_scope" in tool.input_schema["properties"]
+        assert "candidate" in tool.input_schema["properties"]
+        assert "outcome" in tool.input_schema["properties"]
 
     def test_coordination_proof_trace_schema(self) -> None:
         """Coordinate proof trace should resolve replay chains by stable refs."""
         tool = next(t for t in TOOLS if t.name == "coordination_proof_trace")
-        assert tool.inputSchema["required"] == ["mission_id"]
-        assert "artifact_id" in tool.inputSchema["properties"]
-        assert "handoff_id" in tool.inputSchema["properties"]
-        assert tool.inputSchema["properties"]["proof_seq"]["minimum"] == 1
+        assert tool.input_schema["required"] == ["mission_id"]
+        assert "artifact_id" in tool.input_schema["properties"]
+        assert "handoff_id" in tool.input_schema["properties"]
+        assert tool.input_schema["properties"]["proof_seq"]["minimum"] == 1
 
     def test_causal_and_consolidation_tools_are_registered(self) -> None:
         """Causal and consolidation tools should expose stable public schemas."""
@@ -497,16 +498,16 @@ class TestToolSchema:
 
         successors = tools["memory_causal_successors"]
         predecessors = tools["memory_causal_predecessors"]
-        assert successors.inputSchema["required"] == ["entity_name"]
-        assert predecessors.inputSchema["required"] == ["entity_name"]
+        assert successors.input_schema["required"] == ["entity_name"]
+        assert predecessors.input_schema["required"] == ["entity_name"]
         for tool in (successors, predecessors):
-            assert "relation_type" in tool.inputSchema["properties"]
-            assert tool.inputSchema["properties"]["depth"]["default"] == 2
-            assert tool.inputSchema["properties"]["depth"]["minimum"] == 1
-            assert "session_id" in tool.inputSchema["properties"]
+            assert "relation_type" in tool.input_schema["properties"]
+            assert tool.input_schema["properties"]["depth"]["default"] == 2
+            assert tool.input_schema["properties"]["depth"]["minimum"] == 1
+            assert "session_id" in tool.input_schema["properties"]
 
         candidate = tools["memory_consolidation_candidate"]
-        assert candidate.inputSchema["required"] == [
+        assert candidate.input_schema["required"] == [
             "candidate_type",
             "title",
             "summary",
@@ -514,41 +515,41 @@ class TestToolSchema:
             "confidence",
             "method",
         ]
-        assert candidate.inputSchema["properties"]["candidate_type"]["enum"] == [
+        assert candidate.input_schema["properties"]["candidate_type"]["enum"] == [
             "episode",
             "claim",
             "procedure",
         ]
-        source_events = candidate.inputSchema["properties"]["source_events"]
+        source_events = candidate.input_schema["properties"]["source_events"]
         assert source_events["minItems"] == 1
         assert source_events["items"]["properties"]["hash"]["pattern"] == "^[0-9a-f]{64}$"
-        assert candidate.inputSchema["properties"]["confidence"]["minimum"] == 0
-        assert candidate.inputSchema["properties"]["confidence"]["maximum"] == 1
-        assert candidate.inputSchema["properties"]["actor"]["default"] == "zaxy-consolidation"
+        assert candidate.input_schema["properties"]["confidence"]["minimum"] == 0
+        assert candidate.input_schema["properties"]["confidence"]["maximum"] == 1
+        assert candidate.input_schema["properties"]["actor"]["default"] == "zaxy-consolidation"
 
         propose_from_log = tools["memory_consolidation_propose_from_log"]
-        assert propose_from_log.inputSchema["required"] == ["session_id"]
-        assert propose_from_log.inputSchema["properties"]["actor"]["default"] == "zaxy-consolidation"
-        assert propose_from_log.inputSchema["properties"]["window_size"]["minimum"] == 1
-        assert propose_from_log.inputSchema["properties"]["window_size"]["maximum"] == 200
-        assert "purpose" in propose_from_log.inputSchema["properties"]
+        assert propose_from_log.input_schema["required"] == ["session_id"]
+        assert propose_from_log.input_schema["properties"]["actor"]["default"] == "zaxy-consolidation"
+        assert propose_from_log.input_schema["properties"]["window_size"]["minimum"] == 1
+        assert propose_from_log.input_schema["properties"]["window_size"]["maximum"] == 200
+        assert "purpose" in propose_from_log.input_schema["properties"]
 
         status = tools["memory_consolidation_status"]
-        assert status.inputSchema["required"] == ["session_id"]
+        assert status.input_schema["required"] == ["session_id"]
 
         review = tools["memory_consolidation_review"]
-        assert review.inputSchema["required"] == ["candidate_id", "status", "rationale"]
+        assert review.input_schema["required"] == ["candidate_id", "status", "rationale"]
         assert (
-            review.inputSchema["properties"]["candidate_id"]["pattern"]
+            review.input_schema["properties"]["candidate_id"]["pattern"]
             == "^consolidation:(episode|claim|procedure):[0-9a-f]{24}$"
         )
-        assert review.inputSchema["properties"]["status"]["enum"] == [
+        assert review.input_schema["properties"]["status"]["enum"] == [
             "accepted",
             "rejected",
             "deferred",
             "conflicted",
         ]
-        assert review.inputSchema["properties"]["actor"]["default"] == "zaxy-reviewer"
+        assert review.input_schema["properties"]["actor"]["default"] == "zaxy-reviewer"
 
     def test_reasoning_loop_tools_are_registered(self) -> None:
         """Reasoning-loop primitives should expose strict delegated MCP schemas."""
@@ -556,60 +557,60 @@ class TestToolSchema:
         phases = ["planning", "execution", "review", "reflection"]
 
         explain = tools["memory_explain_outcome"]
-        assert explain.inputSchema["required"] == ["outcome"]
-        assert explain.inputSchema["properties"]["phase"]["enum"] == phases
-        assert explain.inputSchema["properties"]["phase"]["default"] == "planning"
-        assert explain.inputSchema["properties"]["depth"]["minimum"] == 1
-        assert explain.inputSchema["additionalProperties"] is False
+        assert explain.input_schema["required"] == ["outcome"]
+        assert explain.input_schema["properties"]["phase"]["enum"] == phases
+        assert explain.input_schema["properties"]["phase"]["default"] == "planning"
+        assert explain.input_schema["properties"]["depth"]["minimum"] == 1
+        assert explain.input_schema["additionalProperties"] is False
 
         belief = tools["memory_propose_belief_update"]
-        assert belief.inputSchema["required"] == ["claim", "rationale", "confidence", "source_events"]
-        assert belief.inputSchema["properties"]["phase"]["default"] == "reflection"
-        assert belief.inputSchema["properties"]["source_events"]["minItems"] == 1
-        assert belief.inputSchema["properties"]["source_events"]["items"]["properties"]["hash"]["pattern"] == (
+        assert belief.input_schema["required"] == ["claim", "rationale", "confidence", "source_events"]
+        assert belief.input_schema["properties"]["phase"]["default"] == "reflection"
+        assert belief.input_schema["properties"]["source_events"]["minItems"] == 1
+        assert belief.input_schema["properties"]["source_events"]["items"]["properties"]["hash"]["pattern"] == (
             "^[0-9a-f]{64}$"
         )
-        assert belief.inputSchema["properties"]["actor"]["default"] == "zaxy-reasoning"
-        assert belief.inputSchema["additionalProperties"] is False
+        assert belief.input_schema["properties"]["actor"]["default"] == "zaxy-reasoning"
+        assert belief.input_schema["additionalProperties"] is False
 
         confidence = tools["memory_claim_confidence"]
-        assert confidence.inputSchema["required"] == ["claim"]
-        assert confidence.inputSchema["properties"]["phase"]["default"] == "review"
-        assert confidence.inputSchema["properties"]["limit"]["minimum"] == 1
-        assert confidence.inputSchema["additionalProperties"] is False
+        assert confidence.input_schema["required"] == ["claim"]
+        assert confidence.input_schema["properties"]["phase"]["default"] == "review"
+        assert confidence.input_schema["properties"]["limit"]["minimum"] == 1
+        assert confidence.input_schema["additionalProperties"] is False
 
         procedures = tools["memory_similar_procedures"]
-        assert procedures.inputSchema["required"] == ["query"]
-        assert procedures.inputSchema["properties"]["phase"]["default"] == "planning"
-        assert procedures.inputSchema["properties"]["limit"]["minimum"] == 1
-        assert procedures.inputSchema["additionalProperties"] is False
+        assert procedures.input_schema["required"] == ["query"]
+        assert procedures.input_schema["properties"]["phase"]["default"] == "planning"
+        assert procedures.input_schema["properties"]["limit"]["minimum"] == 1
+        assert procedures.input_schema["additionalProperties"] is False
 
         record_unknown = tools["memory_record_known_unknown"]
-        assert record_unknown.inputSchema["required"] == ["question", "reason", "source_events", "claim_key"]
-        assert record_unknown.inputSchema["properties"]["source_events"]["minItems"] == 1
-        assert record_unknown.inputSchema["properties"]["actor"]["default"] == "zaxy-reasoning"
-        assert record_unknown.inputSchema["additionalProperties"] is False
+        assert record_unknown.input_schema["required"] == ["question", "reason", "source_events", "claim_key"]
+        assert record_unknown.input_schema["properties"]["source_events"]["minItems"] == 1
+        assert record_unknown.input_schema["properties"]["actor"]["default"] == "zaxy-reasoning"
+        assert record_unknown.input_schema["additionalProperties"] is False
 
         known_unknowns = tools["memory_known_unknowns"]
-        assert known_unknowns.inputSchema["required"] == []
-        assert known_unknowns.inputSchema["properties"]["status"]["default"] == "open"
-        assert known_unknowns.inputSchema["additionalProperties"] is False
+        assert known_unknowns.input_schema["required"] == []
+        assert known_unknowns.input_schema["properties"]["status"]["default"] == "open"
+        assert known_unknowns.input_schema["additionalProperties"] is False
 
         trajectory = tools["memory_confidence_trajectory"]
-        assert trajectory.inputSchema["required"] == ["claim"]
-        assert trajectory.inputSchema["properties"]["limit"]["minimum"] == 1
-        assert trajectory.inputSchema["additionalProperties"] is False
+        assert trajectory.input_schema["required"] == ["claim"]
+        assert trajectory.input_schema["properties"]["limit"]["minimum"] == 1
+        assert trajectory.input_schema["additionalProperties"] is False
 
         reverify = tools["memory_reverification_needs"]
-        assert reverify.inputSchema["required"] == []
-        assert reverify.inputSchema["properties"]["min_confidence"]["minimum"] == 0
-        assert reverify.inputSchema["properties"]["min_confidence"]["maximum"] == 1
-        assert reverify.inputSchema["additionalProperties"] is False
+        assert reverify.input_schema["required"] == []
+        assert reverify.input_schema["properties"]["min_confidence"]["minimum"] == 0
+        assert reverify.input_schema["properties"]["min_confidence"]["maximum"] == 1
+        assert reverify.input_schema["additionalProperties"] is False
 
         plan = tools["memory_plan_from_procedures"]
-        assert plan.inputSchema["required"] == ["goal"]
-        assert plan.inputSchema["properties"]["phase"]["default"] == "planning"
-        assert plan.inputSchema["additionalProperties"] is False
+        assert plan.input_schema["required"] == ["goal"]
+        assert plan.input_schema["properties"]["phase"]["default"] == "planning"
+        assert plan.input_schema["additionalProperties"] is False
 
 
 def test_mcp_admin_token_gate_accepts_exact_token(server: ZaxyMCPServer) -> None:
@@ -776,15 +777,15 @@ class TestMemoryEvolutionGate:
 
     def test_tool_schema_requires_op_and_confidence(self) -> None:
         tool = next(t for t in TOOLS if t.name == "memory_evolution_gate")
-        assert tool.inputSchema["required"] == ["op", "confidence"]
-        assert tool.inputSchema["properties"]["op"]["enum"] == [
+        assert tool.input_schema["required"] == ["op", "confidence"]
+        assert tool.input_schema["properties"]["op"]["enum"] == [
             "consolidate",
             "update",
             "forget",
             "rule_generate",
             "promote",
         ]
-        assert tool.inputSchema["additionalProperties"] is False
+        assert tool.input_schema["additionalProperties"] is False
 
     async def test_gate_default_auto_applies_and_records_event(self, tmp_path: Path) -> None:
         """The default auto_with_rollback policy auto-applies above threshold and records it."""
@@ -829,9 +830,9 @@ class TestMemoryOutcome:
 
     def test_tool_schema_requires_outcome_and_summary(self) -> None:
         tool = next(t for t in TOOLS if t.name == "memory_outcome")
-        assert tool.inputSchema["required"] == ["outcome", "summary"]
-        assert tool.inputSchema["additionalProperties"] is False
-        assert "success, failure, or partial" in tool.inputSchema["properties"]["outcome"]["description"]
+        assert tool.input_schema["required"] == ["outcome", "summary"]
+        assert tool.input_schema["additionalProperties"] is False
+        assert "success, failure, or partial" in tool.input_schema["properties"]["outcome"]["description"]
 
     async def test_success_reinforces_target_without_rule(self, tmp_path: Path) -> None:
         """A success outcome on a seeded target confirms it and proposes no rule."""
@@ -4024,9 +4025,9 @@ class TestEntrypoint:
             writer,
         ) as (read_stream, write_stream):
             inbound = await read_stream.receive()
-            assert inbound.message.root.method == "notifications/initialized"
+            assert inbound.message.method == "notifications/initialized"
 
-            outbound = zaxy.mcp_server.types.JSONRPCMessage.model_validate_json(
+            outbound = zaxy.mcp_server.jsonrpc_message_adapter.validate_json(
                 '{"jsonrpc":"2.0","id":1,"result":{}}'
             )
             await write_stream.send(zaxy.mcp_server.SessionMessage(outbound))
@@ -4052,32 +4053,13 @@ class TestEntrypoint:
         mock_stdio.return_value.__aenter__ = AsyncMock(return_value=(mock_read, mock_write))
         mock_stdio.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        captured_handlers: dict[str, Any] = {}
-
-        def make_capture_decorator(name: str) -> Any:
-            def decorator(fn: Any) -> Any:
-                captured_handlers[name] = fn
-                return fn
-            return decorator
-
-        with (
-            patch("zaxy.mcp_server.app.run", new_callable=AsyncMock),
-            patch.object(
-                zaxy.mcp_server.app,
-                "list_tools",
-                return_value=make_capture_decorator("list_tools"),
-            ),
-            patch.object(
-                zaxy.mcp_server.app,
-                "call_tool",
-                return_value=make_capture_decorator("call_tool"),
-            ),
-        ):
+        with patch("zaxy.mcp_server.app.run", new_callable=AsyncMock):
             await main()
 
-        assert "call_tool" in captured_handlers
-        result = await captured_handlers["call_tool"]("unknown_tool", {})
-        payload = json.loads(result[0].text)
+        result = await zaxy.mcp_server._on_call_tool(
+            MagicMock(), CallToolRequestParams(name="unknown_tool", arguments={})
+        )
+        payload = json.loads(result.content[0].text)
         assert payload["error"]["code"] == "unknown_tool"
         assert payload["error"]["message"] == "Unknown tool: unknown_tool"
 
@@ -4090,7 +4072,7 @@ class TestEntrypoint:
     ) -> None:
         """The MCP dispatcher should record a redacted tool.call.completed event."""
         mock_server = AsyncMock()
-        mock_server.handle_memory_query.return_value = [MagicMock(text="[]")]
+        mock_server.handle_memory_query.return_value = [TextContent(type="text", text="[]")]
         mock_server.capture_tool_call_completed = AsyncMock()
         mock_server._default_session_id = "default"
         mock_server._session_id_from_arguments = MagicMock(return_value="agent-1")
@@ -4101,36 +4083,19 @@ class TestEntrypoint:
         mock_stdio.return_value.__aenter__ = AsyncMock(return_value=(mock_read, mock_write))
         mock_stdio.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        captured_handlers: dict[str, Any] = {}
-
-        def make_capture_decorator(name: str) -> Any:
-            def decorator(fn: Any) -> Any:
-                captured_handlers[name] = fn
-                return fn
-            return decorator
-
-        with (
-            patch("zaxy.mcp_server.app.run", new_callable=AsyncMock),
-            patch.object(
-                zaxy.mcp_server.app,
-                "list_tools",
-                return_value=make_capture_decorator("list_tools"),
-            ),
-            patch.object(
-                zaxy.mcp_server.app,
-                "call_tool",
-                return_value=make_capture_decorator("call_tool"),
-            ),
-        ):
+        with patch("zaxy.mcp_server.app.run", new_callable=AsyncMock):
             await main()
 
-        await captured_handlers["call_tool"](
-            "memory_query",
-            {
-                "query": "roadmap",
-                "session_id": "agent-1",
-                "api_key": "secret",
-            },
+        await zaxy.mcp_server._on_call_tool(
+            MagicMock(),
+            CallToolRequestParams(
+                name="memory_query",
+                arguments={
+                    "query": "roadmap",
+                    "session_id": "agent-1",
+                    "api_key": "secret",
+                },
+            ),
         )
 
         mock_server.capture_tool_call_completed.assert_awaited_once()
@@ -4164,34 +4129,17 @@ class TestEntrypoint:
         mock_stdio.return_value.__aenter__ = AsyncMock(return_value=(mock_read, mock_write))
         mock_stdio.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        captured_handlers: dict[str, Any] = {}
-
-        def make_capture_decorator(name: str) -> Any:
-            def decorator(fn: Any) -> Any:
-                captured_handlers[name] = fn
-                return fn
-            return decorator
-
-        with (
-            patch("zaxy.mcp_server.app.run", new_callable=AsyncMock),
-            patch.object(
-                zaxy.mcp_server.app,
-                "list_tools",
-                return_value=make_capture_decorator("list_tools"),
-            ),
-            patch.object(
-                zaxy.mcp_server.app,
-                "call_tool",
-                return_value=make_capture_decorator("call_tool"),
-            ),
-        ):
+        with patch("zaxy.mcp_server.app.run", new_callable=AsyncMock):
             await main()
 
-        result = await captured_handlers["call_tool"](
-            "unknown_tool",
-            {"session_id": "agent-1", "api_key": "secret"},
+        result = await zaxy.mcp_server._on_call_tool(
+            MagicMock(),
+            CallToolRequestParams(
+                name="unknown_tool",
+                arguments={"session_id": "agent-1", "api_key": "secret"},
+            ),
         )
-        payload = json.loads(result[0].text)
+        payload = json.loads(result.content[0].text)
         assert payload["error"]["code"] == "unknown_tool"
 
         mock_server.capture_tool_call_completed.assert_awaited_once()
@@ -4220,35 +4168,18 @@ class TestEntrypoint:
         mock_stdio.return_value.__aenter__ = AsyncMock(return_value=(mock_read, mock_write))
         mock_stdio.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        captured_handlers: dict[str, Any] = {}
-
-        def make_capture_decorator(name: str) -> Any:
-            def decorator(fn: Any) -> Any:
-                captured_handlers[name] = fn
-                return fn
-            return decorator
-
-        with (
-            patch("zaxy.mcp_server.app.run", new_callable=AsyncMock),
-            patch.object(
-                zaxy.mcp_server.app,
-                "list_tools",
-                return_value=make_capture_decorator("list_tools"),
-            ),
-            patch.object(
-                zaxy.mcp_server.app,
-                "call_tool",
-                return_value=make_capture_decorator("call_tool"),
-            ),
-        ):
+        with patch("zaxy.mcp_server.app.run", new_callable=AsyncMock):
             await main()
 
-        result = await captured_handlers["call_tool"](
-            "unknown_tool",
-            {"session_id": "agent-1", "api_key": "secret"},
+        result = await zaxy.mcp_server._on_call_tool(
+            MagicMock(),
+            CallToolRequestParams(
+                name="unknown_tool",
+                arguments={"session_id": "agent-1", "api_key": "secret"},
+            ),
         )
 
-        payload = json.loads(result[0].text)
+        payload = json.loads(result.content[0].text)
         assert payload == {
             "error": {
                 "code": "unknown_tool",
@@ -4271,7 +4202,7 @@ class TestEntrypoint:
     ) -> None:
         """The dispatcher should honor disabled lifecycle capture config."""
         mock_server = AsyncMock()
-        mock_server.handle_memory_query.return_value = [MagicMock(text="[]")]
+        mock_server.handle_memory_query.return_value = [TextContent(type="text", text="[]")]
         mock_server.capture_tool_call_completed = AsyncMock()
         mock_server._default_session_id = "default"
         mock_server._lifecycle_capture_enabled = False
@@ -4283,35 +4214,49 @@ class TestEntrypoint:
         mock_stdio.return_value.__aenter__ = AsyncMock(return_value=(mock_read, mock_write))
         mock_stdio.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        captured_handlers: dict[str, Any] = {}
-
-        def make_capture_decorator(name: str) -> Any:
-            def decorator(fn: Any) -> Any:
-                captured_handlers[name] = fn
-                return fn
-            return decorator
-
-        with (
-            patch("zaxy.mcp_server.app.run", new_callable=AsyncMock),
-            patch.object(
-                zaxy.mcp_server.app,
-                "list_tools",
-                return_value=make_capture_decorator("list_tools"),
-            ),
-            patch.object(
-                zaxy.mcp_server.app,
-                "call_tool",
-                return_value=make_capture_decorator("call_tool"),
-            ),
-        ):
+        with patch("zaxy.mcp_server.app.run", new_callable=AsyncMock):
             await main()
 
-        await captured_handlers["call_tool"](
-            "memory_query",
-            {"query": "roadmap", "session_id": "agent-1"},
+        await zaxy.mcp_server._on_call_tool(
+            MagicMock(),
+            CallToolRequestParams(
+                name="memory_query",
+                arguments={"query": "roadmap", "session_id": "agent-1"},
+            ),
         )
 
         mock_server.capture_tool_call_completed.assert_not_awaited()
+
+
+# ------------------------------------------------------------------
+# SDK handler wiring (mcp 2.x constructor registration)
+# ------------------------------------------------------------------
+
+class TestSdkHandlerWiring:
+    """Direct tests for the constructor-registered SDK handlers."""
+
+    async def test_on_list_tools_wraps_visible_tools(self) -> None:
+        """_on_list_tools should wrap the active server's visible tools in ListToolsResult."""
+        mock_server = MagicMock()
+        sentinel_tools = [Tool(name="t", description="d", input_schema={})]
+        mock_server.visible_tools.return_value = sentinel_tools
+        previous = zaxy.mcp_server._active_sdk_server
+        zaxy.mcp_server._set_active_sdk_server(mock_server)
+        try:
+            result = await zaxy.mcp_server._on_list_tools(MagicMock(), None)
+        finally:
+            zaxy.mcp_server._active_sdk_server = previous
+        assert result.tools == sentinel_tools
+
+    def test_require_active_sdk_server_raises_before_main(self) -> None:
+        """_require_active_sdk_server should fail loudly before main() assigns a server."""
+        previous = zaxy.mcp_server._active_sdk_server
+        zaxy.mcp_server._active_sdk_server = None
+        try:
+            with pytest.raises(RuntimeError, match="before main"):
+                zaxy.mcp_server._require_active_sdk_server()
+        finally:
+            zaxy.mcp_server._active_sdk_server = previous
 
 
 # ------------------------------------------------------------------
@@ -4826,4 +4771,4 @@ class TestCoordinationPromotionGate:
     def test_promote_tool_schema_exposes_the_force_escape(self) -> None:
         """The published coordination_promote contract must advertise the force escape hatch."""
         tool = next(t for t in TOOLS if t.name == "coordination_promote")
-        assert tool.inputSchema["properties"]["force"] == {"type": "boolean", "default": False}
+        assert tool.input_schema["properties"]["force"] == {"type": "boolean", "default": False}
