@@ -816,7 +816,7 @@ def test_memory_checkout_schema_exposes_fleet_arguments() -> None:
     """memory_checkout should advertise optional fleet_ids and agent_id arguments."""
     from zaxy.mcp_server import TOOLS
 
-    schema = next(t for t in TOOLS if t.name == "memory_checkout").inputSchema
+    schema = next(t for t in TOOLS if t.name == "memory_checkout").input_schema
     assert schema["properties"]["fleet_ids"] == {
         "type": "array",
         "items": {"type": "string"},

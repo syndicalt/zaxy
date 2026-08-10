@@ -45,12 +45,20 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 import anyio
-from mcp import types
-from mcp.server import Server
+from mcp.server import Server, ServerRequestContext
 from mcp.server.sse import SseServerTransport
 from mcp.server.stdio import stdio_server
 from mcp.shared.message import SessionMessage
-from mcp.types import TextContent, Tool
+from mcp.types import (
+    CallToolRequestParams,
+    CallToolResult,
+    ContentBlock,
+    ListToolsResult,
+    PaginatedRequestParams,
+    TextContent,
+    Tool,
+    jsonrpc_message_adapter,
+)
 
 from zaxy.capabilities import build_memory_bootstrap, build_memory_capabilities
 from zaxy.causal import causal_query_result_from_projection, causal_relation_to_graph_relation
@@ -238,6 +246,7 @@ from zaxy.metrics import get_metrics
 from zaxy.projection_backends import ProjectionBackendConfig, build_projection_store
 from zaxy.query import QueryRouter, build_retention_policy
 from zaxy.refs import MemoryRef, MemoryRefStore
+from zaxy.release import package_version
 from zaxy.retrieval_cache import SessionRetrievalCache
 from zaxy.runtime import LocalEmbeddedGraphRuntime, LocalNeo4jRuntime, LocalPgGraphRuntime
 from zaxy.salience import (
@@ -277,7 +286,75 @@ from zaxy.workspace import (
     workspace_profile_from_payload,
 )
 
-app = Server("zaxy-memory")
+# ------------------------------------------------------------------
+# SDK handler wiring (mcp 2.x constructor registration)
+# ------------------------------------------------------------------
+# mcp 2.x removed the @app.list_tools()/@app.call_tool() decorators in favor
+# of constructor on_* handlers, but the concrete ZaxyMCPServer is only chosen
+# when main()/main_sse() runs. The handlers therefore dispatch through this
+# module global, which both entry points assign before app.run(...).
+_active_sdk_server: ZaxyMCPServer | None = None
+
+
+def _set_active_sdk_server(active: ZaxyMCPServer) -> None:
+    """Point the module-level SDK handlers at the running server instance."""
+    global _active_sdk_server
+    _active_sdk_server = active
+
+
+def _require_active_sdk_server() -> ZaxyMCPServer:
+    """Return the running server, failing loudly if a handler fires before main()."""
+    if _active_sdk_server is None:
+        raise RuntimeError("MCP handler invoked before main() assigned the active server")
+    return _active_sdk_server
+
+
+async def _on_list_tools(
+    ctx: ServerRequestContext[Any, Any], params: PaginatedRequestParams | None
+) -> ListToolsResult:
+    """Serve tools/list with the running server's visible tools."""
+    return ListToolsResult(tools=_require_active_sdk_server().visible_tools())
+
+
+async def _on_call_tool(
+    ctx: ServerRequestContext[Any, Any], params: CallToolRequestParams
+) -> CallToolResult:
+    """Serve tools/call, preserving zaxy's JSON error-payload contract."""
+    active = _require_active_sdk_server()
+    name = params.name
+    arguments = params.arguments or {}
+    session_id = _capture_session_id(active, arguments)
+    try:
+        result = await _dispatch_tool_call(active, name, arguments)
+    except Exception as exc:
+        await _capture_tool_call_best_effort(
+            active,
+            name=name,
+            arguments=arguments,
+            session_id=session_id,
+            status="failed",
+            result_summary=_mcp_error_summary(exc),
+        )
+        error_content: list[ContentBlock] = list(_mcp_error_result(exc))
+        return CallToolResult(content=error_content)
+    await _capture_tool_call_best_effort(
+        active,
+        name=name,
+        arguments=arguments,
+        session_id=session_id,
+        status="succeeded",
+        result_summary=_tool_result_summary(result),
+    )
+    content: list[ContentBlock] = list(result)
+    return CallToolResult(content=content)
+
+
+app = Server(
+    "zaxy-memory",
+    version=package_version(),
+    on_list_tools=_on_list_tools,
+    on_call_tool=_on_call_tool,
+)
 logger = get_logger("mcp_server")
 remote_session_scope: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "remote_session_scope",
@@ -2698,7 +2775,7 @@ async def _socket_mcp_transport(
             async with read_stream_writer:
                 while line := await reader.readline():
                     try:
-                        message = types.JSONRPCMessage.model_validate_json(line.decode("utf-8"))
+                        message = jsonrpc_message_adapter.validate_json(line.decode("utf-8"))
                     except Exception as exc:
                         await read_stream_writer.send(exc)
                         continue
@@ -2887,6 +2964,7 @@ async def main(owner_claim: EmbeddedMcpOwnerClaim | None = None) -> None:
 
     # Allow external configuration (e.g. from CLI) via module-level override
     active_server = server or ZaxyMCPServer()
+    _set_active_sdk_server(active_server)
 
     try:
         await active_server.setup()
@@ -2924,35 +3002,6 @@ async def main(owner_claim: EmbeddedMcpOwnerClaim | None = None) -> None:
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, _on_signal)
 
-    @app.list_tools()  # type: ignore[untyped-decorator, no-untyped-call]
-    async def list_tools() -> list[Tool]:
-        return active_server.visible_tools()
-
-    @app.call_tool()  # type: ignore[untyped-decorator]
-    async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
-        session_id = _capture_session_id(active_server, arguments)
-        try:
-            result = await _dispatch_tool_call(active_server, name, arguments)
-        except Exception as exc:
-            await _capture_tool_call_best_effort(
-                active_server,
-                name=name,
-                arguments=arguments,
-                session_id=session_id,
-                status="failed",
-                result_summary=_mcp_error_summary(exc),
-            )
-            return _mcp_error_result(exc)
-        await _capture_tool_call_best_effort(
-            active_server,
-            name=name,
-            arguments=arguments,
-            session_id=session_id,
-            status="succeeded",
-            result_summary=_tool_result_summary(result),
-        )
-        return result
-
     try:
         async with stdio_server() as (read_stream, write_stream):
             run_task = asyncio.create_task(
@@ -2986,6 +3035,7 @@ async def main_sse(port: int = 8080, host: str = "127.0.0.1") -> None:
     settings = get_settings()
 
     active_server = server or ZaxyMCPServer()
+    _set_active_sdk_server(active_server)
 
     await active_server.setup()
     logger.info("zaxy_mcp_server_ready transport=sse host=%s port=%s", host, port)

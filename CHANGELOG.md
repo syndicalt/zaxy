@@ -2,6 +2,20 @@
 
 All notable Zaxy release changes are recorded here.
 
+## Unreleased
+
+### Changed
+
+- **Migrated to mcp 2.0 (Python SDK).** The dependency floor moves from the
+  1.x maintenance line to `mcp>=2.0.0,<3`: tool specs use snake_case
+  `input_schema`, the lowlevel server registers `on_list_tools`/`on_call_tool`
+  constructor handlers (the removed decorators), and the Unix-socket owner
+  transport validates frames with `jsonrpc_message_adapter`. Wire contracts
+  are unchanged: all 61 tools, the tool-contract and response snapshots, and
+  the JSON error-payload format are byte-identical, and the server now reports
+  the real `zaxy-memory` version in `serverInfo`. Design:
+  `docs/superpowers/specs/2026-08-10-mcp-2-migration-design.md`.
+
 ## 3.2.0 - 2026-07-07
 
 Gardening release: the reliability findings and consolidation debt identified
